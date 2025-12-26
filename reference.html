@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Stats_X Complete Reference - Full Documentation for Unreal Engine 5">
+    <title>Reference - Stats_X</title>
+    <link rel="icon" type="image/png" href="images/StatsX_Thumbnail_267x267.png">
+
+    <!-- GitHub Markdown CSS -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown-dark.min.css">
+
+    <!-- Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0d1117;
+            color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+        }
+
+        /* Header */
+        .site-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .logo-img {
+            width: 36px;
+            height: 36px;
+        }
+
+        .logo-text {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: #e6edf3;
+        }
+
+        .logo-text span {
+            color: #f0c246;
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .header-nav a {
+            color: #e6edf3;
+            text-decoration: none;
+            font-size: 0.95rem;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .header-nav a:hover,
+        .header-nav a.active {
+            opacity: 1;
+        }
+
+        .version-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border: 1px solid #f0c246;
+            border-radius: 20px;
+            color: #f0c246;
+            letter-spacing: 1px;
+        }
+
+        /* Main Content */
+        .main-container {
+            margin-top: 64px;
+            padding: 32px 24px 64px;
+            max-width: 980px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Markdown Body */
+        .markdown-body {
+            background: transparent !important;
+        }
+
+        .markdown-body h1 {
+            border-bottom-color: #30363d;
+            padding-bottom: 0.3em;
+        }
+
+        .markdown-body h2 {
+            border-bottom-color: #30363d;
+            padding-bottom: 0.3em;
+        }
+
+        .markdown-body code {
+            background: #161b22;
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+        }
+
+        .markdown-body pre {
+            background: #161b22 !important;
+            border: 1px solid #30363d;
+        }
+
+        .markdown-body pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .markdown-body table {
+            display: table;
+            width: 100%;
+        }
+
+        .markdown-body table th,
+        .markdown-body table td {
+            border-color: #30363d;
+        }
+
+        .markdown-body table tr {
+            background: transparent;
+            border-top-color: #30363d;
+        }
+
+        .markdown-body table tr:nth-child(2n) {
+            background: #161b22;
+        }
+
+        .markdown-body blockquote {
+            border-left-color: #f0c246;
+            color: #8b949e;
+        }
+
+        .markdown-body a {
+            color: #f0c246;
+        }
+
+        .markdown-body hr {
+            background-color: #30363d;
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .header-nav a:not(.active) {
+                display: none;
+            }
+
+            .main-container {
+                padding: 24px 16px 48px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-content">
+            <a href="index.html" class="logo">
+                <img src="images/StatsX_Thumbnail_267x267.png" alt="Stats_X Logo" class="logo-img">
+                <span class="logo-text">STATS<span>_X</span></span>
+            </a>
+            <nav class="header-nav">
+                <a href="docs.html">Tutorials</a>
+                <a href="reference.html" class="active">Documentation</a>
+                <a href="https://discord.gg/54H4emWS" target="_blank">Discord</a>
+                <span class="version-badge">v0.97</span>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Content -->
+    <main class="main-container">
+        <article id="content" class="markdown-body"></article>
+    </main>
+
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <!-- Highlight.js for code syntax -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <script>
+        // Configure marked with highlight.js
+        marked.setOptions({
+            highlight: function (code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: false,
+            gfm: true
+        });
+
+        // The markdown content
+        const markdown = `# Stats_X - Plugin for Unreal Engine 5.x
+
+## Official Documentation
+
+**Version:** 0.97
+**Author:** Gabriele Rogani, XForge
+**Compatibility:** Unreal Engine 5.x
+**Support:** [Discord](https://discord.gg/54H4emWS)
+
+---
+
+## Table of Contents
+
+1. [Introduction](#introduction)
+2. [Installation](#installation)
+3. [Plugin Architecture](#plugin-architecture)
+4. [The StatsX Component](#the-statsx-component)
+5. [Attributes System](#attributes-system)
+6. [Status System](#status-system)
+7. [Modifiers System](#modifiers-system)
+8. [Interceptor System](#interceptor-system)
+9. [Threshold System](#threshold-system)
+10. [Damage Mitigation Formulas](#damage-mitigation-formulas)
+11. [Dynamic Payload](#dynamic-payload)
+12. [Network Replication](#network-replication)
+13. [Status Forge Editor](#status-forge-editor)
+14. [Complete Blueprint API](#complete-blueprint-api)
+15. [Practical Examples](#practical-examples)
+16. [Best Practices](#best-practices)
+17. [Troubleshooting](#troubleshooting)
+
+---
+
+## Introduction
+
+**Stats_X** is an advanced and modular system for managing statistics, status/effects, and modifiers in Unreal Engine 5.x. The plugin offers a flexible architecture that allows you to implement complex systems such as:
+
+- **Complete RPG systems** with attributes, buffs, debuffs, and status effects
+- **Combat systems** with damage types, resistances, and mitigation
+- **Ability systems** with cooldowns, costs, and over-time effects
+- **Multiplayer systems** with optimized network replication
+
+### Main Features
+
+- **Flexible Attributes System:** Manage resources (Health, Mana) and statistics (Strength, Speed) with support for unlimited values
+- **Advanced Status System:** Create complex effects with the visual Status Forge editor
+- **Replicated Modifiers:** Apply buffs and debuffs that automatically synchronize over the network
+- **Interceptor System:** Intercept and modify events in real-time
+- **Dynamic Payload:** Parameterize statuses at runtime for maximum flexibility
+- **Optimized Performance:** Object pooling, heap scheduling, and delta replication
+
+---
+
+## Installation
+
+### Requirements
+
+- Unreal Engine 5.x
+- GameplayTags Plugin (included in UE, must be enabled)
+
+### Installation Procedure
+
+1. **Copy the plugin** to your project's \`Plugins\` folder:
+   \`\`\`
+   YourProject/
+   └── Plugins/
+       └── Stats_X/
+   \`\`\`
+
+2. **Restart** the Unreal Engine Editor
+
+3. **Enable the plugin** from Edit → Plugins → search "Stats_X" → Enable
+
+4. **Create the Immutable Data Asset** navigate to "/Stats_X/Content/" → right click -> Data Asset → search PDA_Immutable → Call it precisely "DA_ImmutableGameStatuses"
+
+---
+
+## Plugin Architecture
+
+Stats_X is organized into three modules:
+
+### Runtime Module (Stats_X)
+
+The core of the plugin, contains:
+- \`UStatsX_StatsComponentBase\` - Main component
+- \`UStatsXSubsystem\` - Global subsystem
+- Data structures, pools, and execution logic
+
+### Editor Module (Stats_XEditor)
+
+Editor tools:
+- **Status Forge** - Visual editor for creating statuses
+- Custom Blueprint nodes
+- Asset factories
+
+### Uncooked Module (Stats_XUncooked)
+
+Additional K2 Nodes available only in editor.
+
+### Folder Structure
+
+\`\`\`
+Stats_X/
+├── Source/
+│   ├── Stats_X/           # Runtime
+│   ├── Stats_XEditor/     # Editor
+│   └── Stats_XUncooked/   # K2 Nodes
+├── Content/
+│   └── DA_ImmutableGameStatuses.uasset
+├── Config/
+└── Resources/
+\`\`\`
+
+---
+
+## The StatsX Component
+
+### UStatsX_StatsComponentBase
+
+The \`StatsX_StatsComponentBase\` component is the fundamental element of the plugin. It must be added to any Actor that needs to manage statistics, statuses, or modifiers.
+
+### Adding the Component
+
+**In Blueprint:**
+1. Create a new Blueprint Class, as parent class chose StatsX_StatsComponentBase, rename as you want e.g. BPC_StatsMaster
+2. Open your Character/Pawn/Actor Blueprint
+3. Go to the Components panel
+4. Click "Add Component"
+5. Search for "BPC_StatsMaster" (or the name you gave to it)
+6. Add the component
+
+**In C++:**
+\`\`\`cpp
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+UStatsX_StatsComponentBase* StatsComponent;
+
+// In constructor
+StatsComponent = CreateDefaultSubobject<UStatsX_StatsComponentBase>(TEXT("StatsComponent"));
+\`\`\`
+
+### Configurable Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| \`DamageToResistancesMap\` | TMap | Map damage type → applicable resistances |
+| \`DiminishingMitigationScaleFactor\` | float | Scale factor for Diminishing formula (default: 100) |
+| \`ExponentialDecayMitigationScaleFactor\` | float | Scale factor for Exponential formula (default: 100) |
+
+### Event Dispatchers
+
+The component exposes several event dispatchers to react to changes:
+
+\`\`\`
+OnAttributeChanged(AttributeTag, NewValue)
+OnAttributeThresholdReached(AttributeTag, OldValue, NewValue, Handle, Causer)
+OnStatusInstanceChanged(StatusHandle, bAdded)
+OnStatusInstanceUpdated(InstanceData)
+OnCastedStatusTagChanged(StatusTag, bAdded)
+OnReceivedStatusTagChanged(StatusTag, bAdded)
+\`\`\`
+
+---
+
+## Attributes System
+
+### Basic Concepts
+
+An **Attribute** in Stats_X is identified by a \`GameplayTag\` and contains four values:
+
+| Value | Description |
+|-------|-------------|
+| \`Current\` | Current value (e.g., current HP) |
+| \`Max\` | Maximum value (e.g., maximum HP) |
+| \`Base\` | Unmodified base value (used for recalculations) |
+| \`bOverflows\` | If true, disables value clamping |
+
+### Sub-Attributes
+
+Each attribute has sub-components accessible via tags:
+- \`StatsX.SubAttribute.Current\`
+- \`StatsX.SubAttribute.Max\`
+- \`StatsX.SubAttribute.Base\`
+- \`StatsX.SubAttribute.Overflows\`
+
+### Attribute Types
+
+Stats_X distinguishes two categories of attributes:
+
+#### Resource Attributes
+Represent consumable resources (Health, Mana, Stamina):
+- Current varies between 0 and Max
+- Max can be modified by buffs/equipment
+- Base represents the "naked" value without modifiers
+
+#### Statistical Attributes
+Represent pure statistics (Strength, Speed, Resistance):
+- Current and Max are typically equal
+- Used primarily for calculations and formulas
+
+### Overflow Mode
+
+When \`bOverflows = false\` (default):
+- Current is clamped between 0 and Max
+- Max and Base are clamped >= 0
+
+When \`bOverflows = true\`:
+- No clamping applied
+- Useful for arbitrary data (positions, timers, negative counters)
+
+### Initializing Attributes
+
+**Generic Initialization:**
+\`\`\`
+Initialize Attribute
+├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+├── Current Value: 100
+├── Max Value: 100
+├── Base Value: 100
+├── Overflows: false
+└── Overwrite Existing: false
+\`\`\`
+
+**Resource Initialization (Shortcut):**
+\`\`\`
+Initialize Resource Attribute
+├── Attribute Tag: "StatsX.Attribute.Resource.Mana"
+├── Current Value: 50
+├── Max Value: 100
+└── Base Value: 100
+\`\`\`
+
+**Statistic Initialization (Shortcut):**
+\`\`\`
+Initialize Stat Attribute
+├── Attribute Tag: "StatsX.Attribute.Stat.Strength"
+├── Value: 10
+└── Base Value: 10
+\`\`\`
+
+### Modifying Attributes
+
+**Add/Subtract (Transaction):**
+\`\`\`
+Modify Attribute
+├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+├── Sub Attribute Tag: "StatsX.SubAttribute.Current"
+├── Delta: -25  (damage) or +10 (heal)
+└── Causer: (optional) Actor causing the modification
+\`\`\`
+
+**Set Direct Value:**
+\`\`\`
+Set Attribute
+├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+├── Sub Attribute Tag: "StatsX.SubAttribute.Current"
+├── New Value: 100
+└── Causer: (optional)
+\`\`\`
+
+### Reading Attributes
+
+**Get Entire Attribute:**
+\`\`\`
+Get Attribute Value
+├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+└── Return: FStatAttribute (Current, Max, Base, bOverflows)
+\`\`\`
+
+**Get Specific Sub-Attribute:**
+\`\`\`
+Get Sub Attribute Value
+├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+├── Sub Attribute Tag: "StatsX.SubAttribute.Current"
+└── Return: float
+\`\`\`
+
+### Removing Attributes
+
+\`\`\`
+Remove Attribute
+└── Attribute Tag: "StatsX.Attribute.Resource.Health"
+\`\`\`
+
+---
+
+## Status System
+
+### What is a Status
+
+A **Status** in Stats_X is an effect that can be applied from a caster to a target. Statuses can:
+
+- Modify attributes (damage, heal, buff)
+- Last over time with periodic ticks
+- Have application conditions
+- Trigger other statuses
+- Be intercepted and modified
+
+### Anatomy of a Status
+
+Each status is composed of:
+
+1. **Identifying Tag:** Unique \`GameplayTag\` (e.g., \`StatsX.Status.Poison\`)
+2. **Execution Blocks:**
+   - \`OnCast\` - Executed once on cast (useful for projectiles)
+   - \`OnApply\` - Executed once on application to target
+   - \`OnLoop\` - Executed periodically (tick)
+   - \`OnDeprecation\` - Executed on natural timeout
+   - \`OnDeprecate\` - Executed on removal (any cause)
+3. **Duration Parameters:**
+   - \`MaxDuration\` - Total duration in seconds
+   - \`TickInterval\` - Interval between ticks in seconds
+   - \`MaxLoops\` - Maximum number of loops (-1 = infinite)
+
+### Casting a Status
+
+\`\`\`
+Cast Status
+├── Status Tag: "StatsX.Status.Burn"
+├── Caster Actor: Self
+├── Target Actor: Enemy
+├── Payload: (optional) FStatusPayload
+└── Return: int32 (Status Handle)
+\`\`\`
+
+The returned Handle can be used to:
+- Remove the specific status
+- Query the instance state
+- Uniquely identify the active status
+
+### Removing Statuses
+
+**By Specific Handle:**
+\`\`\`
+Remove Status By Handle
+├── Handle: 12345
+└── Execute On Deprecate: true
+\`\`\`
+
+**By Tag (all instances):**
+\`\`\`
+Remove All Statuses By Tag
+├── Target Stats Component: TargetComponent
+├── Status Tag: "StatsX.Status.Burn"
+└── Execute On Deprecate: false
+\`\`\`
+
+**Only Received Statuses:**
+\`\`\`
+Remove All Received Statuses By Tag
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: int32 (number removed)
+\`\`\`
+
+**Only Casted Statuses:**
+\`\`\`
+Remove All Casted Statuses By Tag
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: int32 (number removed)
+\`\`\`
+
+### Querying Statuses
+
+**Check Presence:**
+\`\`\`
+Has Active Status Received
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: bool
+
+Has Exact Active Status Received  // Exact tag match
+Has Any Active Status Received    // Any among provided tags
+\`\`\`
+
+**Count Instances:**
+\`\`\`
+Count Received Status
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: int32
+\`\`\`
+
+**Get Handle:**
+\`\`\`
+Get Received Statuses By Tag
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: TArray<int32>
+\`\`\`
+
+### Status Instance Information
+
+For active statuses, you can get detailed information:
+
+\`\`\`
+Get Status Instance Remaining Time
+├── Status Handle: 12345
+└── Return: float (seconds remaining)
+
+Get Status Instance Elapsed Time
+├── Status Handle: 12345
+└── Return: float (seconds elapsed)
+
+Get Status Instance Progress
+├── Status Handle: 12345
+└── Return: float (0.0 - 1.0)
+
+Get Status Instance Estimated Loop Count
+├── Status Handle: 12345
+└── Return: int32
+\`\`\`
+
+**Get All Information:**
+\`\`\`
+Get Status Instance Info
+├── Status Handle: 12345
+└── Out Info: FReplicatedStatusInstanceItem
+
+Get All Status Instances
+└── Return: TArray<FReplicatedStatusInstanceItem>
+
+Get Status Instances By Tag
+├── Status Tag: "StatsX.Status.Burn"
+└── Return: TArray<FReplicatedStatusInstanceItem>
+\`\`\`
+
+---
+
+## Modifiers System
+
+### What is a Modifier
+
+A **Modifier** is a temporary or permanent alteration applied to an attribute. Examples:
+- Buff "+20% speed" from an ability
+- Bonus "+50 armor" from equipment
+- Debuff "-10 strength" from a status
+
+### Modifier Structure
+
+\`\`\`cpp
+struct FStatModifier {
+    int32 InstanceID;           // Unique instance ID
+    int32 OwnerID;              // Owner ID (for grouping)
+    FGameplayTag AttributeTag;  // Modified attribute
+    FGameplayTag SourceTag;     // Modifier source
+    float AdditiveValue;        // Additive value
+    float MultiplicativeValue;  // Multiplicative value
+};
+\`\`\`
+
+### Calculation Formula
+
+The \`Max\` value of an attribute is recalculated as:
+
+\`\`\`
+Max = (Base + TotalAdditive) × TotalMultiplicative
+\`\`\`
+
+Where:
+- \`Base\` = original base value
+- \`TotalAdditive\` = sum of all additive values
+- \`TotalMultiplicative\` = product of all multiplicative values
+
+### Adding a Modifier
+
+\`\`\`
+Add Modifier
+├── Attribute Tag: "StatsX.Attribute.Stat.Speed"
+├── Source Tag: "StatsX.ModSource.Buff.Sprint"
+├── Owner ID: 1001  (ID of the buff/item/status)
+├── Additive Value: 0
+├── Multiplicative Value: 1.25  (+25%)
+└── Return: int32 (Instance ID)
+\`\`\`
+
+### Removing Modifiers
+
+**By Instance ID:**
+\`\`\`
+Remove Modifier By ID
+├── Instance ID: 5001
+└── Return: bool
+\`\`\`
+
+**By Owner ID (all mods from a buff):**
+\`\`\`
+Remove Modifiers By Owner
+├── Owner ID: 1001
+└── Return: int32 (number removed)
+\`\`\`
+
+**By Source Tag (all mods of a type):**
+\`\`\`
+Remove Modifiers By Source
+├── Source Tag: "StatsX.ModSource.Buff"
+└── Return: int32
+\`\`\`
+
+**By Attribute (all mods on an attribute):**
+\`\`\`
+Remove Modifiers By Attribute
+├── Attribute Tag: "StatsX.Attribute.Stat.Speed"
+└── Return: int32
+\`\`\`
+
+**With Combined Filters:**
+\`\`\`
+Remove Modifiers With Filters
+├── Count: -1 (all)
+├── Instance ID: -1 (ignore)
+├── Owner ID: 1001
+├── Source Tag: (empty = ignore)
+├── Attribute Tag: (empty = ignore)
+└── Return: int32
+\`\`\`
+
+### Querying Modifiers
+
+\`\`\`
+Get Modifiers For Attribute
+├── Attribute Tag: "StatsX.Attribute.Stat.Speed"
+└── Return: TArray<FStatModifier>
+
+Get Modifier Count
+└── Return: int32
+\`\`\`
+
+### Manual Recalculation
+
+If needed, you can force recalculation:
+
+\`\`\`
+Recalculate Attribute
+└── Attribute Tag: "StatsX.Attribute.Stat.Speed"
+
+Recalculate All Dirty Attributes
+// Recalculates all attributes marked as "dirty"
+\`\`\`
+
+---
+
+## Interceptor System
+
+### What is an Interceptor
+
+An **Interceptor** is a component that can intercept status system events and modify their behavior. Used for:
+
+- Modifying damage before it's applied
+- Blocking certain types of statuses
+- Adding side effects
+- Implementing mechanics like "shields" or "absorption"
+
+### Interceptor Types
+
+1. **Local Interceptors:** Registered on a single component
+2. **Global Interceptors:** Registered on the Subsystem, active globally
+
+### Creating an Interceptor
+
+1. Create a new Blueprint
+2. As Parent Class, choose \`StatsX_StatusInterceptorBase\`
+3. Implement the functions:
+   - \`Condition()\` - Returns true if the interceptor should activate
+   - \`Action()\` - Executes the action and returns true to continue execution, otherwise false to terminate the status that triggered it.
+
+### Registering an Interceptor (Local)
+
+\`\`\`
+Register Interceptor
+├── Event Tag: "StatsX.Event.Pre.ModifyAttribute"
+├── Interceptor Class: BP_MyInterceptor
+├── Owner: Self (optional)
+└── Return: int32 (Handle)
+\`\`\`
+
+### Registering an Interceptor (Global)
+
+\`\`\`cpp
+// In C++ or via Subsystem
+UStatsXSubsystem* Subsystem = GetGameInstance()->GetSubsystem<UStatsXSubsystem>();
+int32 Handle = Subsystem->RegisterInterceptor(EventTag, InterceptorClass, Owner);
+\`\`\`
+
+### Removing Interceptors
+
+\`\`\`
+Unregister Interceptor
+├── Handle: 7890
+└── Return: bool
+
+Unregister Interceptors
+├── Handles: [7890, 7891, 7892]
+└── Return: int32 (number removed)
+
+Unregister Interceptors For Event
+├── Event Tag: "StatsX.Event.Pre.ModifyAttribute"
+└── Return: int32
+\`\`\`
+
+### Querying Interceptors
+
+\`\`\`
+Is Handle Valid
+├── Handle: 7890
+└── Return: bool
+
+Find Handles For Event
+├── Event Tag: "StatsX.Event.Pre.ModifyAttribute"
+└── Return: TArray<int32>
+
+Get Interceptor Count For Event
+├── Event Tag: "StatsX.Event.Pre.ModifyAttribute"
+└── Return: int32
+\`\`\`
+
+### Interceptable Events
+
+Events follow the pattern:
+- \`StatsX.Event.Pre.*\` - Before execution
+- \`StatsX.Event.Post.*\` - After execution
+
+The interceptor can modify:
+- \`Delta\` - The operation value
+- \`Payload\` - The status parameters
+- Return values of checks
+- Call other Statuses (The interceptor has a context with all the data you need)
+
+---
+
+## Threshold System
+
+### What is a Threshold
+
+A **Threshold** monitors an attribute and triggers an event when exceeded. Useful for:
+
+- Character death (HP <= 0)
+- Passive ability activation
+- State change (low health warning)
+- Achievements and progression
+
+### Threshold Structure
+
+\`\`\`cpp
+struct FAttributeThreshold {
+    FGameplayTag AttributeTag;      // Attribute to monitor
+    FGameplayTag SubAttributeTag;   // Sub-attribute (default: Current)
+    float ThresholdValue;           // Threshold value
+    EThresholdComparison Comparison; // Comparison type
+    bool bRemoveAfterTrigger;       // Auto-remove after trigger
+};
+\`\`\`
+
+### Comparison Types
+
+| Type | Description |
+|------|-------------|
+| \`LessOrEqual\` | Triggers every time value <= threshold |
+| \`GreaterOrEqual\` | Triggers every time value >= threshold |
+| \`CrossingBelow\` | Triggers once only on crossing from > to < |
+| \`CrossingAbove\` | Triggers once only on crossing from < to > |
+
+### Adding a Threshold
+
+\`\`\`
+Add Attribute Threshold
+├── Threshold:
+│   ├── Attribute Tag: "StatsX.Attribute.Resource.Health"
+│   ├── Sub Attribute Tag: "StatsX.SubAttribute.Current"
+│   ├── Threshold Value: 0
+│   ├── Comparison: CrossingBelow
+│   └── Remove After Trigger: true
+└── Return: int32 (Handle)
+\`\`\`
+
+### Managing Thresholds
+
+\`\`\`
+Remove Attribute Threshold
+├── Handle: 3456
+└── Return: bool
+
+Clear All Thresholds
+// Removes all thresholds
+
+Clear Thresholds For Attribute
+└── Attribute Tag: "StatsX.Attribute.Resource.Health"
+
+Has Active Thresholds
+└── Return: bool
+\`\`\`
+
+### Reacting to Threshold Events
+
+Use the \`OnAttributeThresholdReached\` Event Dispatcher:
+
+\`\`\`
+Bind to OnAttributeThresholdReached
+├── Attribute Tag: attribute tag
+├── Old Value: value before modification
+├── New Value: value after modification
+├── Threshold Handle: threshold handle
+└── Causer: Actor that caused the modification
+\`\`\`
+
+---
+
+## Damage Mitigation Formulas
+
+### Overview
+
+Stats_X includes predefined formulas for calculating damage reduction based on resistances. The system supports:
+
+1. Damage type → resistances mapping
+2. Calculation formulas
+3. Custom formulas in Blueprint
+
+### Configuring the Mapping
+
+In the component's \`DamageToResistancesMap\` property:
+
+\`\`\`
+DamageToResistancesMap:
+├── "StatsX.DamageType.Fire" → ["StatsX.Attribute.Stat.FireResistance"]
+├── "StatsX.DamageType.Physical" → ["StatsX.Attribute.Stat.Armor", "StatsX.Attribute.Stat.Toughness"]
+└── "StatsX.DamageType.Magic" → ["StatsX.Attribute.Stat.MagicResistance"]
+\`\`\`
+
+### Available Formulas
+
+#### Flat Mitigation
+Fixed damage reduction.
+\`\`\`
+Final Damage = max(0, Damage - Resistance)
+\`\`\`
+
+#### Percentage Mitigation
+Percentage reduction.
+\`\`\`
+Final Damage = Damage × (1 - Resistance/100)
+\`\`\`
+
+#### Diminishing Returns
+Resistances with diminishing returns (MMO style).
+\`\`\`
+Effectiveness = 100 / (100 + Resistance × ScaleFactor)
+Final Damage = Damage × Effectiveness
+\`\`\`
+
+#### Exponential Decay
+Exponential decay.
+\`\`\`
+Effectiveness = 1 - exp(-Resistance / ScaleFactor)
+Final Damage = Damage × (1 - Effectiveness)
+\`\`\`
+
+### Custom Formula
+
+Implement the \`Mitigation_CustomFormula\` event in your derived component:
+
+\`\`\`
+Event Mitigation Custom Formula
+├── Mitigation Formula: custom formula tag
+├── Delta: original damage
+├── Damage Types: damage types
+├── Attribute Tag: modified attribute
+├── Sub Attribute Tag: sub-attribute
+├── Caster Component: who applies the damage
+├── OP Type: operation type
+├── Status Tag: status causing the damage
+└── Return: float (mitigated damage)
+\`\`\`
+
+---
+
+## Dynamic Payload
+
+### What is Payload
+
+The **Payload** is a parameter container that can be passed when casting a status to customize its behavior at runtime.
+
+### Payload Structure
+
+\`\`\`cpp
+struct FStatusPayload {
+    TArray<FPayloadEntry> Entries;  // Key-value pairs
+};
+\`\`\`
+
+Each entry can contain:
+- \`float\` - Numeric values
+- \`int32\` - Integer values
+- \`FGameplayTag\` - Tags
+- Tag remapping - Tag redirection
+
+### Creating a Payload
+
+\`\`\`
+Make Status Payload
+└── Return: FStatusPayload (empty)
+
+// Then use builder methods:
+Set Float
+├── Payload: ref
+├── Key: "StatsX.Payload.Damage"
+└── Value: 50.0
+
+Set Int
+├── Payload: ref
+├── Key: "StatsX.Payload.Stacks"
+└── Value: 3
+
+Set Tag
+├── Payload: ref
+├── Key: "StatsX.Payload.Element"
+└── Value: "StatsX.DamageType.Fire"
+\`\`\`
+
+### Or Use the Shortcut
+
+\`\`\`
+Make Status Payload
+└── Return: FStatusPayload (empty)
+
+// Then use builder methods:
+Inject Remap / Inject float / Inject Integer
+\`\`\`
+
+### Tag Remapping
+
+Remapping allows redirecting an attribute to another:
+
+\`\`\`
+Remap
+├── Payload: ref
+├── From: "StatsX.Attribute.Resource.Health"
+└── To: "StatsX.Attribute.Resource.Mana"
+\`\`\`
+
+**Use Case:** Mana Shield - damage that would normally go to Health is redirected to Mana.
+
+### Reading from Payload (in Status/Interceptor)
+
+\`\`\`
+Get Float
+├── Key: "StatsX.Payload.Damage"
+├── Default: 0.0
+└── Return: float
+
+Get Int
+├── Key: "StatsX.Payload.Stacks"
+├── Default: 1
+└── Return: int32
+
+Get Tag
+├── Key: "StatsX.Payload.Element"
+└── Return: FGameplayTag
+
+Contains
+├── Key: "StatsX.Payload.Damage"
+└── Return: bool
+\`\`\`
+
+### Payload Timing
+
+Entries can have different timing:
+
+- \`StatusEnds\` - Entry persists until status ends
+- \`InstructionEnds\` - Entry is removed at the end of current instruction
+
+This allows interceptors to inject temporary values.
+
+---
+
+## Network Replication
+
+### Overview
+
+Stats_X supports full network replication using Unreal Engine's **Fast Array** system to optimize network traffic.
+
+### What Gets Replicated
+
+| Data | Replicated | Notes |
+|------|------------|-------|
+| Attributes | Yes | Delta compression |
+| Modifiers | Yes | Full sync |
+| Status Tag (Casted) | Yes | Tag container |
+| Status Tag (Received) | Yes | Tag container |
+| Status Instances | Yes | Timing info for client |
+
+### Replication Requirements
+
+1. The Actor must be replicated (\`bReplicates = true\`)
+2. The component must be replicated
+3. The Actor must have correct ownership for RPC calls
+
+### Status Information on Client
+
+Clients can query information about active statuses:
+
+\`\`\`
+Get Status Instance Remaining Time
+Get Status Instance Elapsed Time
+Get Status Instance Progress
+Get All Status Instances
+\`\`\`
+
+The client calculates elapsed time using \`ServerStartTime\` + current time, allowing synchronized UI without continuous traffic.
+
+### Event Dispatchers for Client
+
+Clients receive notifications via event dispatchers:
+
+\`\`\`
+OnStatusInstanceChanged    // Status added/removed
+OnStatusInstanceUpdated    // Parameter update
+OnCastedStatusTagChanged   // Casted status tag change
+OnReceivedStatusTagChanged // Received status tag change
+\`\`\`
+
+---
+
+## Status Forge Editor
+
+### Overview
+
+**Status Forge** is the visual editor for creating and modifying status definitions without writing code.
+The result is compiled into a new Data Asset divided into hot-path (instructions) and cold-path (heavy data), this allows Statuses to be ultra-performant and be executed entirely in C++ reading data On-the-Fly without memory allocations or overhead from Blueprint functions.
+
+### Accessing the Editor
+
+1. In the Content Browser, create or navigate to the status folder
+2. Right-click → XForge → Stats_X → Status Forge
+3. Name the asset and open it (Standard is SF_StatusName)
+
+### Interface
+
+The editor presents:
+- **Graph Area:** Main area for building the visual graph
+- **Node Palette:** Library of available nodes
+- **Details Panel:** Properties of selected node
+- **Toolbar:** Compile, Save, Debug
+
+### Node Types
+
+#### Flow Nodes
+Define execution points:
+- **Cast Status** - Executes its *Logic Branch* first, then its *On Complete*
+- **One-Shot Behavior** - Exactly like *Cast Status*, you can use it to organize the graph or break up logic or to call interceptors at well-defined moments
+- **Loop Behavior** - Periodic execution
+- **Until-Deprecation Behavior** - The *Behavior Logic* branch is executed immediately, as if this node doesn't intervene. The *On Completed* branch is executed when *Duration* is reached
+- **Custom Behavior** - Implement it in the Content Browser by creating a new Blueprint class -> search for the Custom Behavior class. Use GetBehaviorContext to get the data.
+
+#### Check Nodes
+Conditions and verifications:
+- **Check Costs** - Verifies sufficient resources, you want to use it before an attribute modification or as a condition to exit a loop
+- **Check Tags** - Verifies tag presence, you can choose the container of received or casted statuses or your custom container in the component. (function in Override)
+- **Check Chance** - Random probability from 0 (0%) to 1 (100%)
+- **Compare** - Compares numeric values
+- **Check If Status Exists** - Verifies if a received status is active
+- **Custom Check** - Implement it in the Content Browser by creating a new Blueprint class -> search for the Custom Check class. Use GetCheckContext to get the data.
+
+#### Action Nodes
+Executable actions:
+- **Modify Attribute** - Modifies an attribute
+- **Add/Remove Modifier** - Manage modifiers
+- **Apply Child Status** - Applies a child status (it's not really a child, it just casts with the same Caster and Target, they have no parent-child relationship)
+- **Register Interceptor** - Registers an interceptor (the priority field is under development, ignore it if you read this)
+- **Refresh Status** - Resets a status duration
+- **Custom Action** - Implement it in the Content Browser by creating a new Blueprint class -> search for the Custom Action class. Use GetActionContext to get the data.
+  **NOTE** If you put the custom action inside a loop behavior you must use the function, if it's outside you must use the event and end it with EndAction otherwise it will never exit.
+
+#### Calculation Nodes
+Mathematical operations:
+- **Push Literal** - Inserts constant value
+- **Push Attribute** - Inserts attribute value
+- **Push Payload Float** - Inserts value from payload
+- **Math Operations** - Add, Subtract, Multiply, Divide, Power, Clamp
+- **Random Float/Integer in range** - Inserts a random value in a defined range
+- **Push Distance** - Inserts the distance between Caster and Target, useful for projectile falloff or distance-based damage or for distance checks.
+
+  **NOTE** expressions are: " 2 -> 8 -> + " = 8+2 = 10 so... " 2 -> 8 -> + -> 2 -> 3 -> 4 * " = 4*3*2+8+2 = 34
+
+### Basic Workflow
+
+1. Create a new Status Forge asset
+2. Add the nodes you want
+3. Connect the logic nodes
+4. Assign a GameplayTag under the compile button
+5. Compile the asset, it's automatically registered in \`DA_ImmutableGameStatuses\` found in the plugin's content browser (if you need to remove a status you have to go there)
+6. Use \`CastStatus\` to apply it
+
+---
+
+## Complete Blueprint API
+
+### Attributes
+
+#### Initialization
+\`\`\`
+InitializeAttribute(AttributeTag, Current, Max, Base, bOverflows, bOverwrite)
+InitializeResourceAttribute(AttributeTag, Current, Max, Base, bOverflows?, bOverwrite?)
+InitializeStatAttribute(AttributeTag, Value, Base, bOverflows, bOverwrite?)
+\`\`\`
+
+#### Modification
+\`\`\`
+ModifyAttribute(AttributeTag, SubAttributeTag, Delta, Causer?) → float
+SetAttribute(AttributeTag, SubAttributeTag, NewValue, Causer?)
+SetEnableOverflows(AttributeTag, bEnable)
+RemoveAttribute(AttributeTag)
+RecalculateAttribute(AttributeTag)
+RecalculateAllDirtyAttributes()
+\`\`\`
+
+#### Query
+\`\`\`
+GetAttributeValue(AttributeTag) → FStatAttribute
+GetSubAttributeValue(AttributeTag, SubAttributeTag) → float
+\`\`\`
+
+### Status
+
+#### Execution
+\`\`\`
+CastStatus(StatusTag, CasterActor, TargetActor, Payload?) → int32
+RemoveStatusByHandle(Handle, bExecuteOnDeprecate?) → bool
+RemoveAllStatusesByTag(TargetComponent, StatusTag, bExecuteOnDeprecate?) → bool
+RemoveAllReceivedStatusesByTag(StatusTag, bExecuteOnDeprecate?) → int32
+RemoveAllCastedStatusesByTag(StatusTag, bExecuteOnDeprecate?) → int32
+\`\`\`
+
+#### Query
+\`\`\`
+GetCastedStatusesByTag(StatusTag) → TArray<int32>
+GetReceivedStatusesByTag(StatusTag) → TArray<int32>
+CountReceivedStatus(StatusTag) → int32
+
+HasActiveStatusReceived(StatusTag) → bool
+HasExactActiveStatusReceived(StatusTag) → bool
+HasAnyActiveStatusReceived(StatusesTags) → bool
+
+HasActiveStatusCasted(StatusTag) → bool
+HasExactActiveStatusCasted(StatusTag) → bool
+HasAnyActiveStatusCasted(StatusesTags) → bool
+\`\`\`
+
+#### Instance Information
+\`\`\`
+GetStatusInstanceRemainingTime(Handle) → float
+GetStatusInstanceElapsedTime(Handle) → float
+GetStatusInstanceProgress(Handle) → float
+GetStatusInstanceEstimatedLoopCount(Handle) → int32
+GetStatusInstanceInfo(Handle, OutInfo) → bool
+GetAllStatusInstances() → TArray<FReplicatedStatusInstanceItem>
+GetStatusInstancesByTag(StatusTag) → TArray<FReplicatedStatusInstanceItem>
+\`\`\`
+
+#### Instance Parameters (Advanced)
+\`\`\`
+GetStatusAccumulatedTime(Handle) → float
+GetStatusTickInterval(Handle) → float
+GetStatusMaxDuration(Handle) → float
+GetStatusNextExecutionTime(Handle) → float
+GetStatusMaxLoops(Handle) → int32
+GetStatusCurrentLoopCount(Handle) → int32
+
+SetStatusAccumulatedTime(Handle, NewValue)
+SetStatusTickInterval(Handle, NewValue)
+SetStatusMaxDuration(Handle, NewValue)
+SetStatusNextExecutionTime(Handle, NewValue)
+SetStatusMaxLoops(Handle, NewValue)
+SetStatusCurrentLoopCount(Handle, NewValue)
+\`\`\`
+
+### Modifiers
+
+#### Management
+\`\`\`
+AddModifier(AttributeTag, SourceTag, OwnerID, AdditiveValue, MultiplicativeValue?) → int32
+RemoveModifierByID(InstanceID) → bool
+RemoveModifiersByOwner(OwnerID) → int32
+RemoveModifiersBySource(SourceTag) → int32
+RemoveModifiersByAttribute(AttributeTag) → int32
+RemoveModifiersWithFilters(Count, InstanceID, OwnerID, SourceTag, AttributeTag) → int32
+\`\`\`
+
+#### Query
+\`\`\`
+GetModifiersForAttribute(AttributeTag) → TArray<FStatModifier>
+GetModifierCount() → int32
+\`\`\`
+
+### Thresholds
+
+\`\`\`
+AddAttributeThreshold(Threshold) → int32
+RemoveAttributeThreshold(Handle) → bool
+ClearAllThresholds()
+ClearThresholdsForAttribute(AttributeTag)
+HasActiveThresholds() → bool
+\`\`\`
+
+### Interceptors
+
+\`\`\`
+RegisterInterceptor(EventTag, InterceptorClass, Owner?) → int32
+UnregisterInterceptor(Handle) → bool
+UnregisterInterceptors(Handles[]) → int32
+UnregisterInterceptorsForEvent(EventTag) → int32
+
+IsHandleValid(Handle) → bool
+FindHandlesForEvent(EventTag) → TArray<int32>
+FindInterceptorsForEvent(EventTag) → TArray<UStatsX_StatusInterceptorBase*>
+GetInterceptorCountForEvent(EventTag) → int32
+
+DebugPrintActiveInterceptors()
+CleanupOrphanedInterceptors()
+\`\`\`
+
+### Event Dispatchers
+
+\`\`\`
+OnAttributeChanged(AttributeTag, NewValue)
+OnAttributeThresholdReached(AttributeTag, OldValue, NewValue, ThresholdHandle, Causer)
+OnStatusInstanceChanged(StatusHandle, bAdded)
+OnStatusInstanceUpdated(InstanceData)
+OnCastedStatusTagChanged(StatusTag, bAdded)
+OnReceivedStatusTagChanged(StatusTag, bAdded)
+\`\`\`
+
+---
+
+---
+
+## Best Practices
+
+### Tag Organization
+
+Use a clear hierarchy for GameplayTags (better info in tutorials section):
+
+\`\`\`
+YourGame
+├── Attribute
+│   ├── Resource
+│   │   ├── Health
+│   │   ├── Mana
+│   │   └── Stamina
+│   └── Stat
+│       ├── Strength
+│       ├── Speed
+│       └── Resistance
+├── Status
+│   ├── Buff
+│   │   ├── SpeedBoost
+│   │   └── DamageBoost
+│   ├── Debuff
+│   │   ├── Poison
+│   │   └── Slow
+│   └── Effect
+│       ├── Damage
+│       └── Heal
+├── DamageType
+│   ├── Physical
+│   ├── Fire
+│   └── Magic
+└── ModSource
+    ├── Buff
+    ├── Equipment
+    └── Passive
+\`\`\`
+
+### Performance
+
+1. **Use Owner ID to group modifiers:**
+   Instead of removing modifiers one by one, use \`RemoveModifiersByOwner\`
+
+2. **Limit Global Interceptors:**
+   Global interceptors are called for EVERY status with that event. Use local interceptors when possible.
+
+3. **Avoid frequent queries:**
+   Cache component references instead of searching for them every frame.
+
+4. **Batch modifications:**
+   If you need to modify multiple attributes, do it in sequence before reading results.
+
+5. **Profile occasionally**
+   Use \`Stat StatsX\` in the console to visualize runtime performance and see bottlenecks.
+
+6. **Don't be afraid**
+   Creating huge and complicated Statuses or statuses that call other statuses is why Status Forge was made, rather monitor normal blueprints with classic nodes.
+
+### Multiplayer
+
+1. **Modifications must start from the Server:**
+   Use Server RPC → implement logic → automatic replication to clients
+
+2. **Don't trust the client for values:**
+   Always validate data server-side before applying modifications
+
+3. **Use Event Dispatchers to update UI:**
+   Clients receive automatic notifications via dispatchers
+
+4. **Use attributes for EVERYTHING**
+   Attributes are super performant and replicated. If you use a multicast event, first ask yourself if you can put that logic in an attribute.
+   For example, doors will probably have a vector where they're closed and one where they're open, if you create an attribute for doors and a threshold on that attribute,
+   you can use Current Max and Base as X,Y,Z.. When the attribute changes, move the doors to those values, clients will see the door move and if a client connects
+   in the middle of opening they haven't missed any multicast event because you're using StatsX and everyone including late joiners always have the current and correct game state.
+
+5. **Don't Modify Component Tick**
+   The component is optimized, it enables and disables tick intelligently. The only time it's active is when it has a received status with a Loop Behavior to execute.
+
+### Debug
+
+1. **Use \`DebugPrintActiveInterceptors\`** to see active interceptors
+
+2. **Enable logging** by setting the appropriate log category
+
+3. **Use \`Print String\` in statuses** for debugging during development
+
+---
+
+## Troubleshooting
+
+### Status is not being applied
+
+**Verify:**
+1. Is the status registered in \`DA_ImmutableGameStatuses\`? (Plugin content browser)
+2. Does the target have a \`StatsX_StatsComponentBase\`?
+3. Do the checks in the status pass? (Use Print String for debug)
+
+### Modifiers don't work
+
+**Verify:**
+1. Does the attribute exist? (must be initialized first)
+
+### Replication doesn't work
+
+**Verify:**
+1. The Actor is replicated (\`bReplicates = true\`)
+2. The component is replicated
+3. Calls originate from the Server
+4. The Actor's ownership is correct
+
+### Interceptor doesn't activate
+
+**Verify:**
+1. Is the Event Tag correct? (Pre vs Post)
+2. Is the interceptor registered?
+3. Does the Condition return true? (Press F9 on the condition to see if the game stops at that moment)
+4. Has the interceptor not been removed? (Status that created the interceptor expired)
+
+### Status Forge compilation errors
+
+**Verify:**
+1. Are all nodes connected?
+2. Are there loops in the graph? (like in the material graph you can't have nodes with multiple connections)
+
+---
+
+## Support
+
+For questions, bug reports, or feature requests:
+
+- **Discord:** [https://discord.gg/54H4emWS](https://discord.gg/54H4emWS)
+
+**Note** If you need support but want to keep your project private, you can create a ticket and it will be directly sent to private chat for private support.
+
+---
+
+*Documentation updated: December 2025*
+*Stats_X Plugin v1.0 for Unreal Engine 5.x*`;
+
+        // Render markdown
+        document.getElementById('content').innerHTML = marked.parse(markdown);
+
+        // Apply syntax highlighting to code blocks
+        document.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Stats_X - Advanced Stats & Status System for Unreal Engine 5. Flexible attributes, visual status editor, smart modifiers, and optimized network replication. GAS alternative.">
+    <title>Stats_X - Advanced Stats & Status System for Unreal Engine 5</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="images/StatsX_Thumbnail_267x267.png">
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-content">
+            <a href="index.html" class="logo">
+                <img src="images/StatsX_Thumbnail_267x267.png" alt="Stats_X Logo" class="logo-img">
+                <span class="logo-text">STATS<span>_X</span></span>
+            </a>
+            <nav class="header-nav">
+                <a href="docs.html">Tutorials</a>
+                <a href="reference.html">Documentation</a>
+                <a href="https://discord.gg/54H4emWS" target="_blank">Discord</a>
+                <span class="version-badge">v1.0</span>
+            </nav>
+            <button class="mobile-menu-toggle" aria-label="Toggle menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content stagger">
+            <img src="images/StatsX_Thumbnail_267x267.png" alt="Stats_X" class="hero-logo">
+            <h1 class="hero-title">STATS<span>_X</span></h1>
+            <p class="hero-subtitle">Advanced Stats & Status System for Unreal Engine 5</p>
+            <div class="hero-cta">
+                <a href="reference.html" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    </svg>
+                    View Documentation
+                </a>
+                <a href="docs.html#installation" class="btn btn-secondary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Get Started
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Overview -->
+    <section class="features-section">
+        <div class="section-header">
+            <h2 class="section-title">Core Systems</h2>
+            <p class="section-subtitle">Everything you need to build complex game mechanics without reinventing the
+                wheel</p>
+        </div>
+        <div class="features-grid stagger">
+            <a href="docs.html#attributes-setup" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Flexible Attributes</h3>
+                <p class="feature-item-desc">Resources & Stats with unlimited values. Health, Mana, Strength - define
+                    any attribute with Current, Max, Base values and automatic clamping.</p>
+            </a>
+            <a href="docs.html#status-forge" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Status Forge Editor</h3>
+                <p class="feature-item-desc">Visual node-based status creation. Build complex effects like Poison, Burn,
+                    Shields without writing code. Compiles to native C++ performance.</p>
+            </a>
+            <a href="docs.html#modifiers" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Smart Modifiers</h3>
+                <p class="feature-item-desc">Additive & Multiplicative buff/debuff system with auto-recalculation. Stack
+                    buffs correctly with flexible removal by ID, Owner, or Source.</p>
+            </a>
+            <a href="docs.html#mana-shield" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Interceptor System</h3>
+                <p class="feature-item-desc">Intercept & modify events in real-time. Build shields, damage reflection,
+                    lifesteal, critical hits - chain multiple interceptors with conditions.</p>
+            </a>
+            <a href="docs.html#thresholds" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Threshold Events</h3>
+                <p class="feature-item-desc">Trigger events when values cross boundaries. Death at HP=0, level ups, rage
+                    mode activation - without polling, clean and efficient.</p>
+            </a>
+            <a href="docs.html#status-lifecycle" class="feature-item">
+                <div class="feature-item-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path
+                            d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                        </path>
+                    </svg>
+                </div>
+                <h3 class="feature-item-title">Network Ready</h3>
+                <p class="feature-item-desc">Optimized replication with delta compression. Fast Array serialization,
+                    late joiner support, client time sync - works out of the box.</p>
+            </a>
+        </div>
+    </section>
+
+    <!-- Why Stats_X Section -->
+    <section class="features-section" style="background: var(--bg-primary);">
+        <div class="section-header">
+            <h2 class="section-title">Why Stats_X?</h2>
+            <p class="section-subtitle">Stop building infrastructure. Start building your game.</p>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number gold">6+</div>
+                <div class="stat-label">Core Systems</div>
+                <div class="stat-desc">Attributes, Status, Modifiers, more</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number gold">100%</div>
+                <div class="stat-label">Blueprint Compatible</div>
+                <div class="stat-desc">Full API exposed to designers</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number gold">0</div>
+                <div class="stat-label">Network Config Needed</div>
+                <div class="stat-desc">Replication works out of the box</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number gold">∞</div>
+                <div class="stat-label">Extensibility</div>
+                <div class="stat-desc">Custom nodes, interceptors, formulas</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Performance Section -->
+    <section class="features-section">
+        <div class="section-header">
+            <h2 class="section-title">⚡ Performance</h2>
+            <p class="section-subtitle">Optimized for scale — benchmarked and proven, test the demo on your PC</p>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number green">120</div>
+                <div class="stat-label">FPS Maintained</div>
+                <div class="stat-desc">Up to 500 actors with status</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number cyan">5000+</div>
+                <div class="stat-label">Concurrent Status</div>
+                <div class="stat-desc">On single actor, still 120 FPS</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number warning">&lt;1ms</div>
+                <div class="stat-label">Cast Overhead</div>
+                <div class="stat-desc">One-time cost, 1-2 frames</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number purple">0</div>
+                <div class="stat-label">GC Allocations</div>
+                <div class="stat-desc">Object pooling in action</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <h2>Ready to get started?</h2>
+        <p>Dive into the documentation and start building your game systems in minutes.</p>
+        <div class="cta-buttons">
+            <a href="docs.html#intro" class="btn btn-primary">Start Tutorial</a>
+            <a href="https://discord.gg/54H4emWS" target="_blank" class="btn btn-secondary">Join Discord</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-logo">STATS<span>_X</span></div>
+        <div class="footer-info">v1.0 — Plugin for Unreal Engine 5.x by Gabriele Rogani - XForge</div>
+        <div class="footer-links">
+            <a href="https://discord.gg/54H4emWS" target="_blank">Discord</a>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Stats_X Documentation - Tutorials and API Reference for the Advanced Stats & Status System for Unreal Engine 5. GAS (Gameplay Ability System) alternative.">
+    <title>Documentation - Stats_X</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="images/StatsX_Thumbnail_267x267.png">
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-content">
+            <a href="index.html" class="logo">
+                <img src="images/StatsX_Thumbnail_267x267.png" alt="Stats_X Logo" class="logo-img">
+                <span class="logo-text">STATS<span>_X</span></span>
+            </a>
+            <nav class="header-nav">
+                <a href="docs.html" class="active">Tutorials</a>
+                <a href="reference.html">Documentation</a>
+                <a href="https://discord.gg/54H4emWS" target="_blank">Discord</a>
+                <span class="version-badge">v1.0</span>
+            </nav>
+            <button class="mobile-menu-toggle" aria-label="Toggle menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="docs-layout">
+
+        <!-- ============================================
+             SIDEBAR - MENU LATERALE
+             ============================================ -->
+        <aside class="sidebar" id="sidebar">
+
+            <!-- CATEGORIA 1 -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">Getting Started</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#installation" data-section="installation" class="active">Installation — important</a>
+                    </li>
+                    <li><a href="#setup-gameplaytags" data-section="setup-gameplaytags">Setup GameplayTags</a></li>
+                </ul>
+            </div>
+
+            <!-- CATEGORIA 2 -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">Attributes</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#attributes-setup" data-section="attributes-setup">Setup Attributes</a></li>
+                    <li><a href="#thresholds" data-section="thresholds">Thresholds</a></li>
+                    <li><a href="#modifiers" data-section="modifiers">Modifiers</a></li>
+                </ul>
+            </div>
+
+            <!-- CATEGORIA 3 -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">Status System</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#status-forge" data-section="status-forge">Status Forge</a></li>
+                    <li><a href="#status-lifecycle" data-section="status-lifecycle">Status Lifecycle</a></li>
+                    <li><a href="#payload" data-section="payload">Payload</a></li>
+                </ul>
+            </div>
+
+            <!-- CATEGORIA 4 -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">Status Examples</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#fireball" data-section="fireball">Fireball</a></li>
+                    <li><a href="#mana-shield" data-section="mana-shield">Mana Shield</a></li>
+                    <li><a href="#poison" data-section="poison">Poison</a></li>
+                    <li><a href="#level-up" data-section="level-up">Level Up</a></li>
+                </ul>
+            </div>
+
+        </aside>
+
+        <!-- ============================================
+             CONTENUTO - AREA PRINCIPALE
+             ============================================ -->
+        <main class="main-content content">
+            <div class="content-wrapper">
+
+                <!-- SEZIONE: Installation -->
+                <section id="installation" class="tutorial-section active">
+                    <h1>Installation</h1>
+                    <h3>Navigate to Edit->Plugins.</h3>
+                    <img src="images/Installation/OpenPluginFolder.png" alt="Open Plugin Folder">
+                    <h3>Search "Stats_X" and activate Stats_X Plugin.</h3>
+                    <img src="images/Installation/ActivateStatsX.png" alt="Activate Stats_X Plugin">
+                    <h3>Restart Unreal Engine.</h3>
+                    <h3>In the Content Browser navigate to "/All/Plugins/Stats_X" this is the Content folder of this
+                        plugin.</h3>
+                    <img src="images/Installation/Stats_XContent.png" alt="Content Folder">
+                    <h3>Now from here, create a New Data Asset.
+                        <br>
+                        Right Click on the content folder. Search in the search bar above "Data Asset" and click on it.
+                        <br>
+                        On the menu that opens, search "PDA_ImmutableGameStatuses". Select it and click on it.
+                        <br>
+                        Name it precisely "DA_ImmutableGameStatuses".
+                    </h3>
+                    <div class="video-wrapper">
+                        <video controls>
+                            <source src="videos/NewImmutableDataAssets.mp4" type="video/mp4">
+                        </video>
+                    </div>
+
+                    <h3>Add Stats_X folder to the "Additional Assets Directories to Cook"</h3>
+                    <div class="video-wrapper full">
+                        <video controls>
+                            <source src="videos/Addpackagingrule.mp4" type="video/mp4">
+                        </video>
+                    </div>
+
+                    <h3>You are done, the plugin is installed correctly!</h3>
+                </section>
+
+                <!-- SEZIONE: Setup GameplayTags -->
+                <section id="setup-gameplaytags" class="tutorial-section">
+                    <h1>Setup GameplayTags</h1>
+                    <h2>Before Start</h2>
+                    <p>
+                        Before starting, my advice is to think about the gameplay of your game and the attributes you
+                        want to use.
+                        <br>
+                        Not necessarily for the whole game in a micro way, it happens often that things are added on the
+                        fly, but be sure to have a good organization of your tags.
+                        <br>
+                        Plan and write them down somewhere, i use Miro or Google sheets.
+                        <br>
+                        <br>
+                        Here two simple examples.
+                    </p>
+
+                    <img class="full" src="images/SetupTags/AttributesHierarchy.png" alt="Attributes Hierarchy">
+                    <img class="full" src="images/SetupTags/StatusesHierarchy.png" alt="Statuses Hierarchy">
+
+                    <p>
+                        In these examples cooldowns are separated because you may have an item that reduces all skills
+                        cooldowns by 20% on kill.
+                        <br>
+                        You may have a passive that reduces all damages from range skills by 10%.
+                        <br>
+                        A status that tells all crowd control statuses are 30% stronger on target.
+                        <br>
+                        A spell that prevents the target from casting spells for 5 seconds.
+                        <br>
+                        <br>
+                        All the tags are up to you, you can create as many as you want, focus on a strong Hierarchy.
+                    </p>
+
+                    <h3>Instead of creating all tags manually inside the editor, you can close your project (after
+                        Stats_X
+                        installation), then navigate to "YourProject\Config" and open the file
+                        "DefaultGameplayTags.ini".
+                        Add here your tags, save the file.</h3>
+
+
+                </section>
+
+                <!-- SEZIONE: Setup Attributes -->
+                <section id="attributes-setup" class="tutorial-section">
+                    <h1>Setup Attributes</h1>
+
+                    <h2>What is an Attribute?</h2>
+
+                    <p>
+                        An attribute is just a struct containing 3 floats, it is up to you to choose what these values
+                        represent.
+                        <br>
+                        By default an attribute is automatically clamped internally e.g. Current value is clamped
+                        between 0 and Max
+                        value. You can disable all the default clamping by setting the boolean bOverflows to true.
+                    </p>
+
+                    <div class="info-box info">
+                        <div class="info-title">ℹ️ In this section we are going to setup our character, create a stats
+                            component and to setup our attributes</div>
+                    </div>
+
+                    <h2>Create the Stats Component</h2>
+
+                    <p>
+                        We are going to create a master first and children for the scope.
+                    </p>
+
+                    <div class="info-box info">
+                        <div class="info-title">ℹ️ When you read "Rename", "move to" or "create a new folder", you can
+                            choose names and folders you prefer. The only name and folder that is a must is
+                            DA_ImmutableGameStatuses.</div>
+                    </div>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Creating the Master Stats</h3>
+                                <p>Navigate to the content folder of your project, not the content folder of the
+                                    plugin.</p>
+                                <p>Right click on the content browser and select "Blueprint Class".</p>
+                                <p>On the menu that opens, search "StatsX_StatsComponentBase" and select it.</p>
+                                <p>Rename it "BPC_StatsMaster"</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Creating the Child Stats</h3>
+                                <p>Right click on "BPC_StatsMaster" asset we created and select "Create Child Blueprint
+                                    Class"</p>
+                                <p>Rename this new asset "BPC_CharacterStats"</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Assign the Component to the Character</h2>
+                    <p>Since Stats_X is not invasive, you can use whatever character you want.</p>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Open your Character Blueprint</h3>
+                                <p>Open the character you chose to use.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Add the Stats Component</h3>
+                                <p>On the Components window, top left by default, click Add.</p>
+                                <p>Search "BPC_CharacterStats" or how you called it and select it.</p>
+                                <p>Now your character has the StatsX component, this does nothing by itself and the tick
+                                    is disabled.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Setup some Attributes</h2>
+                    <p>Now we can finally start to work with Stats_X.</p>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Setup the Component</h3>
+                                <p>Open "BPC_StatsMaster". Remove all the default events in the graph except for "Begin
+                                    Play" event.</p>
+                                <p>Create a custom event and name it
+                                    "Server_InitializeAttributes" and set it to RunOnServer.</p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Setup our Attributes</h3>
+                                <p>Open "BPC_CharacterStats", in the functions tab click Override and search for
+                                    "Server_InitializeAttributes" and click it.</p>
+                                <p>Now we are going to setup our attributes.</p>
+                                <p>You want probably define your attributes in a data table or a data asset, but for
+                                    this tutorial, to see how things happen we will do things manually in a boring way😁
+                                </p>
+                                <p>In the "Server_InitializeAttributes" event, add a sequence Node</p>
+                                <p>In the branch "Then0" search and add "InitializeStatAttribute"</p>
+                                <p>In the parameter field "AttributeTag" click and select the Level tag (Refer to "Setup
+                                    Gameplay Tags" section)</p>
+                                <p>Leave the parameter Value and BaseValue to 0 since our first level will be 0.</p>
+                                <p>Now, next to "InitializeStatAttribute" drag and type "InitializeResourceAttribute"
+                                </p>
+                                <p>In the parameter field "AttributeTag" click and select the Experience tag</p>
+                                <p>Leave the parameter CurrentValue and MaxValue to 0 since we wanna start with no
+                                    experience. But set the BaseValue to 100. This will be a parameter for the
+                                    calculation formula you will see later.</p>
+
+
+
+                                <h3>Now that you seen the two main functions to initialize Stat and Resources
+                                    Attributes,
+                                    copy the following table.</h3>
+
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Sequence Branch</th>
+                                            <th>Attribute Type</th>
+                                            <th>Attribute Tag</th>
+                                            <th>Attribute Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Then 0</td>
+                                            <td>
+                                                Stat
+                                                <br>
+                                                Resource
+                                                <br>
+                                                Resource
+                                                <br>
+                                                Resource
+                                            </td>
+                                            <td>
+                                                Level
+                                                <br>
+                                                Experience
+                                                <br>
+                                                AttributePoints
+                                                <br>
+                                                ExpReward
+                                            </td>
+                                            <td>
+                                                0, 0
+                                                <br>
+                                                0, 0, 100
+                                                <br>
+                                                8, 1000, 0
+                                                <br>
+                                                0, 1000, 0
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 1</td>
+                                            <td>
+                                                Stat
+                                                <br>
+                                                Stat
+                                                <br>
+                                                Stat
+                                            </td>
+                                            <td>
+                                                Strength
+                                                <br>
+                                                Dexterity
+                                                <br>
+                                                Intelligence
+                                            </td>
+                                            <td>
+                                                0, 0
+                                                <br>
+                                                0, 0
+                                                <br>
+                                                0, 0
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 2</td>
+                                            <td>
+                                                Stat
+                                                <br>
+                                                Stat
+                                                <br>
+                                                Stat
+                                                <br>
+                                                Stat
+                                                <br>
+                                                Stat
+                                                <br>
+                                                Stat
+                                            </td>
+                                            <td>
+                                                CooldownReduction
+                                                <br>
+                                                CriticalChance
+                                                <br>
+                                                CriticalDamage
+                                                <br>
+                                                Haste
+                                                <br>
+                                                MovementSpeed
+                                                <br>
+                                                SpellPower
+                                            </td>
+                                            <td>
+                                                1, 1
+                                                <br>
+                                                0, 0
+                                                <br>
+                                                1, 1
+                                                <br>
+                                                1, 1
+                                                <br>
+                                                500, 500
+                                                <br>
+                                                1, 1
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 3</td>
+                                            <td>
+                                                Stat
+                                            </td>
+                                            <td>
+                                                Resistance.Arcane
+                                            </td>
+                                            <td>
+                                                0, 0
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 4</td>
+                                            <td>
+                                                Resource
+                                            </td>
+                                            <td>
+                                                Stack.Poison
+                                            </td>
+                                            <td>
+                                                0, 10, 0
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 5</td>
+                                            <td>
+                                                Resource
+                                                <br>
+                                                Resource
+                                                <br>
+                                                Resource
+                                            </td>
+                                            <td>
+                                                Health
+                                                <br>
+                                                Mana
+                                                <br>
+                                                Stamina
+                                            </td>
+                                            <td>
+                                                100, 100, 100
+                                                <br>
+                                                100, 100, 100
+                                                <br>
+                                                100, 100, 100
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Then 6</td>
+                                            <td>
+                                                Resource
+                                                <br>
+                                                Stat
+                                            </td>
+                                            <td>
+                                                Complementary.ComboCount
+                                                <br>
+                                                Complementary.BaseAttackSave
+                                            </td>
+                                            <td>
+                                                0, 2, 0
+                                                <br>
+                                                0, 0
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <img class="full" src="images/SetupAttributes/AttributesSetupped.png"
+                                    alt="Setup Attributes">
+
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Write the BeginPlay</h3>
+                                <p>Now we need to call this event we created</p>
+                                <p>In "BPC_CharacterStats" BeginPlay event use "GetOwner", cast it to your character
+                                    blueprint (or use an interface), promote the output value to a variable "CharRef"
+                                </p>
+
+                                <img src="images/SetupAttributes/BeginPlaySetup.png" alt="Setup BeginPlay">
+
+                                <p>Now branch the logic for Server and Client. Drag and search for "SwitchHasAuthority".
+                                </p>
+
+                                <p>In the Authority Branch call the Dispatcher node "OnAttributeChanged" and next to it
+                                    the node "Server_InitializeAttributes" we created before.
+                                </p>
+
+                                <p>In the Client Branch call the Dispatcher node "OnAttributeChanged", nothing more.
+                                </p>
+
+                                <p>From the event input pin of those dispatcher drag and search "CreateEvent"
+                                </p>
+
+                                <p>In the Create Event node we want to choose, from the dropdown parameter, "[Create a
+                                    matching event]"</p>
+
+                                <p>Rename the event created for the authority branch to
+                                    "OnAttributeChanged_ServerEvent"</p>
+
+                                <p>Rename the event created for the client branch to
+                                    "OnAttributeChanged_ClientEvent"</p>
+
+                                <p>Now you have a separated logic for server and client for when an attribute changes,
+                                    we will use these events indeed multicasts
+                                </p>
+
+                                <img src="images/SetupAttributes/BeginPlayCompleted.png" alt="BeginPlay Completed">
+
+
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Multicast the Movement Speed</h3>
+                                <p>Movement Speed is the only attribute we see from the start of the game.</p>
+                                <p>So lets complete it now.</p>
+                                <p>Both on the server side event and the client side event
+                                    "OnAttributeChanged_ServerEvent" and "OnAttributeChanged_ClientEvent", drag the
+                                    execution pin and call the node "Switch on Tag List" (this node is just a quality of
+                                    life node, if you prefer use the standard switch on tag do it)</p>
+
+                                <p>From the datail panel of the switch node, select the MovementSpeed tag and check the
+                                    boolean ExactMatch.</p>
+
+                                <p>From MovementSpeed branch, drag and set the character max speed as the Event input
+                                    parameter "NewValue.Max"</p>
+
+                                <img src="images/SetupAttributes/MulticastedMovementSpeed.png"
+                                    alt="Movement Speed Multicast">
+
+                                <div class="info-box tip">
+                                    <div class="info-title">💡 We created "OnAttributeChanged_ServerEvent" from the
+                                        authority branch and
+                                        "OnAttributeChanged_ClientEvent" from the client branch, but you can create a
+                                        "OnAttributeChanged_MulticastEvent" before the Switch on authority.</div>
+                                </div>
+
+                                <div class="info-box danger">
+                                    <div class="info-title">🚫 Note that "OnAttributeChanged_SometingEvent" are set as
+                                        not replicated, just normal events, the replication happens internally before
+                                        call them.
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <h3>Attributes are ready both on server and client!</h3>
+
+                    <h2>UI Setup</h2>
+
+                    <p>For the UI you may prefer to use "OnAttributeChanged_ClientEvent" -> player controller -> HUD
+                        blueprint -> call an event that take as inputs the "OnAttributeChanged_ClientEvent" parameters,
+                        or, from the UI GetControlledPawn -> GetComponentByClass(StatsX_StatsComponentBase) ->
+                        BindEventTo(OnAttributeChanged) -> Assign the new values to the text and numeric UI widget. If
+                        you use the second method remember to call manually "OnAttributeChanged" after bind it.
+                    </p>
+
+                </section>
+
+                <!-- SEZIONE: Thresholds -->
+                <section id="thresholds" class="tutorial-section">
+                    <h1>Thresholds</h1>
+                    <h2>Define a Threshold</h2>
+
+                    <ul>
+                        <li>Open our "BPC_CharacterStats" blueprint</li>
+                        <li>Create a custom event and rename it "Server_InitializeThresholds". Set replication to
+                            RunOnServer.</li>
+                        <li>As first node you may want to use "AddAttributeThreshold"</li>
+                        <li>From the Threshold struct input pin, drag and search "Make Attribute Threshold"</li>
+                        <li>Compile the struct in this make node as follows</li>
+
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Parameter Name</th>
+                                    <th>Parameter Value</th>
+
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>AttributeTag</td>
+                                    <td>Health</td>
+                                </tr>
+                                <tr>
+                                    <td>SubAttributeTag</td>
+                                    <td>Current</td>
+                                </tr>
+                                <tr>
+                                    <td>ThresholdValue</td>
+                                    <td>0</td>
+                                </tr>
+                                <tr>
+                                    <td>Comparison</td>
+                                    <td>Crossing Below</td>
+                                </tr>
+                                <tr>
+                                    <td>RemoveAfterTrigger</td>
+                                    <td>False</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <img src="images/SetupThresolds/DefineThresholds.png" alt="Add Attribute Threshold">
+
+                        <li>In the BeginPlay event, after the InitializeAttributes call, call the
+                            "Server_InitializeThresholds" event</li>
+                        <li>Next to it, drag and search "BindEventToOnAttributeThresholdReached"</li>
+                        <li>From the red Event input pin, drag and select "CreateEvent"</li>
+                        <li>Choose as signature "[Create a matching event]"</li>
+                        <li>Rename the new event to "OnAttributeThresholdReached_ServerEvent"</li>
+
+                        <img src="images/SetupThresolds/BindThresholds.png" alt="Bind Thresholds">
+
+                    </ul>
+
+                    <h3>The Thresholds are ready! From this dispatcher event you can filter the triggering Threshold by
+                        AttributeTag or by Handle (if you stored them and their meaning in a map/array).</h3>
+
+                </section>
+
+                <!-- SEZIONE: Modifiers -->
+                <section id="modifiers" class="tutorial-section">
+                    <h1>Modifiers</h1>
+                    <h2>What is a Modifier?</h2>
+
+                    <p>A Modifier is a structure that interact directly with an attribute.</p>
+
+                    <p>
+                        Imagine having 500 movement speed...
+                        <br>
+                        Then an enemy slows you down by 300 movement speed points.
+                        <br>
+                        Now, your movement speed is 200 (500 - 300).
+                        <br>
+                        While you have this debuff you start walking on the snow, that slows you down by 400 movement
+                        speed points.
+                        <br>
+                        Now, your movement speed is 0 (200 - 400 auto clamped to 0).
+                        <br>
+                        Till now is all correct, but when the enemy debuff ends it add to you back 300 movement speed
+                        points.
+                        <br>
+                        Now, your movement speed is 300 (0 + 300).
+                        <br>
+                        Then you exit the snow area, it gives you back 400 movement speed points.
+                        <br>
+                        Now, your movement speed is 700 (300 + 400). This is an error, you end up with more movement
+                        speed than you started with and save/give back only the real value subtracted is not a solution.
+                        <br>
+                        <br>
+                        A modifier solves this problem and open the door to many control features.
+                        <br>
+                        In the example before, the situation with modifiers is this:
+                        <br>
+                        Movement Speed Base Value = 500; Max value = (BaseValue + AdditiveMod) * multiplicativeMod
+                        <br>
+                        Enemy debuff: AdditiveMod = -300; multiplicativeMod = 1
+                        <br>
+                        New MaxValue = (500 + (-300)) * 1 = 200
+                        <br>
+                        Snow debuff: AdditiveMod = -400; multiplicativeMod = 1
+                        <br>
+                        New MaxValue = (500 + (-700)) * 1 = -200 = 0 clamped
+                        <br>
+                        When the enemy debuff ends: New MaxValue = (500 + (-400)) * 1 = 100
+                        <br>
+                        When the snow debuff ends: New MaxValue = (500 + 0) * 1 = 500
+                    </p>
+
+                    <h2>Create a Modifier without the Status Forge</h2>
+
+                    <div class="info-box danger">
+                        <div class="info-title">🚫 Not Recommended</div>
+                        <p>You can, but the most cool feature of Stats_X is the status forge, it makes all your logic
+                            connected to one single framework where you can use interceptors on!</p>
+                    </div>
+
+                    <div class="info-box warning">
+                        <div class="info-title">⚠️ Warning</div>
+                        <p>Handle modifiers only on the server side, they are replicated internally.</p>
+                    </div>
+
+                    <p>To create a modifier without the status forge, you can simply use the node AddModifier you find
+                        in a StatsComponent as the following example:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter Name</th>
+                                <th>Parameter Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>AttributeTag (Only the Max Value need modifiers)</td>
+                                <td>Health</td>
+                            </tr>
+                            <tr>
+                                <td>SourceTag (This param is used to identify the source of the modifier, it can be
+                                    anything you want, useful for things like "remove all Fire Debuffs")</td>
+                                <td>Debuff.Arcane</td>
+                            </tr>
+                            <tr>
+                                <td>OwnerID (This is the ID of who created it. Is handled automatically in the
+                                    Status Forge)</td>
+                                <td>0</td>
+                            </tr>
+                            <tr>
+                                <td>AdditiveValue</td>
+                                <td>-400</td>
+                            </tr>
+                            <tr>
+                                <td>MultiplicativeValue (You can use both additive and multiplicative in the same
+                                    Modifier. 0,7 means -30%. 1,3 means +30%)</td>
+                                <td>1</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <img src="images/Modifiers/Modifiers.png" alt="Add Modifier">
+
+                    <p>To Remove a modifier in blueprints you can use the following nodes, while other nodes you see are
+                        utility for specific logic you may want in your project:</p>
+
+                    <img class="full" src="images/Modifiers/AllOtherModifierNodes.png" alt="All Other Modifier Nodes">
+
+                </section>
+
+                <!-- SEZIONE: Status Forge -->
+                <section id="status-forge" class="tutorial-section">
+                    <h1>Status Forge</h1>
+                    <h2>What is the Status Forge?</h2>
+
+                    <h3>
+                        The Status Forge let you create complex Data Assets in a Blueprint-like way
+                        <br>
+                        Every node is a CPU instruction handled in a bytecode-like style.
+                    </h3>
+
+                    <h2>What is a Status?</h2>
+
+                    <h3>
+                        A Status is defined into a data asset and is an array of Instructions
+                        <br>
+                        A status is "Something that happens", it could be:
+                        <ol>
+                            <li>A Spell or Skill — active or passive</li>
+                            <li>An action in the world — open a door, server transfer, spawn an enemy, entering the boss
+                                area</li>
+                        </ol>
+                        If you know GAS, a status, is a GameplayAbility/GameplayEffect
+                    </h3>
+
+                    <h2>How to create a Status Forge asset</h2>
+
+                    <p>To create a Status Forge asset, right click in the content browser, search for the category
+                        "XForge" then "StatsX" and select "StatusForge". Convention name is "SF_YourStatusName"</p>
+
+                    <div class="video-wrapper full">
+                        <video controls>
+                            <source src="videos/CreateStatusForgeAsset.mp4" type="video/mp4">
+                        </video>
+                    </div>
+
+                    <h2>First look at the Status Forge interface</h2>
+
+                    <img class="full" src="images/StatusForge/FirstLook.png"
+                        alt="First Look at the Status Forge interface">
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>The Graph</h3>
+                                <p>Here you can create your status logic with nodes. The first node is always
+                                    "StartForge".</p>
+                                <img class="full" src="images/StatusForge/Graphview.png" alt="Graph">
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Status Core Data</h3>
+                                <p>
+                                    This is where you assign a GameplayTag to the status. When you want to cast this
+                                    status you will use this GameplayTag.
+                                    <br>
+                                    DA Status Definition is the compiled data asset, the output generated by this Status
+                                    Forge asset. You don't need to touch it, you will only if you make some error and
+                                    need delete the data asset.
+                                </p>
+                                <img class="full" src="images/StatusForge/CoreData.png" alt="Status Core Data">
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Generation Buttons</h3>
+                                <p>
+                                    Compile will generate the data asset with the instructions you put in the graph.
+                                    Automatically will assign this new data asset to the parameter "DA Status
+                                    Definition".
+                                    <br>
+                                    <br>
+                                    You could delete this Status Forge asset after the compilation, because it is just
+                                    an
+                                    Editor-Only asset that generates the runtime data asset, but you don't want to do
+                                    this because to update the data asset you will return here, do your modifications to
+                                    the graph and click "Compile" again.
+                                    <br>
+                                    <br>
+                                    The data asset generated is automatically inserted in the "DA_ImmutableGameStatuses"
+                                    we created in the Installation section of this tutorial. With the key "StatusTag"
+                                    and the value "DA_StatusDefinition" as soft reference. (You can have 10000 statuses
+                                    and data assets in your game they will not impact the RAM)
+                                </p>
+                                <img class="full" src="images/StatusForge/FinalizeTheGraph.png"
+                                    alt="Finalize The Graph">
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Node Details Panel</h3>
+                                <p>
+                                    When you select a node in the graph, the details panel will show you the node
+                                    parameters.
+                                    <br>
+                                    Inside the node indeed are shown some concise information about the node and
+                                    parameters you defined for it.
+                                </p>
+                                <img class="full" src="images/StatusForge/NodeDetails.png" alt="Node Details Panel">
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Nodes</h2>
+                    <p>Every update will introduce new nodes.
+                        <br>
+                        Next update will introduce the node "Make Function", "Call Function", "Play
+                        Montage", "Play VFX", "Play Sound" and more, that at the moment are handled thanks to Custom
+                        Action, Custom Behavior and Custom Checks nodes.
+                        <br>
+                        <br>
+                        Every node is documented, but come in the Discord to ask whatever.
+                    </p>
+
+                    <img class="full" src="images/StatusForge/DocumentedNodes.png" alt="Documented Nodes">
+
+                    <h2>Math Nodes</h2>
+
+                    <img class="full" src="images/StatusForge/MathOperations.png" alt="Math Operations">
+
+                    <p>Math nodes are subdivided in 3 types:</p>
+
+                    <ul>
+                        <li>Push Values, that push values into an array called "Calculation Stack"</li>
+                        <li>Operators, that perform operations on the values in the "Calculation Stack"</li>
+                        <li>A mix, like the Clamp node or the Power node, that do both the things</li>
+                    </ul>
+
+                    <p>
+                        "Push Literal Float 5" -> "Push Literal Float 10" -> "+"
+                        <br>
+                        Is translated as "5 + 10" so the purple output pin of that + is equal to 15.
+                        <br>
+                        <br>
+                        "Push Literal Float 0.1" -> "Push Attribute Value Target Health.Max" -> "*"
+                        <br>
+                        Is translated as "0.1 * Target.Health.Max" so if the max health of the target is 100 the purple
+                        output pin of that * is equal to 10.
+                        <br>
+                        <br>
+                        <br>
+                        An operator (+-*/) will pop the last value in the Calculation Stack, performs his operation with
+                        the current value, repeat the process till the stack is empty. Then it will push the result into
+                        the Calculation Stack.
+                        <br>
+                        A Last-In-First-Out (LIFO) like system.
+                    </p>
+
+                </section>
+
+                <!-- SEZIONE: Status Lifecycle -->
+                <section id="status-lifecycle" class="tutorial-section">
+                    <h1>Status Lifecycle</h1>
+
+                    <h2>Casting Status</h2>
+                    <h3>To cast a Status you need to:</h3>
+                    <ol>
+                        <li>Create a StatusForge asset</li>
+                        <li>Give it a GameplayTag identifier</li>
+                        <li>Compile it</li>
+                        <li>With the Stats Component of your actor call the function "CastStatus" (From the server if
+                            your project is multiplayer)</li>
+                        <li>
+                            Set the CastStatus node parameter
+                            <ul>
+                                <li>StatusTag: The GameplayTag identifier of the StatusForge asset</li>
+                                <li>CasterActor: The actor that is casting the status</li>
+                                <li>TargetActor: The actor that is receiving the status (can be equal to the Caster, it
+                                    needs a Stats Component for 99% of the non-custom nodes)
+                                </li>
+                                <li>Payload: The payload to override values of the status (if any)</li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h2>Life of a Status</h2>
+                    <p>
+                        A status can be One-Shot or Active.
+                        <br>
+                        <br>
+                        A One-Shot status is similiar to a function, but not completly since can be paused.
+                        <br>
+                        A One-shot status is just casted and resolved, it could be a bullet projectile, a trigger,
+                        anything that doesnt have an history and does not trigger in a second moment.
+                        <br>
+                        <br>
+                        An Active status is casted and added to the Active Status Pool of the target StatsComponent. It
+                        will stay here until it expires or until it is manually removed.
+                        <br>
+                        <br>
+                        All statuses start as One-Shot, when the execution meets the node LoopBehavior or the node
+                        UntilDeprecationBehavior the status will be added to the Active Status Pool of the target and
+                        become active. Caster maintains a reference to the status casted (only an handle and the
+                        target).
+                        <br>
+                        <br>
+                        The Caster CastedActiveStatuses container and functions are completly Synchronized with the
+                        Target ReceivedActiveStatuses container and functions.
+                        <br>
+                        <br>
+                        Statuses are removed automatically when they expire.
+                        <br>
+                        When a status expires or is removed manually it will remove itself from the Active Status Pool
+                        of the target and from
+                        the Caster CastedActiveStatuses container.
+                        <br>
+                        It will remove automatically all the interceptors that status has registered.
+
+
+                    <h2>Status Dispatchers</h2>
+                    <p>
+                        There are various dispatchers to help both the server and the client to know all the info about
+                        one status. (All dispatchers are Synchronized between server and client)
+                    </p>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>On Received Status Tag Changed</h3>
+                                <p>
+                                    Called when a status is added to the ActiveStatusPool or when the last instance of
+                                    the status is removed from the ActiveStatusPool.
+                                    <br>
+                                    <br>
+                                    Example:
+                                    <br>
+                                    Actor A receives Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A expires Burning. Dispatcher triggers with bAdded=false.
+                                    <br>
+                                    <br>
+                                    Actor A receives another Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A receives another Burning (Burnings count 2). Dispatcher triggers with
+                                    bAdded=true.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 1). Dispatcher DOES NOT trigger.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 0). Dispatcher triggers with bAdded=false.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>On Casted Status Tag Changed</h3>
+                                <p>
+                                    Called when a status is added to the CastedActiveStatuses or when the last instance
+                                    of
+                                    the status is removed from the CastedActiveStatuses.
+                                    <br>
+                                    <br>
+                                    Example:
+                                    <br>
+                                    Actor A casts Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A expires Burning. Dispatcher triggers with bAdded=false.
+                                    <br>
+                                    <br>
+                                    Actor A casts another Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A casts another Burning (Burnings count 2). Dispatcher triggers with
+                                    bAdded=true.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 1). Dispatcher DOES NOT trigger.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 0). Dispatcher triggers with bAdded=false.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>On Status Instance Changed</h3>
+                                <p>
+                                    Client UI Utility Dispatcher.
+                                    <br>
+                                    Called when a status instance is added or removed to the ActiveStatusPool. The
+                                    handle parameter is what client need to retrieve all the status infos.
+                                    <br>
+                                    <br>
+                                    Example:
+                                    <br>
+                                    Actor A casts Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A expires Burning. Dispatcher triggers with bAdded=false.
+                                    <br>
+                                    <br>
+                                    Actor A casts another Burning. Dispatcher triggers with bAdded=true.
+                                    <br>
+                                    Actor A casts another Burning (Burnings count 2). Dispatcher triggers with
+                                    bAdded=true.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 1). Dispatcher triggers with bAdded=false.
+                                    <br>
+                                    Actor A expires Burning (Burnings count 0). Dispatcher triggers with bAdded=false.
+                                </p>
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>On Status Instance Updated</h3>
+                                <p>
+                                    Client UI Utility Dispatcher.
+                                    <br>
+                                    Called when a status instance is updated, for example when you modify a status
+                                    Accumulated time or max duration then this dispatcher triggers to warn clients about
+                                    this modify.
+                                    <br>
+                                    <br>
+                                    This because Stats_X is event driven. Only changes are replicated, clients want to
+                                    calculate the time for themselves and not to receive every frame a network call from
+                                    the server with the updated time.
+                                    <br>
+                                    <br>
+                                    StatsComponent has some utility functions to calculate the time with the info
+                                    retrieved from the dispatcher:
+                                </p>
+
+                                <img src="images/Payload/UIU.png" alt="UI Utility Dispatcher">
+                                <img class="large" src="images/Payload/UIU2.png" alt="UI Utility Dispatcher 2">
+
+                                <div class="info-box info">
+                                    <div class="info-title">ℹ️ ReplicatedStatusInstanceItem is always available for the
+                                        client, if you save the handle retrieved from the dispatcher, you can access it
+                                        when you want.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SEZIONE: Payload -->
+                <section id="payload" class="tutorial-section">
+                    <h1>Payload</h1>
+                    <h2>What is a Payload?</h2>
+                    <p>
+                        A payload is a way to override statuses values.
+                        <br>
+                        Since a status is a data-asset and during his execution instructions are not copyed but are
+                        read directly, to parameterize the status we need to use a payload.
+                        <br>
+                        <br>
+                        At the moment a payload can contain an integer, a float and a GameplayTag.
+                        <br>
+                        <br>
+                        It is possible to use payloads to:
+                    <ul>
+                        <li>Override values of the status — e.g. indeed create a status to add 1 Attribute Point when
+                            the player level up, another one that add 2 Attribute Points when a quest is completed,
+                            another one that removes 1 Attribute Point when a player die — it is possible have one
+                            status only where the Attribute Point delta is inside the payload.</li>
+                        <li>Remap GameplayTags of the status — e.g. a status can have inside itself a node
+                            ModifyAttribute that by default modify the Health Attribute. With a payload it is possible
+                            to remap Attribute.Health with another one like as Attribute.Stamina.</li>
+                    </ul>
+                    </p>
+
+                    <h3>Add parameters to a StatusForge asset</h3>
+                    <p>
+                        To push a numeric parameter on the Calculation Stack you can use PushPayloadValue node
+                    </p>
+
+                    <img class="full" src="images/Payload/PushFloat.png" alt="PushFloat">
+
+                    <p>
+                        To Remap a gameplay Tag you don't need to add anything to the graph.
+                        <br>
+                        If your node must be executed no matter if there is a payload or not, then, you want to use
+                        valid tags for instance a valid attribute that has been initialized. So if it find an override
+                        for that tag it will use that, if not it will use his already present valid tag.
+                        <br>
+                        Indeed, if your node must be executed only if a payload is present, then, you want to use a
+                        placeholder, not valid, GameplayTag. Example Attribute.Placeholder.1.
+                        <br>
+                        This way when the node is executed it will see that you are trying to do things on unexisting
+                        attribute and will skip the action going to the next node directly.
+                        <br>
+                        <br>
+                        It is rare a status with more than 5 different remapped tags, in most cases you can create from
+                        Attribute.Placeholder.1 to Attribute.Placeholder.5 and you are good to go, since these tags are
+                        reusable everywhere.
+                    </p>
+
+                    <img class="full" src="images/Payload/Remap.png" alt="Remap">
+
+                    <h3>How to create a payload?</h3>
+
+                    <p>
+                        To create a payload, before Cast the status, right click on the graph and select "Make Status
+                        Payload".
+                    </p>
+
+                    <img class="medium" src="images/Payload/Make.png" alt="MakePayload">
+
+                    <p>
+                        Now we can call the payload shortcut functions with InjectFloat, InjectInt32, InjectRemap.
+                    </p>
+
+                    <img class="medium" src="images/Payload/Inject.png" alt="InjectPayload">
+
+                    <p>
+                        Timing parameter can be StatusEnds or InstructionEnds.
+                        <br>
+                        StatusEnds: That specific injection will be used until the end of the status.
+                        <br>
+                        InstructionEnds: That specific injection will be eliminated after use (last for all the duration
+                        of the instruction who called it).
+                        <br>
+                        <br>
+                        A payload is dynamic and can be modified at runtime by interceptors.
+                        <br>
+                        ApplyChildStatus node can inherit the payload from the parent status. So you can have one single
+                        burning status and use payloads from the parent to set the burning power.
+                    </p>
+
+
+                </section>
+
+                <!-- SEZIONE: Fireball -->
+                <section id="fireball" class="tutorial-section">
+                    <h1>Fireball</h1>
+                    <h2>How will Fireball work?</h2>
+                    <ol>
+                        <li>The player will press an input button to cast the fireball.</li>
+                        <li>The system checks and pays the Fireball mana cost.</li>
+                        <li>A montage with notify will be played {note: Montage Node is not yet implemented in this
+                            version, we will
+                            use a custom action.}</li>
+                        <li>We spawn the projectile with the Fireball payload (Caster and status to apply on hit)</li>
+                        <li>The Fireball will damage the health of the target instantly.</li>
+                        <li>The Fireball will apply the Status Burning to the target.</li>
+                    </ol>
+
+                    <h2>Implementation</h2>
+
+                    <div class="steps">
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the Status Forge assets</h3>
+
+                                <p>Lets first create all the Status Forge assets we will use for the fireball.</p>
+                                <ul>
+                                    <li>SF_FireballCast</li>
+                                    <li>SF_FireballHit</li>
+                                    <li>SF_Burning</li>
+                                    <li>SF_FireballCD</li>
+                                </ul>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/SFCreation.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create Base Events</h3>
+
+                                <p>Inside the character create a multicast event for all Montages and a server event for
+                                    all Casts </p>
+
+                                <img src="images/FireballEX/PlayMontageEvent.png" alt="Play Montage Event">
+                                <img src="images/FireballEX/Server_CastStatus.png" alt="Server Cast Status">
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement SF_FireballCast</h3>
+
+                                <p>The SF_FireballCast will be used to cast the fireball. It contains only the
+                                    casting logic. Will be the projectile to apply effects</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/SFCast.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="info-box info">
+                                    <div class="info-title">ℹ️ Check if status exists true pin has nothing then the
+                                        status ends. Indeed, Check cost false pin has an end node because it is inside a
+                                        flow node, a flow node acts as a Sequence node in blueprints, without that End
+                                        node, Check Costs false branch would have gone to the On Completed pin of the
+                                        Cast Node</div>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement the Custom Action to play the montage</h3>
+
+                                <p>While is not available a montage node, we will use a custom action to play the
+                                    montage.</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/FireballMontageAction.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="info-box info">
+                                    <div class="info-title">
+                                        ℹ️ Notice the 2 overridable functions inside the custom action. Perform action
+                                        works only when the action is not inside a Loop Behavior node or an
+                                        Until-Deprecation Behavior node, and needs EndAction to be called to end the
+                                        action and continue the status execution. Indeed, ChainableAction works only in
+                                        a Loop Behavior node or an Until-Deprecation Behavior node.
+                                    </div>
+                                </div>
+
+                                <div class="info-box info">
+                                    <div class="info-title">
+                                        ℹ️ You prefer to use interfaces indeed Cast To nodes
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Assign the custom action created to the Custom Action node</h3>
+
+                                <img class="full" src="images/FireballEX/AssignCA.png" alt="Assign Custom Action">
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Compile SF_FireballCast</h3>
+
+                                <p>Its the moment to compile the status.</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/FireballExCompile.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement and compile SF_FireballHit, SF_FireballCD, SF_Burning</h3>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/CD.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/Hit.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/Burn.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="info-box info">
+                                    <div class="info-title">
+                                        ℹ️ We will come back to add mitigation & immunities system to the status in
+                                        another tutorial.
+                                    </div>
+                                </div>
+
+                                <div class="info-box danger">
+                                    <div class="info-title">🚫 Give a look to Setup GameplayTag section to choose the
+                                        tags!</div>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement the player input</h3>
+
+                                <p>Now we can implement the player input to cast the fireball.</p>
+
+                                <img class="full" src="images/FireballEX/PlayerInput.png" alt="Player Input">
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement the projectile event</h3>
+
+                                <p>We will use a simple event to handle a simple projectile</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/FireballEx/ProjectileEvent.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement the Fireball Cast Notify</h3>
+
+                                <p>Create a new notify to your montage asset.</p>
+
+                                <img class="full" src="images/FireballEX/AnimNotify.png" alt="Anim Notify">
+
+                                <p>Now we can implement the notify event in the animation blueprint.</p>
+
+                                <img class="full" src="images/FireballEX/NotifyEvent.png" alt="Notify Event">
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Add to projectile Hit/Overlap event</h3>
+
+                                <p>When the projectile hits or overlaps you want to cast the status from the Caster to
+                                    the OtherActor Hit/Overlapped.
+                                    <br>
+                                    Caster, StatusToApply, TargetLocation are ExposeOnSpawn variables.
+                                </p>
+
+                                <img class="full" src="images/FireballEX/Projectile.png" alt="Anim Notify">
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>
+                        A simple Fireball is ready and replicated!
+                        <br>
+                        The one in the Demo project is castable during Base Attacks to continue the combo.
+                    </h3>
+                </section>
+
+                <!-- SEZIONE: Mana Shield -->
+                <section id="mana-shield" class="tutorial-section">
+                    <h1>Mana Shield</h1>
+
+                    <h2>How will Mana Shield work?</h2>
+
+                    <ul>
+                        <li>Player press the input key</li>
+                        <li>The system checks and pays the mana cost</li>
+                        <li>Mana Shield applies an Interceptor to the caster</li>
+                        <li>While Mana Shield is active, when the caster takes damage to health, it will be redirected
+                            to the mana</li>
+                    </ul>
+
+                    <h2>Implementation</h2>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the two statuses we will use</h3>
+
+                                <p>Lets create SF_ManaShield and SF_DeltaToMana</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/ManaShield/ManaShield.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the Interceptor</h3>
+
+                                <p>
+                                    First create the blueprint interceptor and apply it to the Register Interceptor
+                                    node.
+                                    <br>
+                                    As Event To Bind On we want Pre.OnHealthDamaged
+                                </p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/ManaShield/AssignInt.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <p>Now we want to open the Interceptor and implement the Condition, we want to check if
+                                    the Delta is less than 0 so if it is a Damage.</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/ManaShield/IntCondition.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <p>
+                                    Then we can implement the Action. Override the Action function with this.
+                                </p>
+
+                                <div class="info-box tip">
+                                    <div class="info-title">💡 Right Click -> open in new window to see better</div>
+                                </div>
+
+                                <img class="full" src="images/ManaShield/t0.png" alt="Int Action">
+                                <img class="full" src="images/ManaShield/t1.png" alt="Int Action">
+                                <img class="full" src="images/ManaShield/t2.png" alt="Int Action">
+
+                                <p>This is what is happening:</p>
+
+                                <img class="full" src="images/ManaShield/WhatHappens.png" alt="What Happens">
+
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Setup the player input</h3>
+
+                                <img class="full" src="images/ManaShield/InputSetup.png" alt="Input Setup">
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <h3>
+                        The Mana Shield is ready and replicated!
+                        <br>
+                        But will not work at the moment because we never
+                        triggers the GameplayEvent the interceptor is binded to.
+                    </h3>
+
+                    <h2>Modify the Fireball</h2>
+
+                    <div class="video-wrapper full">
+                        <video controls>
+                            <source src="videos/ManaShield/UpdateFireball.mp4" type="video/mp4">
+                        </video>
+                    </div>
+
+                    <div class="info-box info">
+                        <div class="info-title">
+                            ℹ️ Event.Pre(or Post).OnHealthDamaged.Target means "Trigger the event
+                            OnHealthDamaged on the target of this node.", so in this example we are telling the system
+                            to trigger on the target the event Pre.OnHealthDamaged, on the caster the event
+                            Pre.OnHealthDamages, globally both the events.
+                            <br>
+                            We are not using OnHealthDamages but its better to create it in the same moment since every
+                            time you add things on the fly you have to update the old work.
+                        </div>
+                    </div>
+
+                </section>
+
+                <!-- SEZIONE: Poison -->
+                <section id="poison" class="tutorial-section">
+                    <h1>Poison</h1>
+                    <h2>How will Poison work?</h2>
+                    <ul>
+                        <li>Poison will be applied by an actor called BP_PoisonGas</li>
+                        <li>When a player enters the PoisonGas area, it will receive the status Poison</li>
+                        <li>The status Poison increases, every 1 second, the Poison Stacks count by 1</li>
+                        <li>The status Poison deals 2 damages for every Poison Stack, every 0.5 seconds</li>
+                        <li>The status Poison last forever while the player is inside the PoisonGas area</li>
+                        <li>When the player leaves the PoisonGas area, the status Poison will last for 10 seconds</li>
+                        <li>When the player leaves the PoisonGas area, 1 stack of Poison is removed every second</li>
+                    </ul>
+
+                    <h2>Implementation</h2>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the BPC_EnvironmentStats blueprint</h3>
+                                <p>
+                                    From the BPC_StatsMaster blueprint, right click on it and create a child class
+                                    called BPC_EnvironmentStats.
+                                    <br>
+                                    We can let this new blueprint empty for now because we are not going to implement
+                                    any stats for the Environment.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the BP_PoisonGas blueprint</h3>
+                                <p>
+                                    Now create a new actor called BP_PoisonGas.
+                                    <br>
+                                    Add a spehere to trigger overlap events.
+                                    <br>
+                                    Set the actor to replicates = true.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create the 3 Poison statuses we will use</h3>
+
+                                <img class="full" src="images/Poison/Create Assets.png" alt="Statuses">
+
+                                <p>Implement these 3 assets</p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/Poison/PoisonImple.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+
+                                <div class="info-box danger">
+                                    <div class="info-title">🚫 Remember to add to your Poison Status the event
+                                        Pre.OnHealthDamaged.Target!</div>
+                                </div>
+
+                                <img class="full" src="images/Poison/remem.png" alt="Remember">
+                            </div>
+                        </div>
+
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Implement the BP_PoisonGas blueprint</h3>
+                                <p>With the help of an "Actor,Integer" map </p>
+                                <img class="full" src="images/Poison/a1.png" alt="Implement">
+                                <img class="full" src="images/Poison/a2.png" alt="Implement">
+                                <img class="full" src="images/Poison/a3.png" alt="Implement">
+                                <img class="full" src="images/Poison/a4.png" alt="Implement">
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Poison is ready and replicated!
+                        <br>
+                        Drag the actor into the scene and run through the PoisonGas area to test it.
+                    </h3>
+                </section>
+
+                <!-- SEZIONE: Level Up -->
+                <section id="level-up" class="tutorial-section">
+                    <h1>Level Up</h1>
+
+                    <h2>How will Level Up work?</h2>
+
+                    <ul>
+                        <li>We will use the attribute ExpReward Current as experience the character is gaining.</li>
+                        <li>ExpReward Max, indeed, will be the experience the character give to the killer when it dies.
+                        </li>
+                        <li>So we create a status SF_LevelUp and a status SF_AddExp.</li>
+                    </ul>
+
+                    <div class="info-box warning">
+                        <div class="info-title">⚠️ Set the attribute ExpReward to Overflows=true since current base and
+                            max are not dependent on each other</div>
+                    </div>
+
+                    <h2>Implementation</h2>
+
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create SF_LevelUp</h3>
+                                <p>
+                                    <img class="full" src="images/LevelUp/Levup.png" alt="LevelUp">
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Create SF_AddExp</h3>
+                                <p>
+                                    <img class="full" src="images/LevelUp/ae1.png" alt="LevelUp">
+                                    <img class="full" src="images/LevelUp/ae2.png" alt="LevelUp">
+                                    <img class="full" src="images/LevelUp/ae3.png" alt="LevelUp">
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Level Up in the BeginPlay</h3>
+                                <p>
+                                    In the character stats component, we created in the Setup Attributes section, we
+                                    need to modify the Server_InitializeAtributes event/function.
+                                    <br>
+                                    Cast the status LevelUp after all the attribute initializations, so it starts from
+                                    level 1.
+                                </p>
+
+                                <div class="video-wrapper full">
+                                    <video controls>
+                                        <source src="videos/LevelUp/l1.mp4" type="video/mp4">
+                                    </video>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <div class="step-number"></div>
+                            <div class="step-content">
+                                <h3>Setup the Death Threshold</h3>
+                                <p>
+                                    If you have not done it in the Threshold section, set up the threshold to trigger
+                                    the death, then copy the event.
+                                </p>
+
+                                <img class="full" src="images/LevelUp/th1.png" alt="Threshold">
+                            </div>
+
+                            <div class="info-box tip">
+                                <div class="info-title">💡 If you have a lot of thresholds or your spells apply
+                                    thresholds, when you create them save them in a map
+                                    "ThresholdHandle->FunctionToCall".
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Level Up is ready and replicated!</h3>
+                </section>
+
+
+            </div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+
+</html>
