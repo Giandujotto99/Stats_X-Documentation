@@ -1,0 +1,627 @@
+<section id="enumerations-reference" class="tutorial-section">
+    <h1>Enumerations Reference</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Stats_X declares <strong>27 enumerations</strong>, all as <code>enum class</code> with <code>uint8</code> underlying type. Twenty are exposed to Blueprints via <code>UENUM(BlueprintType)</code>, four use basic <code>UENUM()</code>, and three are plain C++ enums with no reflection.</p>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source File</th>
+                <th>Count</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Public/Data/StatsXTypes.h</code></td><td>20</td></tr>
+            <tr><td><code>Public/Data/StatsXCosmeticCueTypes.h</code></td><td>3</td></tr>
+            <tr><td><code>Public/VM/ForgeVMTypes.h</code></td><td>2</td></tr>
+            <tr><td><code>Private/Settings/StatsXPerformanceSettings.h</code></td><td>2</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#enum-attribute-system">Attribute System</a></li>
+        <li><a href="#enum-status-lifecycle">Status Lifecycle</a></li>
+        <li><a href="#enum-interceptor-system">Interceptor System</a></li>
+        <li><a href="#enum-custom-logic">Custom Logic</a></li>
+        <li><a href="#enum-comparison-query">Comparison &amp; Query</a></li>
+        <li><a href="#enum-forgevm">ForgeVM</a></li>
+        <li><a href="#enum-vfx-sfx">VFX / SFX</a></li>
+        <li><a href="#enum-cosmetic-cue-bus">Cosmetic Cue Bus</a></li>
+        <li><a href="#enum-performance-instrumentation">Performance Instrumentation</a></li>
+        <li><a href="#enum-summary">Summary</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="enum-attribute-system">1. Attribute System</h2>
+
+    <h3>EAttributeModifyOp</h3>
+    <p>How an attribute value should be modified. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Set</code></td><td>Set (=)</td><td>Replace the current value.</td></tr>
+            <tr><td><code>Transaction</code></td><td>&mdash;</td><td>Add delta to current (positive or negative).</td></tr>
+            <tr><td><code>Multiply</code></td><td>Multiply (*)</td><td>Multiply current value.</td></tr>
+            <tr><td><code>Divide</code></td><td>Divide (/)</td><td>Divide current value.</td></tr>
+            <tr><td><code>Min</code></td><td>Min (Smaller Value)</td><td>Set to the smaller of current and input.</td></tr>
+            <tr><td><code>Max</code></td><td>Max (Larger Value)</td><td>Set to the larger of current and input.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EThresholdComparison</h3>
+    <p>Comparison types for attribute threshold checks. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>LessOrEqual</code></td><td>Less or Equal</td><td>Value is at or below threshold.</td></tr>
+            <tr><td><code>GreaterOrEqual</code></td><td>Greater or Equal</td><td>Value is at or above threshold.</td></tr>
+            <tr><td><code>CrossingBelow</code></td><td>Crossing Below (was above, now below)</td><td>Value crossed downward through threshold.</td></tr>
+            <tr><td><code>CrossingAbove</code></td><td>Crossing Above (was below, now above)</td><td>Value crossed upward through threshold.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-status-lifecycle">2. Status Lifecycle</h2>
+
+    <h3>EStatusInstanceState</h3>
+    <p>Lifecycle state of a status instance. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Inactive</code></td><td>Not yet activated.</td></tr>
+            <tr><td><code>Pending</code></td><td>Queued for activation.</td></tr>
+            <tr><td><code>Active</code></td><td>Running normally.</td></tr>
+            <tr><td><code>Suspended</code></td><td>Paused (e.g. inside a Delay node).</td></tr>
+            <tr><td><code>Terminating</code></td><td>Cleanup in progress.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusTerminateReason</h3>
+    <p>Reason why a status ended. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Completed</code></td><td>Execution completed normally (reached <code>OP_End</code>).</td></tr>
+            <tr><td><code>Expired</code></td><td>Duration ran out.</td></tr>
+            <tr><td><code>Removed</code></td><td>Explicitly removed via gameplay tag or handle.</td></tr>
+            <tr><td><code>StacksZero</code></td><td>All stacks were consumed / removed.</td></tr>
+            <tr><td><code>OwnerDestroyed</code></td><td>Owning component / actor was destroyed.</td></tr>
+            <tr><td><code>Replaced</code></td><td>Overwritten by a new instance (if unique).</td></tr>
+            <tr><td><code>CleanedUp</code></td><td>System shutdown / level unload.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusStackingPolicy</h3>
+    <p>Defines how a status behaves when applied to a target that already has it. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Aggregate</code></td><td>Aggregate (Add Stack)</td><td>Add new stack. Duration NOT refreshed.</td></tr>
+            <tr><td><code>AggregateAndRefresh</code></td><td>Aggregate &amp; Refresh</td><td>Add new stack AND refresh duration to maximum.</td></tr>
+            <tr><td><code>RefreshOnly</code></td><td>Refresh Only</td><td>Do not add stacks, only refresh duration.</td></tr>
+            <tr><td><code>Override</code></td><td>Override (Replace)</td><td>Remove old instance and create a new one (full reset).</td></tr>
+            <tr><td><code>Reject</code></td><td>Reject (Ignore New)</td><td>Reject new application entirely if one already exists.</td></tr>
+            <tr><td><code>Independent</code></td><td>Independent (Always New)</td><td>Always create a new independent instance.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusSetAction</h3>
+    <p>Action type for status set events. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Added</code></td><td>Added</td><td>Status was added.</td></tr>
+            <tr><td><code>Removed</code></td><td>Removed</td><td>Status was removed.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusUpdateReason</h3>
+    <p>Reason for status update events. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StackChanged</code></td><td>Stack Changed</td><td>Stack count changed.</td></tr>
+            <tr><td><code>Refreshed</code></td><td>Refreshed</td><td>Duration was refreshed.</td></tr>
+            <tr><td><code>StackChangedAndRefreshed</code></td><td>Stack Changed + Refreshed</td><td>Both stack and duration changed.</td></tr>
+            <tr><td><code>RuntimeTuning</code></td><td>Runtime Tuning</td><td>Fields modified at runtime outside normal gameplay flow.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusUpdateField</h3>
+    <p>Bitmask describing which fields are present in a status update payload. <code>UENUM(BlueprintType, meta = (Bitflags, UseEnumValuesAsMaskValuesInEditor = "true"))</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Bit</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>None</code></td><td><code>0</code></td><td>No fields.</td></tr>
+            <tr><td><code>StackCount</code></td><td><code>1</code></td><td>Stack count changed.</td></tr>
+            <tr><td><code>StartTime</code></td><td><code>2</code></td><td>Start time changed.</td></tr>
+            <tr><td><code>MaxDuration</code></td><td><code>4</code></td><td>Maximum duration changed.</td></tr>
+            <tr><td><code>TickInterval</code></td><td><code>8</code></td><td>Tick interval changed.</td></tr>
+            <tr><td><code>MaxIterations</code></td><td><code>16</code></td><td>Maximum iterations changed.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-interceptor-system">3. Interceptor System</h2>
+
+    <h3>EInterceptorScope</h3>
+    <p>Which registry receives the interceptor. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Caster</code></td><td>Events where this actor is the caster.</td></tr>
+            <tr><td><code>Target</code></td><td>Events where this actor is the target.</td></tr>
+            <tr><td><code>Global</code></td><td>World-wide events (WorldSubsystem).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EInterceptorEventPhase</h3>
+    <p>When the interceptor fires relative to the instruction. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Pre</code></td><td>Called BEFORE the instruction executes.</td></tr>
+            <tr><td><code>Post</code></td><td>Called AFTER the instruction executes.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-custom-logic">4. Custom Logic</h2>
+
+    <h3>ENodeLogicTarget</h3>
+    <p>Scope for node logic execution. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Caster</code></td><td>Execute the logic referencing the status caster.</td></tr>
+            <tr><td><code>Target</code></td><td>Execute the logic referencing the status target.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-comparison-query">5. Comparison &amp; Query</h2>
+
+    <h3>EComparationMethod</h3>
+    <p>Generic value comparison operators. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>LessThan</code></td><td>&lt;</td></tr>
+            <tr><td><code>GreaterThan</code></td><td>&gt;</td></tr>
+            <tr><td><code>LessOrEqual</code></td><td>&lt;=</td></tr>
+            <tr><td><code>GreaterOrEqual</code></td><td>&gt;=</td></tr>
+            <tr><td><code>Equal</code></td><td>==</td></tr>
+            <tr><td><code>Different</code></td><td>!=</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EQueryMethod</h3>
+    <p>Gameplay tag query modes. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>HasTag</code></td><td>Has specific tag (hierarchical match).</td></tr>
+            <tr><td><code>HasAny</code></td><td>Has any of the given tags (hierarchical).</td></tr>
+            <tr><td><code>HasAll</code></td><td>Has all of the given tags (hierarchical).</td></tr>
+            <tr><td><code>HasNone</code></td><td>Has none of the given tags (hierarchical).</td></tr>
+            <tr><td><code>HasTagExact</code></td><td>Has specific tag (exact match only).</td></tr>
+            <tr><td><code>HasAnyExact</code></td><td>Has any of the given tags (exact).</td></tr>
+            <tr><td><code>HasAllExact</code></td><td>Has all of the given tags (exact).</td></tr>
+            <tr><td><code>HasNoneExact</code></td><td>Has none of the given tags (exact).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EObjectComparationMethod</h3>
+    <p>Object comparison operators. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Equal</code></td><td>==</td><td>Same object instance.</td></tr>
+            <tr><td><code>Different</code></td><td>!=</td><td>Different object instance.</td></tr>
+            <tr><td><code>ClassIsEqual</code></td><td>&gt;=&lt;</td><td>Same UClass.</td></tr>
+            <tr><td><code>ClassIsDifferent</code></td><td>&lt;=&gt;</td><td>Different UClass.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-forgevm">6. ForgeVM</h2>
+
+    <h3>EForgeExecutionResult</h3>
+    <p>Result of a single instruction or VM step execution. <code>UENUM()</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Continue</code></td><td>Operation successful, proceed to next instruction.</td></tr>
+            <tr><td><code>Completed</code></td><td>Reached <code>OP_End</code>, execution finished successfully.</td></tr>
+            <tr><td><code>Suspended</code></td><td>Async node (e.g. Delay) requested suspension.</td></tr>
+            <tr><td><code>Aborted</code></td><td>Manual abort triggered.</td></tr>
+            <tr><td><code>Error</code></td><td>Runtime error occurred (see <code>Context.LastError</code>).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EForgeDataSource</h3>
+    <p>Where the VM reads data from during execution. <code>UENUM()</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Literal</code></td><td>Value stored in the definition pool.</td></tr>
+            <tr><td><code>Context</code></td><td>Temporary value in execution stack (cleared per tick).</td></tr>
+            <tr><td><code>Instance</code></td><td>Persistent value in instance blob (SaveGame compatible).</td></tr>
+            <tr><td><code>CallFrame</code></td><td>Captured argument value from current function call frame.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EForgeTickPhase</h3>
+    <p>When the VM should tick relative to the game frame. <code>UENUM()</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PrePhysics</code></td><td>Before physics simulation.</td></tr>
+            <tr><td><code>DuringPhysics</code></td><td>During physics simulation.</td></tr>
+            <tr><td><code>PostPhysics</code></td><td>After physics simulation.</td></tr>
+            <tr><td><code>FrameEnd</code></td><td>End of frame.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-vfx-sfx">7. VFX / SFX</h2>
+
+    <h3>EStatsXVFXTransformSpace</h3>
+    <p>Transform interpretation mode for SpawnVFX. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>World</code></td><td>World</td><td>Input transform is already in world space.</td></tr>
+            <tr><td><code>TargetRelative</code></td><td>Target Relative</td><td>Relative to the target actor transform.</td></tr>
+            <tr><td><code>CasterRelative</code></td><td>Caster Relative</td><td>Relative to the caster actor transform.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXAttachRule</h3>
+    <p>Attachment rule for SpawnVFXAttachedtoActor. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>KeepRelativeOffset</code></td><td>Keep Relative Offset</td><td>Input transform as local offset relative to parent/socket.</td></tr>
+            <tr><td><code>KeepWorldTransform</code></td><td>Keep World Transform</td><td>Input transform as already-resolved world transform.</td></tr>
+            <tr><td><code>SnapToTargetIncludingScale</code></td><td>Snap To Target Including Scale</td><td>Snap all to parent/socket. Input ignored.</td></tr>
+            <tr><td><code>SnapToTargetNotIncludingScale</code></td><td>Snap To Target Not Including Scale</td><td>Snap location/rotation. Preserve input scale.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXNetDelivery</h3>
+    <p>Network delivery policy for cosmetic cues. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Auto</td><td>Runtime default (currently burst unreliable).</td></tr>
+            <tr><td><code>BurstUnreliable</code></td><td>Burst Unreliable</td><td>Fire-and-forget multicast.</td></tr>
+            <tr><td><code>StateReliable</code></td><td>State Reliable</td><td>Stateful reliable stream delivery.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXSFXPlaybackPolicy</h3>
+    <p>Playback policy for SpawnSFX. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Auto</td><td>Runtime default (currently fire-and-forget).</td></tr>
+            <tr><td><code>FireAndForget</code></td><td>Fire And Forget</td><td>One-shot playback, no handle tracking.</td></tr>
+            <tr><td><code>Persistent</code></td><td>Persistent</td><td>Persistent audio component with handle tracking.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXPoolPolicy</h3>
+    <p>Niagara pooling policy for SpawnVFX. <code>UENUM(BlueprintType)</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Auto</td><td>Maps to Niagara AutoRelease.</td></tr>
+            <tr><td><code>None</code></td><td>None</td><td>Disable pooling for this spawn.</td></tr>
+            <tr><td><code>AutoRelease</code></td><td>Auto Release</td><td>Pool with auto-release lifecycle.</td></tr>
+            <tr><td><code>ManualRelease</code></td><td>Manual Release</td><td>Pool with manual release (<code>bAutoDestroy = false</code>).</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-cosmetic-cue-bus">8. Cosmetic Cue Bus</h2>
+
+    <h3>EStatsXCosmeticCueType</h3>
+    <p>High-level cue semantic. Plain <code>enum class</code> (no UENUM).</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Numeric</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>None</code></td><td>0</td><td>Invalid / unset.</td></tr>
+            <tr><td><code>PlayMontage</code></td><td>1</td><td>Play animation montage.</td></tr>
+            <tr><td><code>StopMontage</code></td><td>2</td><td>Stop animation montage.</td></tr>
+            <tr><td><code>SpawnVFX</code></td><td>3</td><td>Spawn Niagara system at location.</td></tr>
+            <tr><td><code>StopVFX</code></td><td>4</td><td>Stop Niagara system.</td></tr>
+            <tr><td><code>UpdateVFX</code></td><td>5</td><td>Update Niagara system transform.</td></tr>
+            <tr><td><code>Custom</code></td><td>6</td><td>User-defined cue (no-op in <code>ExecuteBuiltInCue</code>).</td></tr>
+            <tr><td><code>SpawnSFX</code></td><td>7</td><td>Spawn audio source.</td></tr>
+            <tr><td><code>StopSFX</code></td><td>8</td><td>Stop audio source.</td></tr>
+            <tr><td><code>SpawnVFXAttached</code></td><td>9</td><td>Spawn Niagara system attached to actor.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXCosmeticCueChannel</h3>
+    <p>Transport intent for the network layer. Plain <code>enum class</code> (no UENUM).</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StateReliable</code></td><td>Stateful: latest value wins per stream key.</td></tr>
+            <tr><td><code>BurstUnreliable</code></td><td>Fire-and-forget burst.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXCosmeticCueRoutePolicy</h3>
+    <p>Route selection policy for the cue bus. Plain <code>enum class</code> (no UENUM).</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Cascade: ExplicitRouteActor &rarr; TargetActor &rarr; CasterActor &rarr; Global.</td></tr>
+            <tr><td><code>TargetActor</code></td><td>Route using target actor.</td></tr>
+            <tr><td><code>CasterActor</code></td><td>Route using caster actor.</td></tr>
+            <tr><td><code>ExplicitActor</code></td><td>Route using explicit route actor.</td></tr>
+            <tr><td><code>Global</code></td><td>Global route (no actor affinity).</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-performance-instrumentation">9. Performance Instrumentation</h2>
+
+    <h3>EStatsXPerfArea</h3>
+    <p>Performance monitoring areas. <code>UENUM()</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>WorldSubsystem</code></td><td>World Subsystem</td><td>Subsystem tick, cue bus, handle registries.</td></tr>
+            <tr><td><code>VM</code></td><td>Forge VM</td><td>VM dispatch and instruction execution.</td></tr>
+            <tr><td><code>StatsComponent</code></td><td>Stats Component</td><td>Component-level attribute/modifier operations.</td></tr>
+            <tr><td><code>Replication</code></td><td>Replication</td><td>Fast Array serialization and callbacks.</td></tr>
+            <tr><td><code>NetCue</code></td><td>Net Cue Relay</td><td>Network cue relay transport.</td></tr>
+            <tr><td><code>Nodes</code></td><td>Runtime Nodes</td><td>Built-in opcode handler execution.</td></tr>
+            <tr><td><code>AssetLoads</code></td><td>Asset Loads</td><td>Async asset loading.</td></tr>
+            <tr><td><code>CustomLogic</code></td><td>Custom Logic</td><td>Blueprint-defined check/action execution.</td></tr>
+            <tr><td><code>InterceptorHooks</code></td><td>Interceptors</td><td>Interceptor dispatch and callbacks.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXPerfBackend</h3>
+    <p>Available profiling backends. <code>UENUM()</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Disabled</code></td><td>Disabled</td><td>No instrumentation.</td></tr>
+            <tr><td><code>Trace</code></td><td>Unreal Insights Trace</td><td>Emit to Unreal Insights.</td></tr>
+            <tr><td><code>Csv</code></td><td>CSV Profiler</td><td>Emit to CSV profiler.</td></tr>
+            <tr><td><code>CycleStats</code></td><td>Cycle Stats</td><td>Emit to <code>DECLARE_CYCLE_STAT</code> counters.</td></tr>
+            <tr><td><code>TraceAndCsv</code></td><td>Trace + CSV</td><td>Both Insights and CSV.</td></tr>
+            <tr><td><code>TraceAndCycleStats</code></td><td>Trace + Cycle Stats</td><td>Both Insights and cycle stats.</td></tr>
+            <tr><td><code>CsvAndCycleStats</code></td><td>CSV + Cycle Stats</td><td>Both CSV and cycle stats.</td></tr>
+            <tr><td><code>All</code></td><td>All Backends</td><td>All three backends active.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enum-summary">10. Summary</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Enums</th>
+                <th>Blueprint Exposed</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Attribute System</td><td>2</td><td>Yes</td></tr>
+            <tr><td>Status Lifecycle</td><td>6</td><td>Yes</td></tr>
+            <tr><td>Interceptor System</td><td>2</td><td>Yes</td></tr>
+            <tr><td>Custom Logic</td><td>1</td><td>Yes</td></tr>
+            <tr><td>Comparison &amp; Query</td><td>3</td><td>Yes</td></tr>
+            <tr><td>ForgeVM</td><td>3</td><td>No (UENUM only)</td></tr>
+            <tr><td>VFX / SFX</td><td>5</td><td>Yes</td></tr>
+            <tr><td>Cosmetic Cue Bus</td><td>3</td><td>No (plain enum class)</td></tr>
+            <tr><td>Performance</td><td>2</td><td>No (UENUM only)</td></tr>
+            <tr><td><strong>Total</strong></td><td><strong>27</strong></td><td><strong>19 BlueprintType</strong></td></tr>
+        </tbody>
+    </table>
+
+    <p>All enumerations use <code>uint8</code> underlying type. One enum (<code>EStatusUpdateField</code>) uses bitflag metadata for bitmask-style composition in the editor.</p>
+
+</section>

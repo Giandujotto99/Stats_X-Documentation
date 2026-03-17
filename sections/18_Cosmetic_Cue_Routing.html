@@ -1,0 +1,852 @@
+<section id="cosmetic-cue-routing" class="tutorial-section">
+    <h1>Cosmetic Cue Routing</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Layer: <strong>Presentation / Network</strong> &mdash; replicated transport for cosmetic cues via <code>AStatsX_NetCueRelay</code>.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#ccr-purpose">Purpose</a></li>
+        <li><a href="#ccr-network-architecture">Network Architecture</a></li>
+        <li><a href="#ccr-wire-format">Wire Format</a></li>
+        <li><a href="#ccr-relay-actor">Relay Actor &mdash; AStatsX_NetCueRelay</a></li>
+        <li><a href="#ccr-state-cue-replication">State Cue Replication</a></li>
+        <li><a href="#ccr-burst-cue-transport">Burst Cue Transport</a></li>
+        <li><a href="#ccr-client-side-dispatch">Client-Side Dispatch</a></li>
+        <li><a href="#ccr-built-in-cue-execution">Built-In Cue Execution</a></li>
+        <li><a href="#ccr-relay-lifecycle">Relay Lifecycle Management</a></li>
+        <li><a href="#ccr-relevancy-model">Relevancy Model</a></li>
+        <li><a href="#ccr-capacity-limits">Capacity Limits</a></li>
+        <li><a href="#ccr-stopmontage-production">StopMontage Production</a></li>
+        <li><a href="#ccr-performance-instrumentation">Performance Instrumentation</a></li>
+        <li><a href="#ccr-design-decisions">Design Decisions</a></li>
+        <li><a href="#ccr-see-also">See Also</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="ccr-purpose">1. Purpose</h2>
+
+    <p>The Cosmetic Cue Routing system bridges the local cue bus (see <strong>17 &mdash; Cosmetic Cue System</strong>) with remote clients. On authority machines (Dedicated Server / Listen Server), a registered network sink captures every flushed cue, selects or spawns an <code>AStatsX_NetCueRelay</code> actor, and pushes the cue through UE5&rsquo;s built-in replication:</p>
+
+    <ul>
+        <li><strong>State-reliable</strong> cues &rarr; <code>FFastArraySerializer</code> (delta-compressed, latest-value-wins per stream, join-in-progress safe).</li>
+        <li><strong>Burst-unreliable</strong> cues &rarr; <code>NetMulticast Unreliable</code> RPC (fire-and-forget, no join-in-progress guarantee).</li>
+    </ul>
+
+    <p>On the receiving client, the relay reconstructs the runtime cue, executes built-in effects (montage, VFX, SFX), and re-enqueues the cue into the local bus so custom sinks also fire.</p>
+
+    <hr>
+
+    <h2 id="ccr-network-architecture">2. Network Architecture</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code> SERVER                                         CLIENT
+ ──────                                         ──────
+ FlushCosmeticCueBus()
+   │  OnCosmeticCueRoutedNative.Broadcast()
+   ▼
+ HandleCosmeticCueRoutedForNetwork()
+   │  GetOrCreateNetCueRelay(RouteActor)
+   ▼
+ AStatsX_NetCueRelay::PushCueFromServer()
+   ├─ StateReliable:
+   │    ReplicatedStateCues (FastArray)  ──────► PostReplicatedAdd/Change
+   │                                               │
+   └─ BurstUnreliable:                             │
+        MulticastBurstCue() ───────────────────► MulticastBurstCue_Impl
+                                                   │
+                                            DispatchCueOnClient()
+                                               ├── ExecuteBuiltInCue()
+                                               ├── OnClientCueReceivedNative
+                                               └── EnqueueCosmeticCue() (re-inject)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="ccr-wire-format">3. Wire Format</h2>
+
+    <h3>3.1 FStatsXNetCueWireData</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:16-91</code></pre>
+    </div>
+
+    <p>USTRUCT that mirrors <code>FStatsXCosmeticCue</code> with replication-friendly types:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Wire type</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>uint8</code></td><td>Enum cast</td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>uint8</code></td><td>Enum cast</td></tr>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Identity</td></tr>
+            <tr><td><code>NodePC</code></td><td><code>int32</code></td><td>Identity</td></tr>
+            <tr><td><code>Sequence</code></td><td><code>uint16</code></td><td>Ordering</td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>TObjectPtr&lt;AActor&gt;</code></td><td>Replicated actor ref</td></tr>
+            <tr><td><code>TargetActor</code></td><td><code>TObjectPtr&lt;AActor&gt;</code></td><td>Replicated actor ref</td></tr>
+            <tr><td><code>ExplicitRouteActor</code></td><td><code>TObjectPtr&lt;AActor&gt;</code></td><td>Replicated actor ref</td></tr>
+            <tr><td><code>ServerWorldTimeSeconds</code></td><td><code>float</code></td><td>Timestamp</td></tr>
+            <tr><td><code>CueName</code></td><td><code>FName</code></td><td>Optional key</td></tr>
+            <tr><td><code>Asset</code></td><td><code>TObjectPtr&lt;UObject&gt;</code></td><td>Primary asset</td></tr>
+            <tr><td><code>SecondaryAsset</code></td><td><code>TObjectPtr&lt;UObject&gt;</code></td><td>Secondary asset</td></tr>
+            <tr><td><code>Location</code></td><td><code>FVector_NetQuantize10</code></td><td>Quantized position</td></tr>
+            <tr><td><code>Rotation</code></td><td><code>FRotator</code></td><td>Rotation</td></tr>
+            <tr><td><code>Scale</code></td><td><code>FVector_NetQuantize10</code></td><td>Quantized scale</td></tr>
+            <tr><td><code>SectionName</code></td><td><code>FName</code></td><td>Section/socket name</td></tr>
+            <tr><td><code>Float0..Float3</code></td><td><code>float</code></td><td>Numeric slots</td></tr>
+            <tr><td><code>Int0, Int1</code></td><td><code>int32</code></td><td>Integer slots</td></tr>
+            <tr><td><code>Int64_0</code></td><td><code>int64</code></td><td>Handle slot</td></tr>
+            <tr><td><code>Flags</code></td><td><code>uint8</code></td><td>Bitfield</td></tr>
+        </tbody>
+    </table>
+
+    <p>Vectors use <code>FVector_NetQuantize10</code> for network-efficient quantization (1 decimal place precision).</p>
+
+    <h3>3.2 Conversion Helpers</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:27-95</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Direction</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>BuildWireCue(FStatsXCosmeticCue)</code></td><td>Runtime &rarr; wire (server-side, before send)</td></tr>
+            <tr><td><code>BuildRuntimeCue(FStatsXNetCueWireData, Channel)</code></td><td>Wire &rarr; runtime (client-side, after receive)</td></tr>
+            <tr><td><code>BuildStreamKey(FStatsXNetCueWireData)</code></td><td>Wire &rarr; dedup key (server-side, for state cue indexing)</td></tr>
+        </tbody>
+    </table>
+
+    <p>All three are anonymous-namespace free functions &mdash; zero-overhead, no virtual dispatch.</p>
+
+    <hr>
+
+    <h2 id="ccr-relay-actor">4. Relay Actor &mdash; AStatsX_NetCueRelay</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:138-197
+       Private/Net/StatsX_NetCueRelay.cpp:178-838</code></pre>
+    </div>
+
+    <p><code>UCLASS(NotBlueprintable, NotPlaceable, Transient)</code> &mdash; pure infrastructure, not exposed to Blueprints or level design. Inherits from <code>AInfo</code> (no visual representation, no collision).</p>
+
+    <h3>4.1 Constructor Defaults</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:178-191</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>Value</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>bReplicates</code></td><td><code>true</code></td><td>Actor is network-replicated</td></tr>
+            <tr><td><code>bAlwaysRelevant</code></td><td><code>false</code></td><td>Only relevant when owner is</td></tr>
+            <tr><td><code>bOnlyRelevantToOwner</code></td><td><code>false</code></td><td>Visible to all clients in relevancy range</td></tr>
+            <tr><td><code>bNetUseOwnerRelevancy</code></td><td><code>true</code></td><td>Inherit relevancy from owner actor</td></tr>
+            <tr><td><code>SetReplicateMovement</code></td><td><code>false</code></td><td>No movement replication needed</td></tr>
+            <tr><td><code>NetUpdateFrequency</code></td><td><code>30.f</code></td><td>Target updates per second</td></tr>
+            <tr><td><code>MinNetUpdateFrequency</code></td><td><code>10.f</code></td><td>Minimum updates per second</td></tr>
+            <tr><td><code>bGlobalRelay</code></td><td><code>false</code></td><td>Not global by default</td></tr>
+            <tr><td><code>SetActorHiddenInGame</code></td><td><code>true</code></td><td>Invisible</td></tr>
+            <tr><td><code>SetCanBeDamaged</code></td><td><code>false</code></td><td>No damage processing</td></tr>
+        </tbody>
+    </table>
+
+    <h3>4.2 Replicated Properties</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:206-213</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>DOREPLIFETIME(AStatsX_NetCueRelay, ReplicatedStateCues);
+DOREPLIFETIME(AStatsX_NetCueRelay, RouteActor);
+DOREPLIFETIME(AStatsX_NetCueRelay, bGlobalRelay);</code></pre>
+    </div>
+
+    <h3>4.3 Configuration Modes</h3>
+
+    <h4>Route-Actor Relay</h4>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:215-228</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void ConfigureForRouteActor(AActor* InRouteActor)
+{
+    RouteActor = InRouteActor;
+    bGlobalRelay = false;
+    bAlwaysRelevant = false;
+    bNetUseOwnerRelevancy = true;
+    SetOwner(InRouteActor);           // &larr; inherit relevancy
+    ForceNetUpdate();
+}</code></pre>
+    </div>
+
+    <p>The relay is only replicated to clients for whom <code>InRouteActor</code> is relevant. This provides automatic scope-based filtering &mdash; a character&rsquo;s cosmetic cues are only sent to clients that can see that character.</p>
+
+    <h4>Global Relay</h4>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:230-243</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void ConfigureAsGlobalRelay()
+{
+    RouteActor = nullptr;
+    bGlobalRelay = true;
+    bAlwaysRelevant = true;           // &larr; visible to all clients
+    bNetUseOwnerRelevancy = false;
+    SetOwner(nullptr);
+    ForceNetUpdate();
+}</code></pre>
+    </div>
+
+    <p>Used for cues with no actor affinity (route policy <code>Global</code>) or as a fallback when no valid route actor exists.</p>
+
+    <hr>
+
+    <h2 id="ccr-state-cue-replication">5. State Cue Replication</h2>
+
+    <h3>5.1 FastArraySerializer Pipeline</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:94-134</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Struct</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FStatsXReplicatedStateCueItem</code></td><td><code>FFastArraySerializerItem</code> wrapping one <code>FStatsXNetCueWireData</code></td></tr>
+            <tr><td><code>FStatsXReplicatedStateCueArray</code></td><td><code>FFastArraySerializer</code> container with <code>TArray&lt;Item&gt;</code> and <code>OwnerRelay</code> back-pointer</td></tr>
+        </tbody>
+    </table>
+
+    <p><code>TStructOpsTypeTraits</code> enables <code>WithNetDeltaSerializer</code> for delta-compressed network transport via <code>FastArrayDeltaSerialize</code>.</p>
+
+    <h3>5.2 Client Reception</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:162-176</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void FStatsXReplicatedStateCueItem::PostReplicatedAdd(const FStatsXReplicatedStateCueArray&amp; Serializer)
+{
+    if (AStatsX_NetCueRelay* Relay = Serializer.OwnerRelay.Get())
+        Relay-&gt;HandleReplicatedStateCue(*this);
+}
+
+void FStatsXReplicatedStateCueItem::PostReplicatedChange(const FStatsXReplicatedStateCueArray&amp; Serializer)
+{
+    if (AStatsX_NetCueRelay* Relay = Serializer.OwnerRelay.Get())
+        Relay-&gt;HandleReplicatedStateCue(*this);
+}</code></pre>
+    </div>
+
+    <p>Both <code>Add</code> and <code>Change</code> delegate to <code>HandleReplicatedStateCue</code>, which reconstructs the runtime cue with <code>StateReliable</code> channel and calls <code>DispatchCueOnClient</code>.</p>
+
+    <h3>5.3 Server-Side Stream Dedup</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:245-291</code></pre>
+    </div>
+
+    <p><code>PushCueFromServer</code> for state-reliable cues:</p>
+
+    <ol>
+        <li>Build <code>FStatsXCosmeticCueStreamKey</code> from the cue.</li>
+        <li>Lookup in <code>StateCueIndexByStream</code>:
+            <ul>
+                <li><strong>Found</strong> &rarr; overwrite existing item in-place, mark dirty.</li>
+                <li><strong>Not found</strong> &rarr; append new item, record index.</li>
+            </ul>
+        </li>
+        <li><strong>Overflow guard</strong> &mdash; if <code>Items.Num() &gt; MaxStateCueEntries</code> (default 96):
+            <ul>
+                <li>Remove oldest entries from front (<code>RemoveAt(0, RemoveCount)</code>).</li>
+                <li><code>MarkArrayDirty()</code> for full resync.</li>
+                <li><code>RebuildStateCueIndex()</code> to rebuild the <code>StreamKey &rarr; index</code> map.</li>
+            </ul>
+        </li>
+        <li><code>ForceNetUpdate()</code> to push delta immediately.</li>
+    </ol>
+
+    <h3>5.4 RebuildStateCueIndex</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:828-838</code></pre>
+    </div>
+
+    <p>Called after overflow eviction to reconstruct the dedup map:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AStatsX_NetCueRelay::RebuildStateCueIndex()
+{
+    StateCueIndexByStream.Reset();
+    StateCueIndexByStream.Reserve(ReplicatedStateCues.Items.Num());
+    for (int32 i = 0; i &lt; ReplicatedStateCues.Items.Num(); ++i)
+    {
+        StateCueIndexByStream.Add(
+            BuildStreamKey(ReplicatedStateCues.Items[i].Cue), i);
+    }
+}</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="ccr-burst-cue-transport">6. Burst Cue Transport</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:289, 293-303</code></pre>
+    </div>
+
+    <p>Burst-unreliable cues bypass the <code>FastArraySerializer</code> entirely:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Server side (PushCueFromServer)
+MulticastBurstCue(WireCue);
+
+// Client side (MulticastBurstCue_Implementation)
+void AStatsX_NetCueRelay::MulticastBurstCue_Implementation(const FStatsXNetCueWireData&amp; WireCue)
+{
+    if (HasAuthority()) return;   // server doesn't self-dispatch
+    DispatchCueOnClient(BuildRuntimeCue(WireCue, EStatsXCosmeticCueChannel::BurstUnreliable));
+}</code></pre>
+    </div>
+
+    <p>The RPC is declared <code>UFUNCTION(NetMulticast, Unreliable)</code> &mdash; packets may be dropped under congestion, which is acceptable for one-shot visual/audio effects.</p>
+
+    <hr>
+
+    <h2 id="ccr-client-side-dispatch">7. Client-Side Dispatch</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:317-337</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AStatsX_NetCueRelay::DispatchCueOnClient(const FStatsXCosmeticCue&amp; Cue)
+{
+    if (Cue.CueType == EStatsXCosmeticCueType::None) return;
+
+    ExecuteBuiltInCue(Cue);                          // 1. Immediate effect
+    OnClientCueReceivedNative.Broadcast(Cue);         // 2. Native delegate
+
+    if (UStatsX_WorldSubsystem* Sub = ...)
+        Sub-&gt;EnqueueCosmeticCue(Cue);                 // 3. Re-inject into bus
+}</code></pre>
+    </div>
+
+    <p>Three-stage dispatch:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stage</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ExecuteBuiltInCue</code></td><td>Play montage, spawn VFX/SFX, etc. (see &sect;8)</td></tr>
+            <tr><td><code>OnClientCueReceivedNative</code></td><td>Native delegate for custom C++ consumers</td></tr>
+            <tr><td><code>EnqueueCosmeticCue</code></td><td>Re-inject into local bus for Blueprint/sink consumers</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccr-built-in-cue-execution">8. Built-In Cue Execution</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:339-826</code></pre>
+    </div>
+
+    <p><code>ExecuteBuiltInCue</code> is the client-side mirror of what the opcode handlers do on the server. It handles every <code>EStatsXCosmeticCueType</code> and resolves generic integer payload slots back into typed enums via local lambdas.</p>
+
+    <h3>8.1 Transform Resolution Helpers</h3>
+
+    <p>Defined as lambdas inside <code>ExecuteBuiltInCue</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Helper</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ResolveTransformSpace(int32)</code></td><td>Cast to <code>EStatsXVFXTransformSpace</code> with validation</td></tr>
+            <tr><td><code>ResolvePoolPolicy(int32)</code></td><td>Cast to <code>EStatsXVFXPoolPolicy</code> with validation</td></tr>
+            <tr><td><code>ResolveSFXPlaybackPolicy(int32)</code></td><td>Cast to <code>EStatsXSFXPlaybackPolicy</code> with validation</td></tr>
+            <tr><td><code>ResolvePoolMethod(EStatsXVFXPoolPolicy)</code></td><td>Map to <code>ENCPoolMethod</code> for Niagara</td></tr>
+            <tr><td><code>ResolveAttachLocationType(EStatsXVFXAttachRule)</code></td><td>Map to <code>EAttachLocation::Type</code></td></tr>
+            <tr><td><code>ResolveAttachedSpawnInputs(...)</code></td><td>Compute location/rotation/scale based on attach rule</td></tr>
+            <tr><td><code>ResolveWorldTransform(TransformSpace)</code></td><td>Build world-space <code>FTransform</code> from cue payload, applying relative offsets for Target/Caster</td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.2 PlayMontage / StopMontage</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:469-529</code></pre>
+    </div>
+
+    <p><strong>Actor resolution:</strong></p>
+    <ol>
+        <li>Get <code>TargetActor</code> from cue.</li>
+        <li>If <code>ACharacter</code> &rarr; get <code>GetMesh()-&gt;GetAnimInstance()</code>.</li>
+        <li>Otherwise &rarr; find first <code>USkeletalMeshComponent</code> &rarr; <code>GetAnimInstance()</code>.</li>
+    </ol>
+
+    <p><strong>PlayMontage:</strong></p>
+    <ul>
+        <li><code>Montage_Play(Montage, PlayRate)</code> &mdash; <code>Float0</code> is play rate (default 1.0).</li>
+        <li>If section name valid &rarr; <code>Montage_JumpToSection(SectionName)</code>.</li>
+    </ul>
+
+    <p><strong>StopMontage:</strong></p>
+    <ul>
+        <li><code>Float0</code> is blend-out time (default 0.25).</li>
+        <li>If specific montage asset &rarr; <code>Montage_Stop(BlendOutTime, Montage)</code>.</li>
+        <li>If no asset &rarr; <code>StopAllMontages(BlendOutTime)</code>.</li>
+    </ul>
+
+    <h3>8.3 SpawnVFX</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:531-570</code></pre>
+    </div>
+
+    <ol>
+        <li>Cast <code>Asset</code> to <code>UNiagaraSystem</code>.</li>
+        <li>Resolve transform space and pool policy from <code>Int0</code>/<code>Int1</code>.</li>
+        <li>Compute world-space transform via <code>ResolveWorldTransform</code>.</li>
+        <li><code>UNiagaraFunctionLibrary::SpawnSystemAtLocation(...)</code>.</li>
+        <li>Register spawned component with subsystem VFX handle.</li>
+    </ol>
+
+    <h3>8.4 SpawnVFXAttached</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:572-648</code></pre>
+    </div>
+
+    <ol>
+        <li>Resolve parent actor: <code>ExplicitRouteActor &rarr; TargetActor &rarr; CasterActor</code>.</li>
+        <li>Resolve attachment component and socket via <code>NetCueRelayPrivate::ResolveActorAttachComponent</code>.</li>
+        <li>Resolve attach rule, pool policy, spawn transform.</li>
+        <li><code>UNiagaraFunctionLibrary::SpawnSystemAttached(...)</code>.</li>
+        <li>Register spawned component with subsystem VFX handle.</li>
+        <li><code>SpawnedComp-&gt;Activate()</code>.</li>
+    </ol>
+
+    <h4>Socket Resolution</h4>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:101-159</code></pre>
+    </div>
+
+    <p><code>FindSocketSourceComponent</code> searches for a named socket in order:</p>
+
+    <ol>
+        <li><code>ACharacter::GetMesh()</code> &rarr; check socket.</li>
+        <li>First <code>USkeletalMeshComponent</code> &rarr; check socket.</li>
+        <li>All <code>USceneComponent</code> children &rarr; check socket.</li>
+    </ol>
+
+    <p><code>ResolveActorAttachComponent</code> wraps this with a fallback to root component when no socket is specified.</p>
+
+    <h3>8.5 StopVFX</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:650-681</code></pre>
+    </div>
+
+    <ol>
+        <li>Find component by handle via <code>FindLocalVFXComponent</code>.</li>
+        <li><code>SetAutoDestroy(true)</code>.</li>
+        <li>Immediate deactivate if <code>Float0 &le; &epsilon;</code>, otherwise graceful <code>Deactivate()</code>.</li>
+        <li><code>UnregisterLocalVFXComponent</code>.</li>
+    </ol>
+
+    <h3>8.6 UpdateVFX</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:683-706</code></pre>
+    </div>
+
+    <ol>
+        <li>Find component by handle.</li>
+        <li>Resolve world transform from <code>Int0</code> (transform space) + cue position data.</li>
+        <li><code>SetWorldLocationAndRotation</code> + <code>SetWorldScale3D</code>.</li>
+    </ol>
+
+    <h3>8.7 SpawnSFX</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:708-790</code></pre>
+    </div>
+
+    <ol>
+        <li>Cast <code>Asset</code> to <code>USoundBase</code>.</li>
+        <li>Resolve transform space and playback policy from <code>Int0</code>/<code>Int1</code>.</li>
+        <li>Normalize volume/pitch multipliers (guard against &le; 0, NaN, default-mix).</li>
+        <li><strong>Persistent</strong> &rarr; <code>SpawnSoundAtLocation</code> + register with SFX handle.</li>
+        <li><strong>FireAndForget</strong> &rarr; <code>PlaySoundAtLocation</code> (no component tracking).</li>
+    </ol>
+
+    <h3>8.8 StopSFX</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:792-821</code></pre>
+    </div>
+
+    <ol>
+        <li>Find audio component by handle.</li>
+        <li>Immediate <code>Stop()</code> if <code>Float0 &le; &epsilon;</code>, otherwise <code>FadeOut(FadeOutTime, 0.f)</code>.</li>
+        <li><code>UnregisterLocalSFXComponent</code>.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="ccr-relay-lifecycle">9. Relay Lifecycle Management</h2>
+
+    <h3>9.1 HandleCosmeticCueRoutedForNetwork</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:777-808</code></pre>
+    </div>
+
+    <p>Registered as a sink during <code>Initialize()</code> on authority machines:</p>
+
+    <ol>
+        <li>Validate net mode is <code>DedicatedServer</code> or <code>ListenServer</code>.</li>
+        <li>Validate <code>CueType != None</code>.</li>
+        <li><code>GetOrCreateNetCueRelay(RouteActor)</code> &mdash; attempt route-actor relay.</li>
+        <li>If null and route actor was valid &rarr; <strong>fallback to global relay</strong> via <code>GetOrCreateNetCueRelay(nullptr)</code>.</li>
+        <li><code>Relay-&gt;PushCueFromServer(Cue)</code>.</li>
+    </ol>
+
+    <h3>9.2 GetOrCreateNetCueRelay</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:810-900</code></pre>
+    </div>
+
+    <p><strong>Stale cleanup</strong> &mdash; on every call, iterate <code>RouteActorNetCueRelays</code> and remove entries where either the actor or the relay weak pointer is invalid, destroying the relay actor.</p>
+
+    <p><strong>Global relay path</strong> (route actor null or not replicated):</p>
+
+    <ol>
+        <li>Return existing <code>GlobalNetCueRelay</code> if valid.</li>
+        <li>Otherwise spawn new <code>AStatsX_NetCueRelay</code>:
+            <ul>
+                <li><code>RF_Transient</code> object flags.</li>
+                <li>Unique name <code>StatsX_GlobalNetCueRelay</code>.</li>
+                <li>Identity transform.</li>
+                <li><code>ConfigureAsGlobalRelay()</code>.</li>
+            </ul>
+        </li>
+    </ol>
+
+    <p><strong>Route-actor relay path</strong> (valid, replicated route actor):</p>
+
+    <ol>
+        <li>Return existing relay from <code>RouteActorNetCueRelays</code> cache if valid.</li>
+        <li>If cache full (<code>&ge; MaxRouteNetCueRelays</code>, default 4096) &rarr; fallback to global relay.</li>
+        <li>Otherwise spawn new <code>AStatsX_NetCueRelay</code>:
+            <ul>
+                <li><code>RF_Transient</code> object flags.</li>
+                <li>Unique name <code>StatsX_RouteNetCueRelay</code>.</li>
+                <li>Spawned at route actor&rsquo;s transform.</li>
+                <li><code>ConfigureForRouteActor(RouteActor)</code>.</li>
+                <li>Cached in <code>RouteActorNetCueRelays</code>.</li>
+            </ul>
+        </li>
+    </ol>
+
+    <h3>9.3 DestroyNetCueRelays</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:902-918</code></pre>
+    </div>
+
+    <p>Called during <code>Deinitialize</code>:</p>
+
+    <ol>
+        <li>Destroy <code>GlobalNetCueRelay</code> if valid, reset pointer.</li>
+        <li>Iterate <code>RouteActorNetCueRelays</code>, destroy each relay, reset map.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="ccr-relevancy-model">10. Relevancy Model</h2>
+
+    <p>The relay leverages UE5&rsquo;s built-in actor relevancy system &mdash; no custom <code>IsNetRelevantFor</code> override:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Relay type</th>
+                <th><code>bAlwaysRelevant</code></th>
+                <th><code>bNetUseOwnerRelevancy</code></th>
+                <th>Owner</th>
+                <th>Effect</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Route-actor</td><td><code>false</code></td><td><code>true</code></td><td>Route actor</td><td>Relay is relevant whenever the route actor is relevant to a client</td></tr>
+            <tr><td>Global</td><td><code>true</code></td><td><code>false</code></td><td><code>nullptr</code></td><td>Relay is always relevant to all clients</td></tr>
+        </tbody>
+    </table>
+
+    <p>This means a character&rsquo;s cosmetic cues are automatically scoped to clients that can see the character, without any explicit per-client filtering logic.</p>
+
+    <hr>
+
+    <h2 id="ccr-capacity-limits">11. Capacity Limits</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Limit</th>
+                <th>Default</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MaxStateCueEntries</code></td><td>96</td><td>Per-relay cap for state cue items; oldest evicted on overflow</td></tr>
+            <tr><td><code>MaxRouteNetCueRelays</code></td><td>4096</td><td>World-wide cap on route-actor relays; excess routed to global</td></tr>
+            <tr><td><code>NetUpdateFrequency</code></td><td>30 Hz</td><td>Target replication rate</td></tr>
+            <tr><td><code>MinNetUpdateFrequency</code></td><td>10 Hz</td><td>Minimum replication rate under load</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccr-stopmontage-production">12. StopMontage Production</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:201-268</code></pre>
+    </div>
+
+    <p>StopMontage cues are not produced by a dedicated opcode but by the <code>UForge_MontageCallbackHelper::Cleanup(bool bStopMontage)</code> path. When a status instance ends or the montage completes:</p>
+
+    <ol>
+        <li>Helper constructs <code>FStatsXCosmeticCue</code> with:
+            <ul>
+                <li><code>CueType = StopMontage</code>, <code>Channel = StateReliable</code>, <code>RoutePolicy = TargetActor</code>.</li>
+                <li><code>Asset</code> = the playing montage.</li>
+                <li><code>Float0</code> = 0.15 (blend-out time).</li>
+                <li><code>Key</code> = original StatusID + NodePC from the PlayMontage cue.</li>
+            </ul>
+        </li>
+        <li><code>EnqueueCosmeticCue(Cue)</code> &mdash; enters the same bus pipeline.</li>
+    </ol>
+
+    <p>Because the StopMontage cue shares the same <code>StatusID + NodePC + CueType</code> stream key as the original PlayMontage, the state dedup system on both the bus (&sect;7 of doc 17) and the relay (&sect;5.3) correctly overwrites the &ldquo;playing&rdquo; state with the &ldquo;stopped&rdquo; state.</p>
+
+    <hr>
+
+    <h2 id="ccr-performance-instrumentation">13. Performance Instrumentation</h2>
+
+    <p>Every critical path is wrapped with <code>STATSX_NETCUE_SCOPE</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Scope name</th>
+                <th>Where</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.NetCue.Enqueue</code></td><td><code>EnqueueCosmeticCue</code></td></tr>
+            <tr><td><code>StatsX.NetCue.FlushBus</code></td><td><code>FlushCosmeticCueBus</code></td></tr>
+            <tr><td><code>StatsX.NetCue.RouteToNetwork</code></td><td><code>HandleCosmeticCueRoutedForNetwork</code></td></tr>
+            <tr><td><code>StatsX.NetCue.GetOrCreateRelay</code></td><td><code>GetOrCreateNetCueRelay</code></td></tr>
+            <tr><td><code>StatsX.NetCue.PushFromServer</code></td><td><code>PushCueFromServer</code></td></tr>
+            <tr><td><code>StatsX.NetCue.BurstReceive</code></td><td><code>MulticastBurstCue_Implementation</code></td></tr>
+            <tr><td><code>StatsX.NetCue.StateReceive</code></td><td><code>HandleReplicatedStateCue</code></td></tr>
+            <tr><td><code>StatsX.NetCue.DispatchClient</code></td><td><code>DispatchCueOnClient</code></td></tr>
+            <tr><td><code>StatsX.NetCue.ExecuteBuiltIn.*</code></td><td>Per-type execution (Montage, VFX, SFX)</td></tr>
+            <tr><td><code>StatsX.NetCue.RebuildStateIndex</code></td><td><code>RebuildStateCueIndex</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccr-design-decisions">14. Design Decisions</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>AInfo subclass</strong></td><td>Lightweight &mdash; no transform, collision, or rendering overhead</td></tr>
+            <tr><td><strong>Owner-based relevancy</strong></td><td>Automatically scopes cues to clients that can see the associated actor</td></tr>
+            <tr><td><strong>FastArraySerializer for state cues</strong></td><td>Delta-compressed, join-in-progress safe &mdash; new clients receive current state</td></tr>
+            <tr><td><strong>Unreliable multicast for bursts</strong></td><td>Minimal bandwidth; acceptable loss for one-shot effects</td></tr>
+            <tr><td><strong>Separate relay per route actor</strong></td><td>Each relay inherits relevancy independently; destroyed actors auto-cleanup</td></tr>
+            <tr><td><strong>Global relay as fallback</strong></td><td>Guarantees all cues reach clients even when no route actor exists</td></tr>
+            <tr><td><strong>96-entry state cap</strong></td><td>Prevents unbounded memory growth on long-running sessions</td></tr>
+            <tr><td><strong>4096 relay cap</strong></td><td>Prevents relay actor explosion in large-world scenarios</td></tr>
+            <tr><td><strong>Re-enqueue on client</strong></td><td>Client-side sinks (custom consumers) get the same cue flow as server-side</td></tr>
+            <tr><td><strong>Lambda helpers inside ExecuteBuiltInCue</strong></td><td>Zero-overhead enum resolution with validation &mdash; no map lookups</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccr-see-also">15. See Also</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Document</th>
+                <th>Relationship</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>17 &mdash; Cosmetic Cue System</strong></td><td>Local bus that feeds cues to the routing layer</td></tr>
+            <tr><td><strong>19 &mdash; VFX / SFX Handles</strong></td><td>Handle allocation and component tracking</td></tr>
+            <tr><td><strong>20 &mdash; Replication</strong></td><td>Gameplay state replication (separate from cosmetic)</td></tr>
+            <tr><td><strong>21 &mdash; Network Cue Relay</strong></td><td>Additional relay configuration and diagnostics</td></tr>
+        </tbody>
+    </table>
+
+</section>

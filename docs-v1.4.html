@@ -42,20 +42,47 @@
             <div class="sidebar-section">
                 <div class="sidebar-title">Core Concepts</div>
                 <ul class="sidebar-nav">
-                    <li><a href="#architecture-overview" data-section="architecture-overview">Architecture Overview</a></li>
+                    <li><a href="#architecture-overview" data-section="architecture-overview">Architecture Overview</a>
+                    </li>
                     <li><a href="#attribute-system" data-section="attribute-system">Attribute System</a></li>
                     <li><a href="#modifier-system" data-section="modifier-system">Modifier System</a></li>
                     <li><a href="#status-definition" data-section="status-definition">Status Definition</a></li>
                     <li><a href="#status-instance" data-section="status-instance">Status Instance</a></li>
-                    <li><a href="#status-instance-pool" data-section="status-instance-pool">Status Instance Pool</a></li>
+                    <li><a href="#status-instance-pool" data-section="status-instance-pool">Status Instance Pool</a>
+                    </li>
                     <li><a href="#forge-vm" data-section="forge-vm">ForgeVM</a></li>
                     <li><a href="#execution-context" data-section="execution-context">Execution Context</a></li>
                     <li><a href="#instruction-format" data-section="instruction-format">Instruction Format</a></li>
                     <li><a href="#component-system" data-section="component-system">Component System</a></li>
                     <li><a href="#interceptor-system" data-section="interceptor-system">Interceptor System</a></li>
-                    <li><a href="#custom-logic-check" data-section="custom-logic-check">Custom Logic &mdash; Check</a></li>
-                    <li><a href="#custom-logic-action" data-section="custom-logic-action">Custom Logic &mdash; Action</a></li>
-                    <li><a href="#variable-system" data-section="variable-system" class="active">Variable System</a></li>
+                    <li><a href="#custom-logic-check" data-section="custom-logic-check">Custom Logic &mdash; Check</a>
+                    </li>
+                    <li><a href="#custom-logic-action" data-section="custom-logic-action">Custom Logic &mdash;
+                            Action</a></li>
+                    <li><a href="#variable-system" data-section="variable-system" class="active">Variable System</a>
+                    </li>
+                    <li><a href="#variable-overrides" data-section="variable-overrides" class="active">Variable
+                            Overrides</a></li>
+                    <li><a href="#forge-event-system" data-section="forge-event-system" class="active">Forge Event
+                            System</a></li>
+                    <li><a href="#cosmetic-cue-system" data-section="cosmetic-cue-system" class="active">Cosmetic Cue
+                            System</a></li>
+                    <li><a href="#cosmetic-cue-routing" data-section="cosmetic-cue-routing" class="active">Cosmetic Cue
+                            Routing</a></li>
+                    <li><a href="#vfx-sfx-handles" data-section="vfx-sfx-handles" class="active">VFX & SFX Handles</a>
+                    </li>
+                    <li><a href="#replication" data-section="replication" class="active">Replication</a></li>
+                    <li><a href="#network-cue-relay" data-section="network-cue-relay" class="active">Network Cue
+                            Relay</a></li>
+                    <li><a href="#damage-mitigation" data-section="damage-mitigation" class="active">Damage
+                            Mitigation</a></li>
+                    <li><a href="#performance-instrumentation" data-section="performance-instrumentation"
+                            class="active">Performance Instrumentation</a></li>
+                    <li><a href="#system-opcodes" data-section="system-opcodes" class="active">System Opcodes</a></li>
+                    <li><a href="#declared-gameplay-tags" data-section="declared-gameplay-tags" class="active">Declared
+                            Gameplay Tags</a></li>
+                    <li><a href="#enumerations-reference" data-section="enumerations-reference"
+                            class="active">Enumerations Reference</a></li>
                 </ul>
             </div>
         </aside>
@@ -84,7 +111,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const contentContainer = document.querySelector('.content-wrapper');
             const navLinks = document.querySelectorAll('.sidebar-nav a');
-            
+
             // Map section IDs to their corresponding HTML file in the sections folder
             const sectionFiles = {
                 'architecture-overview': '01_Architecture_Overview.html',
@@ -100,7 +127,19 @@
                 'interceptor-system': '11_Interceptor_System.html',
                 'custom-logic-check': '12_Custom_Logic_Check.html',
                 'custom-logic-action': '13_Custom_Logic_Action.html',
-                'variable-system': '14_Variable_System.html'
+                'variable-system': '14_Variable_System.html',
+                'variable-overrides': '15_Variable_Overrides.html',
+                'forge-event-system': '16_Forge_Event_System.html',
+                'cosmetic-cue-system': '17_Cosmetic_Cue_System.html',
+                'cosmetic-cue-routing': '18_Cosmetic_Cue_Routing.html',
+                'vfx-sfx-handles': '19_VFX_SFX_Handles.html',
+                'replication': '20_Replication.html',
+                'network-cue-relay': '21_Network_Cue_Relay.html',
+                'damage-mitigation': '22_Damage_Mitigation.html',
+                'performance-instrumentation': '23_Performance_Instrumentation.html',
+                'system-opcodes': '25_System_Opcodes.html',
+                'declared-gameplay-tags': '26_Declared_Gameplay_Tags.html',
+                'enumerations-reference': '27_Enumerations_Reference.html'
                 // Add more mappings here as new sections are created
             };
 
@@ -119,9 +158,9 @@
                     // Fetch the HTML file from the sections folder
                     const response = await fetch(`sections/${filename}`);
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    
+
                     let htmlContent = await response.text();
-                    
+
                     // Assegna classe "active" esplicita al volo in modo che le animazioni o visibilità (se ce ne sono in CSS) agiscano
                     htmlContent = htmlContent.replace('class="tutorial-section"', 'class="tutorial-section active"');
 
@@ -155,14 +194,14 @@
                     const sectionId = link.getAttribute('data-section');
                     if (sectionFiles[sectionId]) {
                         e.preventDefault();
-                        
+
                         // Update URL hash without jumping
                         history.pushState(null, null, `#${sectionId}`);
-                        
+
                         // Close mobile menu if open
                         const sidebar = document.querySelector('.sidebar');
                         if (sidebar) sidebar.classList.remove('active');
-                        
+
                         // Load the section
                         loadSection(sectionId);
                     }
@@ -189,7 +228,7 @@
 
             // Mobile menu toggle
             const menuToggle = document.querySelector('.mobile-menu-toggle');
-            if(menuToggle) {
+            if (menuToggle) {
                 menuToggle.addEventListener('click', () => {
                     document.querySelector('.sidebar').classList.toggle('active');
                 });

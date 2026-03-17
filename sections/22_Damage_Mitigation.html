@@ -1,0 +1,398 @@
+<section id="damage-mitigation" class="tutorial-section">
+    <h1>Damage Mitigation</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Composable, formula-driven pipeline for reducing incoming damage based on resistance attributes &mdash; four built-in formulas plus a Blueprint-extensible custom formula hook.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#dm-overview">Overview</a></li>
+        <li><a href="#dm-architecture">Architecture</a></li>
+        <li><a href="#dm-opcode">Opcode &mdash; OP_CalculateMitigation (271)</a></li>
+        <li><a href="#dm-component-configuration">Component Configuration</a></li>
+        <li><a href="#dm-built-in-formulas">Built-In Formulas</a></li>
+        <li><a href="#dm-formula-comparison">Formula Comparison</a></li>
+        <li><a href="#dm-custom-formula-extension">Custom Formula Extension</a></li>
+        <li><a href="#dm-supporting-data-structures">Supporting Data Structures</a></li>
+        <li><a href="#dm-mitigation-formula-tags">Mitigation Formula Tags</a></li>
+        <li><a href="#dm-integration-notes">Integration Notes</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="dm-overview">1. Overview</h2>
+    <p>The Damage Mitigation system provides a composable, formula-driven pipeline for reducing incoming damage based on resistance attributes.
+    The server computes mitigation entirely within ForgeVM through a dedicated opcode (<code>OP_CalculateMitigation</code>, 271). Four built-in formulas cover common RPG damage models; a Blueprint-extensible custom formula hook allows game-specific logic without C++ changes.</p>
+
+    <hr>
+
+    <h2 id="dm-architecture">2. Architecture</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ForgeVM Instruction Stream
+         │
+         ▼
+  OP_CalculateMitigation (271)
+         │
+         ├── Resolve owning UStatsX_StatsComponentBase
+         │       via IStatsXComponentProvider
+         │
+         ├── Read continuation data:
+         │     MitigationFormula   (FGameplayTag)
+         │     AttributeTag        (FGameplayTag)
+         │     SubAttributeTag     (FGameplayTag)
+         │     Delta               (float — raw damage)
+         │     DamageTypes         (FGameplayTagContainer)
+         │     OutputOffset        (int32)
+         │
+         ├── Accumulate TotalResistance
+         │     DamageToResistancesMap  →  per-type resistance attributes
+         │
+         ├── Dispatch to formula:
+         │     ├── Stat.Mitigation.XFlat
+         │     ├── Stat.Mitigation.XPercentage
+         │     ├── Stat.Mitigation.XDiminishing
+         │     ├── Stat.Mitigation.XExponentialDecay
+         │     └── (other) → Mitigation_CustomFormula
+         │
+         └── WriteOutput&lt;float&gt;(mitigated result)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="dm-opcode">3. Opcode &mdash; OP_CalculateMitigation (271)</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MitigationFormula</code></td><td><code>FGameplayTag</code></td><td>Selects which formula to apply.</td></tr>
+            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>The attribute being modified (e.g. <code>Stat.Health</code>).</td></tr>
+            <tr><td><code>SubAttributeTag</code></td><td><code>FGameplayTag</code></td><td>Sub-attribute channel (e.g. <code>Stat.Health.Current</code>).</td></tr>
+            <tr><td><code>Delta</code></td><td><code>float</code></td><td>Raw incoming damage value (negative = damage, positive = heal).</td></tr>
+            <tr><td><code>DamageTypes</code></td><td><code>FGameplayTagContainer</code></td><td>Tags describing the damage source (e.g. <code>Damage.Fire</code>, <code>Damage.Physical</code>).</td></tr>
+            <tr><td><code>OutputOffset</code></td><td><code>int32</code></td><td>Variable offset for writing the mitigated result.</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Execution flow</strong> (source: <code>Nodes_Core.cpp:4021&ndash;4121</code>):</p>
+
+    <ol>
+        <li>Resolve the target component via <code>IStatsXComponentProvider</code> on the execution context&rsquo;s target actor.</li>
+        <li>Read all continuation fields from the instruction stream.</li>
+        <li>Iterate <code>DamageTypes</code>: for each tag, look up <code>DamageToResistancesMap</code> on the component to find associated resistance attribute tags, then sum their <code>Current</code> values into <code>TotalResistance</code>.</li>
+        <li>Dispatch to the matching formula function based on <code>MitigationFormula</code>.</li>
+        <li>Write the mitigated <code>float</code> result to the output variable at <code>OutputOffset</code>.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="dm-component-configuration">4. Component Configuration</h2>
+
+    <p>Defined on <code>UStatsX_StatsComponentBase</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>DamageToResistancesMap</code></td><td><code>TMap&lt;FGameplayTag, FGameplayTagContainer&gt;</code></td><td>empty</td><td>Maps each damage-type tag to the set of resistance attribute tags that counter it.</td></tr>
+            <tr><td><code>DiminishingMitigationScaleFactor</code></td><td><code>float</code></td><td><code>100.f</code></td><td>Scale constant for the Diminishing formula.</td></tr>
+            <tr><td><code>ExponentialDecayMitigationScaleFactor</code></td><td><code>float</code></td><td><code>100.f</code></td><td>Scale constant for the Exponential Decay formula.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>DamageToResistancesMap</h3>
+
+    <p>The map is the core configuration point. Each key is a damage-type gameplay tag; the value is a container of attribute tags whose <code>Current</code> values are summed to produce <code>TotalResistance</code> for that damage type.</p>
+
+    <p>When multiple damage types are present in a single <code>OP_CalculateMitigation</code> call, all resistance values across all matching damage types are accumulated into a single <code>TotalResistance</code> before the formula runs.</p>
+
+    <p><strong>Example mapping:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Damage.Physical  →  { Stat.Armor, Stat.PhysicalResistance }
+Damage.Fire      →  { Stat.FireResistance }
+Damage.Magic     →  { Stat.MagicResistance, Stat.SpellWard }</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="dm-built-in-formulas">5. Built-In Formulas</h2>
+
+    <p>All formulas are implemented as member functions of <code>UStatsX_StatsComponentBase</code> (source: <code>StatsX_StatsComponentBase.cpp:3428&ndash;3531</code>).</p>
+
+    <p>Each formula receives:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Delta</code></td><td><code>float</code></td><td>Raw damage value.</td></tr>
+            <tr><td><code>TotalResistance</code></td><td><code>float</code></td><td>Accumulated resistance from all matching attributes.</td></tr>
+            <tr><td><code>MitigationInfo</code></td><td><code>FGenericMitigationInfo</code></td><td>Full context (formula tag, attribute info, damage types).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Mitigation_XFlat</h3>
+
+    <p><strong>Tag:</strong> <code>Stat.Mitigation.XFlat</code></p>
+
+    <p><strong>Formula:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Formula</span>
+        </div>
+        <pre><code>Mitigated = Delta - (TotalResistance * 100)</code></pre>
+    </div>
+
+    <p>Subtracts a flat amount from the raw damage. Preserves damage sign: if <code>Delta</code> is negative (damage), the result is clamped so it cannot become positive (healing); if <code>Delta</code> is positive (healing), the result is clamped so it cannot become negative (damage).</p>
+
+    <p><strong>Behavior:</strong></p>
+    <ul>
+        <li>Resistance of <code>0.5</code> blocks <code>50</code> points of damage.</li>
+        <li>Resistance of <code>2.0</code> blocks <code>200</code> points of damage.</li>
+        <li>If resistance exceeds damage magnitude, result clamps to <code>0</code>.</li>
+    </ul>
+
+    <h3>Mitigation_XPercentage</h3>
+
+    <p><strong>Tag:</strong> <code>Stat.Mitigation.XPercentage</code></p>
+
+    <p><strong>Formula:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Formula</span>
+        </div>
+        <pre><code>Mitigated = Delta * (1 - clamp(TotalResistance, 0, 1))</code></pre>
+    </div>
+
+    <p>Reduces damage by a percentage. <code>TotalResistance</code> is clamped to <code>[0, 1]</code> before application.</p>
+
+    <p><strong>Behavior:</strong></p>
+    <ul>
+        <li>Resistance of <code>0.25</code> reduces damage by 25%.</li>
+        <li>Resistance of <code>1.0</code> reduces damage by 100% (full immunity).</li>
+        <li>Resistance values above <code>1.0</code> are clamped to <code>1.0</code>.</li>
+        <li>Resistance values below <code>0.0</code> are clamped to <code>0.0</code> (no amplification).</li>
+    </ul>
+
+    <h3>Mitigation_XDiminishing</h3>
+
+    <p><strong>Tag:</strong> <code>Stat.Mitigation.XDiminishing</code></p>
+
+    <p><strong>Formula:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Formula</span>
+        </div>
+        <pre><code>ScaledResistance = TotalResistance * 100
+Mitigated = Delta * (Scale / (Scale + ScaledResistance))</code></pre>
+    </div>
+
+    <p>Where <code>Scale</code> = <code>DiminishingMitigationScaleFactor</code> (default <code>100.f</code>).</p>
+
+    <p>Produces asymptotic damage reduction: each point of resistance provides diminishing returns. Damage can never be fully mitigated.</p>
+
+    <p><strong>Behavior</strong> (with default scale <code>100</code>):</p>
+    <ul>
+        <li>Resistance <code>0.0</code> &rarr; 0% reduction (multiplier = 1.0)</li>
+        <li>Resistance <code>0.5</code> &rarr; ~33% reduction (multiplier &asymp; 0.667)</li>
+        <li>Resistance <code>1.0</code> &rarr; 50% reduction (multiplier = 0.5)</li>
+        <li>Resistance <code>2.0</code> &rarr; ~67% reduction (multiplier &asymp; 0.333)</li>
+        <li>Resistance <code>10.0</code> &rarr; ~91% reduction (multiplier &asymp; 0.091)</li>
+        <li>Resistance &rarr; &infin;: reduction approaches 100% but never reaches it.</li>
+    </ul>
+
+    <h3>Mitigation_XExponentialDecay</h3>
+
+    <p><strong>Tag:</strong> <code>Stat.Mitigation.XExponentialDecay</code></p>
+
+    <p><strong>Formula:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Formula</span>
+        </div>
+        <pre><code>ScaledResistance = TotalResistance * 100
+Mitigated = Delta * e^(-ScaledResistance / Scale)</code></pre>
+    </div>
+
+    <p>Where <code>Scale</code> = <code>ExponentialDecayMitigationScaleFactor</code> (default <code>100.f</code>).</p>
+
+    <p>Damage decays exponentially with resistance. Like Diminishing, damage approaches zero asymptotically but never reaches it.</p>
+
+    <p><strong>Behavior</strong> (with default scale <code>100</code>):</p>
+    <ul>
+        <li>Resistance <code>0.0</code> &rarr; 0% reduction (multiplier = 1.0)</li>
+        <li>Resistance <code>0.5</code> &rarr; ~39% reduction (multiplier &asymp; 0.607)</li>
+        <li>Resistance <code>1.0</code> &rarr; ~63% reduction (multiplier &asymp; 0.368)</li>
+        <li>Resistance <code>2.0</code> &rarr; ~86% reduction (multiplier &asymp; 0.135)</li>
+        <li>Resistance <code>5.0</code> &rarr; ~99.3% reduction (multiplier &asymp; 0.007)</li>
+    </ul>
+
+    <p>Exponential Decay provides steeper reduction than Diminishing at high resistance values, making it suitable for systems where high resistance should be very effective.</p>
+
+    <hr>
+
+    <h2 id="dm-formula-comparison">6. Formula Comparison</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Resistance</th>
+                <th>XFlat (damage)</th>
+                <th>XPercentage</th>
+                <th>XDiminishing</th>
+                <th>XExponentialDecay</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0.0</td><td>100</td><td>100</td><td>100</td><td>100</td></tr>
+            <tr><td>0.25</td><td>75</td><td>75</td><td>80</td><td>78</td></tr>
+            <tr><td>0.5</td><td>50</td><td>50</td><td>67</td><td>61</td></tr>
+            <tr><td>1.0</td><td>0</td><td>0</td><td>50</td><td>37</td></tr>
+            <tr><td>2.0</td><td>0</td><td>0</td><td>33</td><td>14</td></tr>
+            <tr><td>5.0</td><td>0</td><td>0</td><td>9</td><td>1</td></tr>
+        </tbody>
+    </table>
+
+    <p><em>Table assumes <code>Delta = -100</code> (100 points of damage), default scale factors. Values show remaining damage after mitigation.</em></p>
+
+    <hr>
+
+    <h2 id="dm-custom-formula-extension">7. Custom Formula Extension</h2>
+
+    <p><strong>Declaration</strong> (on <code>UStatsX_StatsComponentBase</code>):</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintImplementableEvent, Category = "StatsX|Mitigation")
+float Mitigation_CustomFormula(
+    float Delta,
+    float TotalResistance,
+    const FGenericMitigationInfo&amp; MitigationInfo
+);</code></pre>
+    </div>
+
+    <p>When <code>MitigationFormula</code> does not match any of the four built-in tags, the opcode dispatches to <code>Mitigation_CustomFormula</code>. This is a <code>BlueprintImplementableEvent</code> &mdash; override it in a Blueprint subclass of the stats component to implement arbitrary game-specific formulas.</p>
+
+    <p><strong>Parameters available in the override:</strong></p>
+    <ul>
+        <li><code>Delta</code> &mdash; raw damage value.</li>
+        <li><code>TotalResistance</code> &mdash; accumulated resistance from <code>DamageToResistancesMap</code>.</li>
+        <li><code>MitigationInfo</code> &mdash; full context struct (see below).</li>
+    </ul>
+
+    <p><strong>Return value:</strong> the mitigated damage <code>float</code>, written back to the ForgeVM output variable.</p>
+
+    <p>If <code>Mitigation_CustomFormula</code> is not overridden, the default implementation returns <code>Delta</code> unmodified (no mitigation).</p>
+
+    <hr>
+
+    <h2 id="dm-supporting-data-structures">8. Supporting Data Structures</h2>
+
+    <h3>FGenericMitigationInfo</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MitigationFormula</code></td><td><code>FGameplayTag</code></td><td>The formula tag dispatched by the opcode.</td></tr>
+            <tr><td><code>AttributeModifyInfo</code></td><td><code>FAttributeModifyInfo</code></td><td>Detailed modification context (see below).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>FAttributeModifyInfo</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>DamageTypes</code></td><td><code>FGameplayTagContainer</code></td><td>All damage-type tags from the instruction.</td></tr>
+            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>The attribute being modified.</td></tr>
+            <tr><td><code>SubAttributeTag</code></td><td><code>FGameplayTag</code></td><td>Sub-attribute channel.</td></tr>
+            <tr><td><code>Delta</code></td><td><code>float</code></td><td>Raw damage value before mitigation.</td></tr>
+            <tr><td><code>ModifyOp</code></td><td><code>EStatModifyOp</code></td><td>The modification operation type.</td></tr>
+        </tbody>
+    </table>
+
+    <p>These structs are passed through to both built-in and custom formulas, providing full context about the damage event for formula-specific logic.</p>
+
+    <hr>
+
+    <h2 id="dm-mitigation-formula-tags">9. Mitigation Formula Tags</h2>
+
+    <p>Declared in <code>StatsXTypes.cpp</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag</th>
+                <th>Constant</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Stat.Mitigation.XFlat</code></td><td>Built-in flat subtraction formula.</td></tr>
+            <tr><td><code>Stat.Mitigation.XPercentage</code></td><td>Built-in percentage reduction formula.</td></tr>
+            <tr><td><code>Stat.Mitigation.XDiminishing</code></td><td>Built-in diminishing returns formula.</td></tr>
+            <tr><td><code>Stat.Mitigation.XExponentialDecay</code></td><td>Built-in exponential decay formula.</td></tr>
+        </tbody>
+    </table>
+
+    <p>Any other <code>FGameplayTag</code> used as <code>MitigationFormula</code> routes to <code>Mitigation_CustomFormula</code>.</p>
+
+    <hr>
+
+    <h2 id="dm-integration-notes">10. Integration Notes</h2>
+
+    <ul>
+        <li><strong>Server-only computation.</strong> <code>OP_CalculateMitigation</code> executes within ForgeVM on the authority. Clients receive the final attribute change through the standard replication pipeline (see 20 &mdash; Replication).</li>
+        <li><strong>Multiple damage types.</strong> When <code>DamageTypes</code> contains more than one tag, resistances from all matching entries in <code>DamageToResistancesMap</code> are summed into a single <code>TotalResistance</code>. This means a single resistance attribute can counter multiple damage types if mapped accordingly.</li>
+        <li><strong>Attribute resolution.</strong> Resistance values are read from the <code>Current</code> sub-attribute of each resistance tag. Modifiers affecting resistance attributes (e.g. a buff granting +0.5 fire resistance) are fully resolved before <code>TotalResistance</code> is computed.</li>
+        <li><strong>Sign semantics.</strong> Negative <code>Delta</code> represents damage; positive <code>Delta</code> represents healing. The XFlat formula preserves sign direction. Other formulas apply a multiplier, naturally preserving sign.</li>
+        <li><strong>Scale factor tuning.</strong> <code>DiminishingMitigationScaleFactor</code> and <code>ExponentialDecayMitigationScaleFactor</code> are exposed as <code>EditAnywhere</code> properties on the component, allowing per-actor tuning without code changes.</li>
+    </ul>
+
+</section>

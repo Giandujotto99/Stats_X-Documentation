@@ -1,0 +1,323 @@
+<section id="declared-gameplay-tags" class="tutorial-section">
+    <h1>Declared Gameplay Tags</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        22 native gameplay tags declared via <code>UE_DECLARE_GAMEPLAY_TAG_EXTERN</code> / <code>UE_DEFINE_GAMEPLAY_TAG</code> &mdash; centralized tag hierarchy for attributes, sub-attributes, damage types, statuses, events, modifiers, variables, containers, and mitigation formulas.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#dgt-overview">Overview</a></li>
+        <li><a href="#dgt-tag-hierarchy">Tag Hierarchy</a></li>
+        <li><a href="#dgt-attribute-tags">Attribute Tags</a></li>
+        <li><a href="#dgt-sub-attribute-tags">Sub-Attribute Tags</a></li>
+        <li><a href="#dgt-damage-type-tag">Damage Type Tag</a></li>
+        <li><a href="#dgt-status-tag">Status Tag</a></li>
+        <li><a href="#dgt-event-tags">Event Tags</a></li>
+        <li><a href="#dgt-modifier-source-tag">Modifier Source Tag</a></li>
+        <li><a href="#dgt-variable-tags">Variable Tags</a></li>
+        <li><a href="#dgt-container-type-tags">Container Type Tags</a></li>
+        <li><a href="#dgt-mitigation-formula-tags">Mitigation Formula Tags</a></li>
+        <li><a href="#dgt-extension-points">Extension Points</a></li>
+        <li><a href="#dgt-summary">Summary</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="dgt-overview">1. Overview</h2>
+
+    <p>Stats_X declares <strong>22 native gameplay tags</strong> using the Unreal Engine <code>UE_DECLARE_GAMEPLAY_TAG_EXTERN</code> / <code>UE_DEFINE_GAMEPLAY_TAG</code> pattern. All tags are centralized in a single header/definition pair:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Public/Data/StatsXTypes.h</code></td><td><code>UE_DECLARE_GAMEPLAY_TAG_EXTERN</code> &mdash; extern declarations (lines 12&ndash;41).</td></tr>
+            <tr><td><code>Private/Data/StatsXTypes.cpp</code></td><td><code>UE_DEFINE_GAMEPLAY_TAG</code> &mdash; definitions with tag strings (lines 6&ndash;35).</td></tr>
+        </tbody>
+    </table>
+
+    <p>Tags are registered at module load time via the native gameplay tag system. No <code>.ini</code>, <code>.csv</code>, or <code>RequestGameplayTag</code> dynamic registrations are used.</p>
+
+    <hr>
+
+    <h2 id="dgt-tag-hierarchy">2. Tag Hierarchy</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>StatsX
+&#9500;&#9472;&#9472; Attribute
+&#9474;   &#9500;&#9472;&#9472; Resource
+&#9474;   &#9492;&#9472;&#9472; Stat
+&#9500;&#9472;&#9472; SubAttribute
+&#9474;   &#9500;&#9472;&#9472; Current
+&#9474;   &#9500;&#9472;&#9472; Max
+&#9474;   &#9500;&#9472;&#9472; Base
+&#9474;   &#9500;&#9472;&#9472; Overflows
+&#9474;   &#9492;&#9472;&#9472; Replicated
+&#9500;&#9472;&#9472; DamageType
+&#9500;&#9472;&#9472; Status
+&#9500;&#9472;&#9472; Event
+&#9474;   &#9500;&#9472;&#9472; Pre
+&#9474;   &#9500;&#9472;&#9472; Post
+&#9474;   &#9492;&#9472;&#9472; Gameplay
+&#9500;&#9472;&#9472; ModSource
+&#9500;&#9472;&#9472; Variable
+&#9474;   &#9492;&#9472;&#9472; Payload
+&#9500;&#9472;&#9472; ContainerType
+&#9474;   &#9500;&#9472;&#9472; CastedStatuses
+&#9474;   &#9492;&#9472;&#9472; ReceivedStatuses
+&#9492;&#9472;&#9472; MitigationFormula
+    &#9500;&#9472;&#9472; XFlat
+    &#9500;&#9472;&#9472; XPercentage
+    &#9500;&#9472;&#9472; XDiminishing
+    &#9492;&#9472;&#9472; XExponentialDecay</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="dgt-attribute-tags">3. Attribute Tags</h2>
+
+    <p>These tags categorize attributes and control how the attribute system handles value synchronization.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Attribute</code></td><td><code>StatsX_Attribute</code></td><td>Parent tag for all attributes. Used as a category filter for UI parameter dropdowns and hierarchy validation.</td></tr>
+            <tr><td><code>StatsX.Attribute.Resource</code></td><td><code>StatsX_Attribute_Resource</code></td><td>Marks pooled resource attributes (health, mana, stamina) where Current can differ from Max. Validated by <code>InitializeResourceAttribute</code>.</td></tr>
+            <tr><td><code>StatsX.Attribute.Stat</code></td><td><code>StatsX_Attribute_Stat</code></td><td>Marks synchronized stat attributes (strength, speed, defense) where Current always equals Max. Modifying Max automatically synchronizes Current.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="dgt-sub-attribute-tags">4. Sub-Attribute Tags</h2>
+
+    <p>Sub-attribute tags identify which facet of an attribute is being read or written by opcodes such as <code>OP_ModifyAttribute</code>, <code>OP_SetAttribute</code>, and <code>OP_GetAttributeValue</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.SubAttribute.Current</code></td><td><code>StatsX_SubAttribute_Current</code></td><td>Targets the live/active value of an attribute. Used by mitigation calculations to retrieve resistance values.</td></tr>
+            <tr><td><code>StatsX.SubAttribute.Max</code></td><td><code>StatsX_SubAttribute_Max</code></td><td>Targets the maximum possible value. For Stat-type attributes, changing Max auto-synchronizes Current.</td></tr>
+            <tr><td><code>StatsX.SubAttribute.Base</code></td><td><code>StatsX_SubAttribute_Base</code></td><td>Targets the unmodified foundation value before additive/multiplicative modifiers are applied.</td></tr>
+            <tr><td><code>StatsX.SubAttribute.Overflows</code></td><td><code>StatsX_SubAttribute_Overflows</code></td><td>Read-only. Returns overflow state as float (<code>1.0</code> = enabled, <code>0.0</code> = disabled). Direct modification forbidden &mdash; use <code>SetEnableOverflows</code>.</td></tr>
+            <tr><td><code>StatsX.SubAttribute.Replicated</code></td><td><code>StatsX_SubAttribute_Replicated</code></td><td>Read-only. Returns replication state as float (<code>1.0</code> = replicated, <code>0.0</code> = local-only). Direct modification forbidden &mdash; use <code>SetEnableReplicated</code>.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="dgt-damage-type-tag">5. Damage Type Tag</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.DamageType</code></td><td><code>StatsX_DamageType</code></td><td>Parent tag for all damage type categories (Fire, Physical, Magical, etc.). Used by <code>OP_CalculateMitigation</code> to map incoming damage types to resistance attributes via <code>DamageToResistancesMap</code>.</td></tr>
+        </tbody>
+    </table>
+
+    <p>Projects extend this hierarchy with game-specific children (e.g. <code>StatsX.DamageType.Fire</code>, <code>StatsX.DamageType.Physical</code>).</p>
+
+    <hr>
+
+    <h2 id="dgt-status-tag">6. Status Tag</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Status</code></td><td><code>StatsX_Status</code></td><td>Parent tag for all status effect definitions. Validates that cast operations target valid status definitions via <code>ResolveStatusData</code> and <code>GetStatusData</code>.</td></tr>
+        </tbody>
+    </table>
+
+    <p>Each status definition is assigned a child tag under this hierarchy (e.g. <code>StatsX.Status.Burn</code>, <code>StatsX.Status.Shield</code>).</p>
+
+    <hr>
+
+    <h2 id="dgt-event-tags">7. Event Tags</h2>
+
+    <p>Event tags classify the timing and context of propagation events consumed by the interceptor system.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Event.Pre</code></td><td><code>StatsX_Event_Pre</code></td><td>Marks events that fire <strong>before</strong> mitigation or status effects apply. Interceptors use these to peek at or modify incoming changes before state mutation.</td></tr>
+            <tr><td><code>StatsX.Event.Post</code></td><td><code>StatsX_Event_Post</code></td><td>Marks events that fire <strong>after</strong> all changes have been applied. Interceptors use these to react to final values and trigger side effects.</td></tr>
+            <tr><td><code>StatsX.Event.Gameplay</code></td><td><code>StatsX_Event_Gameplay</code></td><td>Marks gameplay-specific events (skill execution, threshold crossing, status procs). Filters which events are exposed to gameplay systems versus internal processing.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="dgt-modifier-source-tag">8. Modifier Source Tag</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.ModSource</code></td><td><code>StatsX_ModSource</code></td><td>Parent tag for modifier origin categories. Used by <code>OP_AddModifier</code> to stamp the source on each modifier, and by <code>RemoveModifiersBySource</code> to batch-remove all modifiers from a given origin.</td></tr>
+        </tbody>
+    </table>
+
+    <p>Projects extend with game-specific children (e.g. <code>StatsX.ModSource.Buff</code>, <code>StatsX.ModSource.Equipment</code>, <code>StatsX.ModSource.Status</code>).</p>
+
+    <hr>
+
+    <h2 id="dgt-variable-tags">9. Variable Tags</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Variable</code></td><td><code>StatsX_Variable</code></td><td>Parent tag for all status runtime variables. Enforces category filtering in <code>GetVariableFloat</code>, <code>SetVariableInt</code>, and custom logic accessor functions.</td></tr>
+            <tr><td><code>StatsX.Variable.Payload</code></td><td><code>StatsX_Variable_Payload</code></td><td>Marks variables exposed as propagation event payload fields. <code>FForgePayloadEntry</code> uses these to describe which runtime data is accessible to interceptors during event propagation.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="dgt-container-type-tags">10. Container Type Tags</h2>
+
+    <p>These tags select which status container a conditional check queries.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.ContainerType.CastedStatuses</code></td><td><code>StatsX_ContainerType_CastedStatuses</code></td><td>Queries statuses this entity has actively cast on others. Dispatches to <code>HasCastedStatus</code> / <code>HasAnyCastedStatus</code> / <code>HasAllCastedStatus</code>.</td></tr>
+            <tr><td><code>StatsX.ContainerType.ReceivedStatuses</code></td><td><code>StatsX_ContainerType_ReceivedStatuses</code></td><td>Queries statuses currently affecting this entity. Dispatches to <code>HasReceivedStatus</code> / <code>HasAnyReceivedStatus</code> / <code>HasAllReceivedStatus</code>.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="dgt-mitigation-formula-tags">11. Mitigation Formula Tags</h2>
+
+    <p>These tags select the damage mitigation formula dispatched by <code>OP_CalculateMitigation</code> (opcode 271). See <strong>22 &mdash; Damage Mitigation</strong> for formula details.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Tag String</th>
+                <th>C++ Variable</th>
+                <th>Dispatches To</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.MitigationFormula.XFlat</code></td><td><code>StatsX_MitigationFormula_XFlat</code></td><td><code>Mitigation_XFlat</code> &mdash; flat reduction: <code>Delta - (Resistance * 100)</code>.</td></tr>
+            <tr><td><code>StatsX.MitigationFormula.XPercentage</code></td><td><code>StatsX_MitigationFormula_XPercentage</code></td><td><code>Mitigation_XPercentage</code> &mdash; percentage: <code>Delta * (1 - clamp(Resistance, 0, 1))</code>.</td></tr>
+            <tr><td><code>StatsX.MitigationFormula.XDiminishing</code></td><td><code>StatsX_MitigationFormula_XDiminishing</code></td><td><code>Mitigation_XDiminishing</code> &mdash; asymptotic: <code>Delta * (Scale / (Scale + Resistance))</code>.</td></tr>
+            <tr><td><code>StatsX.MitigationFormula.XExponentialDecay</code></td><td><code>StatsX_MitigationFormula_XExponentialDecay</code></td><td><code>Mitigation_XExponentialDecay</code> &mdash; exponential: <code>Delta * e^(-Resistance / Scale)</code>.</td></tr>
+        </tbody>
+    </table>
+
+    <p>If the formula tag does not match any of the four built-ins, the system falls back to <code>Mitigation_CustomFormula</code> (Blueprint-implementable event).</p>
+
+    <hr>
+
+    <h2 id="dgt-extension-points">12. Extension Points</h2>
+
+    <p>Stats_X's native tags are <strong>parent hierarchies</strong> designed for project-level extension. The plugin itself defines only root and structural tags &mdash; game projects add children as needed:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Parent Tag</th>
+                <th>Example Children (project-defined)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Attribute.Resource</code></td><td><code>StatsX.Attribute.Resource.Health</code>, <code>StatsX.Attribute.Resource.Mana</code></td></tr>
+            <tr><td><code>StatsX.Attribute.Stat</code></td><td><code>StatsX.Attribute.Stat.Strength</code>, <code>StatsX.Attribute.Stat.Armor</code></td></tr>
+            <tr><td><code>StatsX.DamageType</code></td><td><code>StatsX.DamageType.Fire</code>, <code>StatsX.DamageType.Physical</code></td></tr>
+            <tr><td><code>StatsX.Status</code></td><td><code>StatsX.Status.Burn</code>, <code>StatsX.Status.Shield</code></td></tr>
+            <tr><td><code>StatsX.Event.Gameplay</code></td><td><code>StatsX.Event.Gameplay.OnHit</code>, <code>StatsX.Event.Gameplay.OnKill</code></td></tr>
+            <tr><td><code>StatsX.ModSource</code></td><td><code>StatsX.ModSource.Buff</code>, <code>StatsX.ModSource.Equipment</code></td></tr>
+            <tr><td><code>StatsX.Variable</code></td><td><code>StatsX.Variable.DamageDealt</code>, <code>StatsX.Variable.HealAmount</code></td></tr>
+        </tbody>
+    </table>
+
+    <p>Child tags can be added via the Unreal Editor Gameplay Tag manager, <code>.ini</code> tag tables, or project-level <code>UE_DEFINE_GAMEPLAY_TAG</code> declarations.</p>
+
+    <hr>
+
+    <h2 id="dgt-summary">13. Summary</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>Parent Tag</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Attribute</td><td>3</td><td><code>StatsX.Attribute</code></td></tr>
+            <tr><td>Sub-Attribute</td><td>5</td><td><code>StatsX.SubAttribute</code></td></tr>
+            <tr><td>Damage Type</td><td>1</td><td><code>StatsX.DamageType</code></td></tr>
+            <tr><td>Status</td><td>1</td><td><code>StatsX.Status</code></td></tr>
+            <tr><td>Event</td><td>3</td><td><code>StatsX.Event</code></td></tr>
+            <tr><td>Modifier Source</td><td>1</td><td><code>StatsX.ModSource</code></td></tr>
+            <tr><td>Variable</td><td>2</td><td><code>StatsX.Variable</code></td></tr>
+            <tr><td>Container Type</td><td>2</td><td><code>StatsX.ContainerType</code></td></tr>
+            <tr><td>Mitigation Formula</td><td>4</td><td><code>StatsX.MitigationFormula</code></td></tr>
+            <tr><td><strong>Total</strong></td><td><strong>22</strong></td><td></td></tr>
+        </tbody>
+    </table>
+
+</section>

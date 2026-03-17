@@ -1,0 +1,1009 @@
+<section id="cosmetic-cue-system" class="tutorial-section">
+    <h1>Cosmetic Cue System</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Layer: <strong>Presentation</strong> &mdash; fire-and-forget visual/audio notifications decoupled from gameplay state.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#ccs-purpose">Purpose</a></li>
+        <li><a href="#ccs-data-structures">Data Structures</a></li>
+        <li><a href="#ccs-cue-bus-architecture">Cue Bus Architecture</a></li>
+        <li><a href="#ccs-subsystem-api">Subsystem API</a></li>
+        <li><a href="#ccs-opcode-handlers">Opcode Handlers &mdash; Cue Producers</a></li>
+        <li><a href="#ccs-local-handle-registries">Local Handle Registries</a></li>
+        <li><a href="#ccs-state-deduplication">State Deduplication</a></li>
+        <li><a href="#ccs-sequence-allocation">Sequence Allocation</a></li>
+        <li><a href="#ccs-initialization-and-teardown">Initialization and Teardown</a></li>
+        <li><a href="#ccs-supporting-enums">Supporting Enums</a></li>
+        <li><a href="#ccs-subsystem-private-storage">Subsystem Private Storage</a></li>
+        <li><a href="#ccs-handler-registration">Handler Registration</a></li>
+        <li><a href="#ccs-design-decisions">Design Decisions</a></li>
+        <li><a href="#ccs-see-also">See Also</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="ccs-purpose">1. Purpose</h2>
+    <p>The Cosmetic Cue System provides a <strong>one-way bus</strong> for gameplay logic (ForgeVM opcode handlers) to emit visual and audio effects (montages, VFX, SFX) without coupling the execution layer to presentation concerns. Cues are <strong>envelopes</strong> &mdash; self-contained packets carrying asset references, transform data, and metadata &mdash; routed through a subsystem bus to registered <strong>sinks</strong> (local playback, network relay, custom consumers).</p>
+
+    <p>Key design goals:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Goal</th>
+                <th>Mechanism</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Gameplay &harr; cosmetic decoupling</td><td>Opcode handlers emit cues; sinks consume them independently</td></tr>
+            <tr><td>Network-ready transport</td><td>State-reliable and burst-unreliable channels</td></tr>
+            <tr><td>Stream deduplication</td><td><code>FStatsXCosmeticCueStreamKey</code> &mdash; latest-value-wins for stateful cues</td></tr>
+            <tr><td>Lifetime management</td><td>Monotonic VFX/SFX handles for stop/update after spawn</td></tr>
+            <tr><td>Zero-allocation fast path</td><td>Pending queue pre-reserved (128 cues, 64 dedup entries)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccs-data-structures">2. Data Structures</h2>
+
+    <h3>2.1 EStatsXCosmeticCueType</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:12-24</code></pre>
+    </div>
+
+    <p>Semantic identifier for cue content:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>None</code> (0)</td><td>Invalid &mdash; rejected by bus</td></tr>
+            <tr><td><code>PlayMontage</code></td><td>Play an animation montage</td></tr>
+            <tr><td><code>StopMontage</code></td><td>Stop a playing montage</td></tr>
+            <tr><td><code>SpawnVFX</code></td><td>Spawn a Niagara system at location</td></tr>
+            <tr><td><code>StopVFX</code></td><td>Deactivate a spawned VFX by handle</td></tr>
+            <tr><td><code>UpdateVFX</code></td><td>Update transform of a spawned VFX</td></tr>
+            <tr><td><code>Custom</code></td><td>User-defined cue (routed but not auto-executed)</td></tr>
+            <tr><td><code>SpawnSFX</code></td><td>Play a sound at location</td></tr>
+            <tr><td><code>StopSFX</code></td><td>Stop a playing sound by handle</td></tr>
+            <tr><td><code>SpawnVFXAttached</code></td><td>Spawn a Niagara system attached to an actor/socket</td></tr>
+        </tbody>
+    </table>
+
+    <h3>2.2 EStatsXCosmeticCueChannel</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:27-34</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Behaviour</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StateReliable</code> (0)</td><td>Stateful &mdash; latest value wins per stream. Used for persistent cues (montage start/stop, VFX lifecycle).</td></tr>
+            <tr><td><code>BurstUnreliable</code></td><td>Fire-and-forget &mdash; every cue dispatched independently. Used for one-shot bursts (hit VFX, impacts).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>2.3 EStatsXCosmeticCueRoutePolicy</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:37-53</code></pre>
+    </div>
+
+    <p>Determines which actor receives routing affinity:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Resolution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code> (0)</td><td><code>ExplicitRouteActor &rarr; TargetActor &rarr; CasterActor &rarr; nullptr</code> (cascade fallback)</td></tr>
+            <tr><td><code>TargetActor</code></td><td><code>Cue.TargetActor</code></td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>Cue.CasterActor</code></td></tr>
+            <tr><td><code>ExplicitActor</code></td><td><code>Cue.ExplicitRouteActor</code></td></tr>
+            <tr><td><code>Global</code></td><td><code>nullptr</code> (no actor affinity &mdash; global relay)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>2.4 FStatsXCosmeticCueKey</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:56-66</code></pre>
+    </div>
+
+    <p>Stable identity for deduplication and ordering:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Owning status execution identifier</td></tr>
+            <tr><td><code>NodePC</code></td><td><code>int32</code></td><td>Instruction index that produced this cue (<code>INDEX_NONE</code> when unknown)</td></tr>
+            <tr><td><code>Sequence</code></td><td><code>uint16</code></td><td>Monotonic sequence (0 = auto-assign by bus)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>2.5 FStatsXCosmeticCue</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:69-118</code></pre>
+    </div>
+
+    <p>The <strong>envelope</strong> transported by the cosmetic cue bus. All fields are value-types or weak pointers &mdash; no GC pressure from pending cues.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>EStatsXCosmeticCueType</code></td><td>Semantic type</td></tr>
+            <tr><td><code>Channel</code></td><td><code>EStatsXCosmeticCueChannel</code></td><td>Transport intent</td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>EStatsXCosmeticCueRoutePolicy</code></td><td>Route selection</td></tr>
+            <tr><td><code>Key</code></td><td><code>FStatsXCosmeticCueKey</code></td><td>Identity (StatusID + NodePC + Sequence)</td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>VM execution caster</td></tr>
+            <tr><td><code>TargetActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>VM execution target</td></tr>
+            <tr><td><code>ExplicitRouteActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>Optional routing override</td></tr>
+            <tr><td><code>ServerWorldTimeSeconds</code></td><td><code>float</code></td><td>Emission timestamp (auto-filled if &le; 0)</td></tr>
+            <tr><td><code>CueName</code></td><td><code>FName</code></td><td>Optional identifier for custom routers</td></tr>
+            <tr><td><code>Asset</code></td><td><code>TWeakObjectPtr&lt;UObject&gt;</code></td><td>Primary asset (montage, Niagara system, sound)</td></tr>
+            <tr><td><code>SecondaryAsset</code></td><td><code>TWeakObjectPtr&lt;UObject&gt;</code></td><td>Secondary asset slot</td></tr>
+            <tr><td><code>Location</code></td><td><code>FVector</code></td><td>Transform position</td></tr>
+            <tr><td><code>Rotation</code></td><td><code>FRotator</code></td><td>Transform rotation</td></tr>
+            <tr><td><code>Scale</code></td><td><code>FVector</code></td><td>Transform scale (default 1,1,1)</td></tr>
+            <tr><td><code>SectionName</code></td><td><code>FName</code></td><td>Montage section name / socket name</td></tr>
+            <tr><td><code>Float0..Float3</code></td><td><code>float</code></td><td>Numeric payload slots (play rate, volume, blend time, etc.)</td></tr>
+            <tr><td><code>Int0, Int1</code></td><td><code>int32</code></td><td>Integer payload slots (transform space, pool policy, etc.)</td></tr>
+            <tr><td><code>Int64_0</code></td><td><code>int64</code></td><td>VFX/SFX handle</td></tr>
+            <tr><td><code>Flags</code></td><td><code>uint8</code></td><td>Bitfield (e.g. bit 0 = bStopOnStatusEnds)</td></tr>
+        </tbody>
+    </table>
+
+    <p>Helper: <code>IsStateCue()</code> returns <code>true</code> when <code>Channel == StateReliable</code>.</p>
+
+    <h3>2.6 FStatsXCosmeticCueStreamKey</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:121-150</code></pre>
+    </div>
+
+    <p>Hash key for state-channel deduplication. Two cues belong to the same <strong>stream</strong> when they share <code>StatusID + NodePC + CueType</code>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FStatsXCosmeticCueStreamKey
+{
+    int64  StatusID;
+    int32  NodePC;
+    uint8  CueType;
+};</code></pre>
+    </div>
+
+    <p><code>GetTypeHash</code> uses <code>HashCombineFast</code> for O(1) lookup in <code>PendingStateCueIndices</code>.</p>
+
+    <hr>
+
+    <h2 id="ccs-cue-bus-architecture">3. Cue Bus Architecture</h2>
+
+    <p>The bus lives entirely inside <code>UStatsX_WorldSubsystem</code> and follows a <strong>produce &rarr; batch &rarr; flush</strong> pipeline per tick.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code> ForgeVM opcode handlers
+        |
+        v
+ EnqueueCosmeticCue()          &lt;-- Produce: fill pending queue
+        |
+        v
+ +---------------------+
+ |  PendingCosmeticCues |       &lt;-- Batch: TArray&lt;FStatsXCosmeticCue&gt;
+ |  PendingStateCueIdx  |           State dedup: TMap&lt;StreamKey, int32&gt;
+ +---------------------+
+        |
+        v  (end of Tick)
+ FlushCosmeticCueBus()         &lt;-- Flush: resolve route actor, broadcast
+        |
+        v
+ OnCosmeticCueRoutedNative     &lt;-- Multicast delegate (Cue, RouteActor)
+   +-- Network sink (server)   -&gt; HandleCosmeticCueRoutedForNetwork
+   +-- Custom sinks             -&gt; user-registered delegates</code></pre>
+    </div>
+
+    <h3>3.1 Tick Integration</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:462-469</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void UStatsX_WorldSubsystem::Tick(float DeltaTime)
+{
+    TickInstances(DeltaTime);
+    FlushPendingStatusUpdates();
+    FlushCosmeticCueBus();           // &lt;- last phase
+}</code></pre>
+    </div>
+
+    <p>Cues are flushed <strong>after</strong> gameplay execution completes, ensuring all opcodes within the current frame have had the chance to enqueue their cues before dispatch.</p>
+
+    <hr>
+
+    <h2 id="ccs-subsystem-api">4. Subsystem API</h2>
+
+    <h3>4.1 EnqueueCosmeticCue</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:480-529</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool EnqueueCosmeticCue(const FStatsXCosmeticCue&amp; Cue);</code></pre>
+    </div>
+
+    <p><strong>Flow:</strong></p>
+
+    <ol>
+        <li><strong>Validate</strong> &mdash; reject <code>CueType::None</code> (returns <code>false</code>).</li>
+        <li><strong>Auto-assign sequence</strong> &mdash; if <code>Key.Sequence == 0</code>, allocate via monotonic counter (<code>NextCosmeticCueSequence</code>, wraps at 65535 skipping 0).</li>
+        <li><strong>Auto-assign timestamp</strong> &mdash; if <code>ServerWorldTimeSeconds &le; 0</code>, set to <code>World-&gt;GetTimeSeconds()</code>.</li>
+        <li><strong>State dedup</strong> &mdash; if <code>IsStateCue()</code>:
+            <ul>
+                <li>Build <code>FStatsXCosmeticCueStreamKey</code> from the cue.</li>
+                <li>If stream already has a pending entry &rarr; <strong>overwrite in-place</strong> (latest value wins).</li>
+                <li>Otherwise &rarr; append and record index in <code>PendingStateCueIndices</code>.</li>
+            </ul>
+        </li>
+        <li><strong>Burst</strong> &mdash; append directly to <code>PendingCosmeticCues</code>.</li>
+    </ol>
+
+    <h3>4.2 EnqueueCosmeticCueBatch</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 EnqueueCosmeticCueBatch(const TArray&lt;FStatsXCosmeticCue&gt;&amp; Cues);</code></pre>
+    </div>
+
+    <p>Iterates and delegates to <code>EnqueueCosmeticCue</code> for each cue. Returns accepted count.</p>
+
+    <h3>4.3 FlushCosmeticCueBus</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:545-571</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 FlushCosmeticCueBus();</code></pre>
+    </div>
+
+    <ol>
+        <li>Early-out if queue is empty.</li>
+        <li>If <strong>no sinks bound</strong> &rarr; silently discard (avoids dead-letter accumulation).</li>
+        <li>For each pending cue:
+            <ul>
+                <li>Resolve route actor via <code>ResolveCosmeticCueRouteActor</code>.</li>
+                <li><code>OnCosmeticCueRoutedNative.Broadcast(Cue, RouteActor)</code>.</li>
+            </ul>
+        </li>
+        <li>Reset <code>PendingCosmeticCues</code> and <code>PendingStateCueIndices</code>.</li>
+        <li>Return dispatch count.</li>
+    </ol>
+
+    <h3>4.4 ResolveCosmeticCueRouteActor</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:591-623</code></pre>
+    </div>
+
+    <p>Switch on <code>RoutePolicy</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Policy</th>
+                <th>Returns</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>TargetActor</code></td><td><code>Cue.TargetActor.Get()</code></td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>Cue.CasterActor.Get()</code></td></tr>
+            <tr><td><code>ExplicitActor</code></td><td><code>Cue.ExplicitRouteActor.Get()</code></td></tr>
+            <tr><td><code>Global</code></td><td><code>nullptr</code></td></tr>
+            <tr><td><code>Auto</code> (default)</td><td>First valid of: Explicit &rarr; Target &rarr; Caster &rarr; <code>nullptr</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>4.5 Sink Registration</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FDelegateHandle RegisterCosmeticCueSink(const FOnStatsXCosmeticCueRoutedNative::FDelegate&amp; Delegate);
+void UnregisterCosmeticCueSink(FDelegateHandle Handle);
+void UnregisterCosmeticCueSinksForObject(const void* InUserObject);</code></pre>
+    </div>
+
+    <p>The delegate signature is:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>DECLARE_MULTICAST_DELEGATE_TwoParams(
+    FOnStatsXCosmeticCueRoutedNative,
+    const FStatsXCosmeticCue&amp; /*Cue*/,
+    AActor* /*RouteActor*/);</code></pre>
+    </div>
+
+    <p>Any number of sinks may bind. The server-side network sink is auto-registered during <code>Initialize()</code> on Dedicated/Listen servers.</p>
+
+    <hr>
+
+    <h2 id="ccs-opcode-handlers">5. Opcode Handlers &mdash; Cue Producers</h2>
+
+    <p>Each cosmetic opcode constructs an <code>FStatsXCosmeticCue</code>, fills type-specific payload fields, and calls <code>Subsystem-&gt;EnqueueCosmeticCue(Cue)</code>.</p>
+
+    <h3>5.1 OP_PlayMontage (321)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:2639-3173
+Handler: Nodes_Flow::PlayMontage</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>PlayMontage</code></td></tr>
+            <tr><td><code>Channel</code></td><td><code>StateReliable</code></td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>TargetActor</code></td></tr>
+            <tr><td><code>Asset</code></td><td><code>UAnimMontage*</code></td></tr>
+            <tr><td><code>Float0</code></td><td>Play rate</td></tr>
+            <tr><td><code>SectionName</code></td><td>Starting section name</td></tr>
+            <tr><td><code>Flags</code></td><td>Bit 0 = <code>bStopOnStatusEnds</code></td></tr>
+            <tr><td><code>Location / Rotation</code></td><td>Target actor transform</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.2 OP_SpawnVFX (327)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:5207-5449
+Handler: Nodes_Action::SpawnVFX</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>SpawnVFX</code></td></tr>
+            <tr><td><code>Channel</code></td><td>Per <code>EStatsXVFXNetDelivery</code> (State or Burst)</td></tr>
+            <tr><td><code>RoutePolicy</code></td><td>Per <code>EStatsXVFXTransformSpace</code> (Target, Caster, or Auto)</td></tr>
+            <tr><td><code>Asset</code></td><td><code>UNiagaraSystem*</code></td></tr>
+            <tr><td><code>Location / Rotation / Scale</code></td><td>Input transform</td></tr>
+            <tr><td><code>Int0</code></td><td><code>TransformSpace</code> (cast to int32)</td></tr>
+            <tr><td><code>Int1</code></td><td><code>PoolPolicy</code> (cast to int32)</td></tr>
+            <tr><td><code>Int64_0</code></td><td>Allocated VFX handle (<code>AllocateCosmeticVFXHandle()</code>)</td></tr>
+        </tbody>
+    </table>
+
+    <p>After enqueue, the local handler also calls <code>RegisterLocalVFXComponent(Handle, SpawnedComp)</code> for immediate local playback.</p>
+
+    <h3>5.3 OP_SpawnVFXAttachedtoActor (390)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:5466-5630
+Handler: Nodes_Action::SpawnVFXAttachedtoActor</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>SpawnVFXAttached</code></td></tr>
+            <tr><td><code>Channel</code></td><td>Per <code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>ExplicitActor</code></td></tr>
+            <tr><td><code>Asset</code></td><td><code>UNiagaraSystem*</code></td></tr>
+            <tr><td><code>SectionName</code></td><td>Socket name for attachment</td></tr>
+            <tr><td><code>Int0</code></td><td><code>AttachRule</code> (cast to int32)</td></tr>
+            <tr><td><code>Int1</code></td><td><code>PoolPolicy</code> (cast to int32)</td></tr>
+            <tr><td><code>Int64_0</code></td><td>Allocated VFX handle</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.4 OP_SpawnSFX (337)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:5648-5926
+Handler: Nodes_Action::SpawnSFX</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>SpawnSFX</code></td></tr>
+            <tr><td><code>Channel</code></td><td>Per <code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td><code>RoutePolicy</code></td><td>Per <code>EStatsXVFXTransformSpace</code></td></tr>
+            <tr><td><code>Asset</code></td><td><code>USoundBase*</code></td></tr>
+            <tr><td><code>Float0</code></td><td>Volume multiplier</td></tr>
+            <tr><td><code>Float1</code></td><td>Pitch multiplier</td></tr>
+            <tr><td><code>Float2</code></td><td>Start time</td></tr>
+            <tr><td><code>Int0</code></td><td><code>TransformSpace</code> (cast to int32)</td></tr>
+            <tr><td><code>Int1</code></td><td><code>PlaybackPolicy</code> (cast to int32)</td></tr>
+            <tr><td><code>Int64_0</code></td><td>Allocated SFX handle (<code>AllocateCosmeticSFXHandle()</code>)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.5 OP_StopVFX (335)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:6016-6085
+Handler: Nodes_Action::StopVFX</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>StopVFX</code></td></tr>
+            <tr><td><code>Channel</code></td><td><code>StateReliable</code> (stop is state-transition)</td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>Auto</code></td></tr>
+            <tr><td><code>Float0</code></td><td>Blend-out time</td></tr>
+            <tr><td><code>Int64_0</code></td><td>VFX handle to stop</td></tr>
+        </tbody>
+    </table>
+
+    <p>Locally calls <code>UnregisterLocalVFXComponent(Handle)</code> before enqueue.</p>
+
+    <h3>5.6 OP_UpdateVFX (336)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:6097-6212
+Handler: Nodes_Action::UpdateVFX</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>UpdateVFX</code></td></tr>
+            <tr><td><code>Channel</code></td><td>Per <code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td><code>RoutePolicy</code></td><td>Per <code>EStatsXVFXTransformSpace</code></td></tr>
+            <tr><td><code>Location / Rotation / Scale</code></td><td>New transform</td></tr>
+            <tr><td><code>Int0</code></td><td><code>TransformSpace</code> (cast to int32)</td></tr>
+            <tr><td><code>Int64_0</code></td><td>VFX handle to update</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.7 OP_StopSFX (338)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:5937-6005
+Handler: Nodes_Action::StopSFX</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Envelope field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>StopSFX</code></td></tr>
+            <tr><td><code>Channel</code></td><td>Per <code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td><code>RoutePolicy</code></td><td><code>Auto</code></td></tr>
+            <tr><td><code>Float0</code></td><td>Fade-out time</td></tr>
+            <tr><td><code>Int64_0</code></td><td>SFX handle to stop</td></tr>
+        </tbody>
+    </table>
+
+    <p>Locally calls <code>UnregisterLocalSFXComponent(Handle)</code> before enqueue.</p>
+
+    <hr>
+
+    <h2 id="ccs-local-handle-registries">6. Local Handle Registries</h2>
+
+    <p>The subsystem maintains two parallel registries that let Stop/Update opcodes reference components spawned by earlier Spawn opcodes within the same frame or across frames.</p>
+
+    <h3>6.1 VFX Handle Registry</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_WorldSubsystem.h:305-318
+       Private/Core/StatsX_WorldSubsystem.cpp:641-701</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>API</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>AllocateCosmeticVFXHandle() &rarr; int64</code></td><td>Monotonic allocator (1..max, skip 0)</td></tr>
+            <tr><td><code>RegisterLocalVFXComponent(Handle, UNiagaraComponent*)</code></td><td>Map handle &rarr; component. Stale-entry cleanup at 2048 threshold.</td></tr>
+            <tr><td><code>FindLocalVFXComponent(Handle) &rarr; UNiagaraComponent*</code></td><td>Lookup (returns <code>nullptr</code> if stale/missing)</td></tr>
+            <tr><td><code>UnregisterLocalVFXComponent(Handle)</code></td><td>Remove mapping</td></tr>
+        </tbody>
+    </table>
+
+    <p>Storage: <code>TMap&lt;int64, TWeakObjectPtr&lt;UNiagaraComponent&gt;&gt; LocalVFXByHandle</code></p>
+
+    <h3>6.2 SFX Handle Registry</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_WorldSubsystem.h:320-334
+       Private/Core/StatsX_WorldSubsystem.cpp:703-754</code></pre>
+    </div>
+
+    <p>Identical pattern:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>API</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>AllocateCosmeticSFXHandle() &rarr; int64</code></td><td>Monotonic allocator (1..max, skip 0)</td></tr>
+            <tr><td><code>RegisterLocalSFXComponent(Handle, UAudioComponent*)</code></td><td>Map handle &rarr; component</td></tr>
+            <tr><td><code>FindLocalSFXComponent(Handle) &rarr; UAudioComponent*</code></td><td>Lookup</td></tr>
+            <tr><td><code>UnregisterLocalSFXComponent(Handle)</code></td><td>Remove mapping</td></tr>
+        </tbody>
+    </table>
+
+    <p>Storage: <code>TMap&lt;int64, TWeakObjectPtr&lt;UAudioComponent&gt;&gt; LocalSFXByHandle</code></p>
+
+    <p>Both registries use <strong>weak object pointers</strong> &mdash; no GC root, components can be garbage-collected if their owning actor is destroyed.</p>
+
+    <hr>
+
+    <h2 id="ccs-state-deduplication">7. State Deduplication</h2>
+
+    <p>State-reliable cues (montage start/stop, VFX lifecycle) use the <code>PendingStateCueIndices</code> map to ensure only the <strong>latest value per stream</strong> survives each flush cycle.</p>
+
+    <p><strong>Stream identity</strong> = <code>StatusID + NodePC + CueType</code> (see &sect;2.6).</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Frame N:  SpawnVFX(StatusID=42, PC=7)  -&gt;  queued at index 0
+          UpdateVFX(StatusID=42, PC=7) -&gt;  different CueType -&gt; queued at index 1
+          SpawnVFX(StatusID=42, PC=7)  -&gt;  same stream -&gt; overwrites index 0</code></pre>
+    </div>
+
+    <p>Burst-unreliable cues bypass dedup entirely &mdash; every cue is dispatched.</p>
+
+    <hr>
+
+    <h2 id="ccs-sequence-allocation">8. Sequence Allocation</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:625-639</code></pre>
+    </div>
+
+    <p>The bus assigns a globally-monotonic <code>uint16</code> sequence number to every cue whose <code>Key.Sequence</code> arrives as 0 (the default). The allocator wraps at 65535 and skips 0 to keep the sentinel value available:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 Sequence = NextCosmeticCueSequence++;
+if (Sequence == 0)
+{
+    Sequence = NextCosmeticCueSequence++;
+    // ... double-skip guard ...
+}</code></pre>
+    </div>
+
+    <p>Sequence numbers provide <strong>total ordering</strong> within a flush batch and across network transports for receivers that need to replay cues in emission order.</p>
+
+    <hr>
+
+    <h2 id="ccs-initialization-and-teardown">9. Initialization and Teardown</h2>
+
+    <h3>9.1 Initialize</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:342-400</code></pre>
+    </div>
+
+    <ol>
+        <li>Pre-reserve pending queues: <code>PendingCosmeticCues.Reserve(128)</code>, <code>PendingStateCueIndices.Reserve(64)</code>.</li>
+        <li>Reset monotonic counters: <code>NextCosmeticCueSequence = 1</code>, <code>NextCosmeticVFXHandle = 1</code>, <code>NextCosmeticSFXHandle = 1</code>.</li>
+        <li>Reserve handle registries: <code>LocalVFXByHandle.Reserve(128)</code>, <code>LocalSFXByHandle.Reserve(128)</code>.</li>
+        <li><strong>Server auto-registration</strong> &mdash; on <code>DedicatedServer</code> or <code>ListenServer</code>, register a network sink via lambda:</li>
+    </ol>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>CosmeticCueNetworkSinkHandle = RegisterCosmeticCueSink(
+    FOnStatsXCosmeticCueRoutedNative::FDelegate::CreateLambda(
+        [WeakSelf](const FStatsXCosmeticCue&amp; Cue, AActor* RouteActor)
+        {
+            if (auto* Self = WeakSelf.Get())
+                Self-&gt;HandleCosmeticCueRoutedForNetwork(Cue, RouteActor);
+        }));</code></pre>
+    </div>
+
+    <p>This ensures every flushed cue is automatically forwarded to the network relay system on authority machines.</p>
+
+    <h3>9.2 Deinitialize</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:410-436</code></pre>
+    </div>
+
+    <ol>
+        <li>Unregister network sink.</li>
+        <li><code>DestroyNetCueRelays()</code> &mdash; destroy all spawned relay actors.</li>
+        <li>Reset all queues, maps, counters.</li>
+        <li><code>OnCosmeticCueRoutedNative.Clear()</code> &mdash; unbind all sinks.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="ccs-supporting-enums">10. Supporting Enums</h2>
+
+    <p>The following enums parameterize VFX/SFX opcode behaviour and are packed into the cue's integer payload slots.</p>
+
+    <h3>10.1 EStatsXVFXTransformSpace</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:166-176</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>World</code></td><td>Absolute world-space transform</td></tr>
+            <tr><td><code>TargetRelative</code></td><td>Relative to target actor</td></tr>
+            <tr><td><code>CasterRelative</code></td><td>Relative to caster actor</td></tr>
+        </tbody>
+    </table>
+
+    <h3>10.2 EStatsXVFXAttachRule</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:180-193</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>KeepRelativeOffset</code></td><td>Maintain local offset from parent</td></tr>
+            <tr><td><code>KeepWorldTransform</code></td><td>Snap to world position, follow parent</td></tr>
+            <tr><td><code>SnapToTargetIncludingScale</code></td><td>Full snap including scale</td></tr>
+            <tr><td><code>SnapToTargetNotIncludingScale</code></td><td>Snap position/rotation only</td></tr>
+        </tbody>
+    </table>
+
+    <h3>10.3 EStatsXVFXNetDelivery</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:197-207</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Engine decides based on cue type</td></tr>
+            <tr><td><code>BurstUnreliable</code></td><td>One-shot unreliable multicast</td></tr>
+            <tr><td><code>StateReliable</code></td><td>Stateful reliable replication</td></tr>
+        </tbody>
+    </table>
+
+    <h3>10.4 EStatsXSFXPlaybackPolicy</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:211-221</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Engine decides (short sounds &rarr; fire-and-forget, looping &rarr; persistent)</td></tr>
+            <tr><td><code>FireAndForget</code></td><td>No component tracked &mdash; <code>PlaySoundAtLocation</code></td></tr>
+            <tr><td><code>Persistent</code></td><td><code>SpawnSoundAtLocation</code> &mdash; component registered for stop/fade</td></tr>
+        </tbody>
+    </table>
+
+    <h3>10.5 EStatsXVFXPoolPolicy</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:225-238</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Engine default pooling</td></tr>
+            <tr><td><code>None</code></td><td>No pooling (always create/destroy)</td></tr>
+            <tr><td><code>AutoRelease</code></td><td>Return to pool when deactivated</td></tr>
+            <tr><td><code>ManualRelease</code></td><td>Caller must explicitly release</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccs-subsystem-private-storage">11. Subsystem Private Storage</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_WorldSubsystem.h:610-644</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PendingCosmeticCues</code></td><td><code>TArray&lt;FStatsXCosmeticCue&gt;</code></td><td>Pre-flush queue</td></tr>
+            <tr><td><code>PendingStateCueIndices</code></td><td><code>TMap&lt;StreamKey, int32&gt;</code></td><td>State-channel dedup index</td></tr>
+            <tr><td><code>NextCosmeticCueSequence</code></td><td><code>uint16</code></td><td>Monotonic sequence allocator</td></tr>
+            <tr><td><code>NextCosmeticVFXHandle</code></td><td><code>int64</code></td><td>VFX handle allocator</td></tr>
+            <tr><td><code>LocalVFXByHandle</code></td><td><code>TMap&lt;int64, TWeakObjectPtr&lt;UNiagaraComponent&gt;&gt;</code></td><td>VFX handle &rarr; component</td></tr>
+            <tr><td><code>NextCosmeticSFXHandle</code></td><td><code>int64</code></td><td>SFX handle allocator</td></tr>
+            <tr><td><code>LocalSFXByHandle</code></td><td><code>TMap&lt;int64, TWeakObjectPtr&lt;UAudioComponent&gt;&gt;</code></td><td>SFX handle &rarr; component</td></tr>
+            <tr><td><code>OnCosmeticCueRoutedNative</code></td><td><code>FOnStatsXCosmeticCueRoutedNative</code></td><td>Multicast sink delegate</td></tr>
+            <tr><td><code>CosmeticCueNetworkSinkHandle</code></td><td><code>FDelegateHandle</code></td><td>Server network sink handle</td></tr>
+            <tr><td><code>GlobalNetCueRelay</code></td><td><code>TWeakObjectPtr&lt;AStatsX_NetCueRelay&gt;</code></td><td>Global fallback relay actor</td></tr>
+            <tr><td><code>RouteActorNetCueRelays</code></td><td><code>TMap&lt;TWeakObjectPtr&lt;AActor&gt;, TWeakObjectPtr&lt;AStatsX_NetCueRelay&gt;&gt;</code></td><td>Per-actor relay cache</td></tr>
+            <tr><td><code>MaxRouteNetCueRelays</code></td><td><code>int32</code> (4096)</td><td>Hard cap for relay instances</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccs-handler-registration">12. Handler Registration</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:9737-9778</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>Registry.RegisterHandler(ForgeOpCodes::OP_PlayMontage,              &amp;Nodes_Flow::PlayMontage);
+Registry.RegisterHandler(ForgeOpCodes::OP_SpawnVFX,                 &amp;Nodes_Action::SpawnVFX);
+Registry.RegisterHandler(ForgeOpCodes::OP_SpawnVFXAttachedtoActor,  &amp;Nodes_Action::SpawnVFXAttachedtoActor);
+Registry.RegisterHandler(ForgeOpCodes::OP_SpawnSFX,                 &amp;Nodes_Action::SpawnSFX);
+Registry.RegisterHandler(ForgeOpCodes::OP_StopSFX,                  &amp;Nodes_Action::StopSFX);
+Registry.RegisterHandler(ForgeOpCodes::OP_StopVFX,                  &amp;Nodes_Action::StopVFX);
+Registry.RegisterHandler(ForgeOpCodes::OP_UpdateVFX,                &amp;Nodes_Action::UpdateVFX);</code></pre>
+    </div>
+
+    <p>All seven handlers follow the same pattern: <code>decode instruction &rarr; build FStatsXCosmeticCue &rarr; local execution &rarr; EnqueueCosmeticCue</code>.</p>
+
+    <hr>
+
+    <h2 id="ccs-design-decisions">13. Design Decisions</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Weak pointers for actors/assets</strong></td><td>Cues may persist across frames in pending queues &mdash; no stale strong references</td></tr>
+            <tr><td><strong>Generic payload slots</strong> (Float0&ndash;3, Int0&ndash;1, Int64_0)</td><td>Avoid per-type envelope structs; keeps the bus homogeneous and serialisation-friendly</td></tr>
+            <tr><td><strong>Separate handle registries</strong></td><td>VFX and SFX have independent lifecycles and component types</td></tr>
+            <tr><td><strong>State dedup at enqueue, not flush</strong></td><td>Overwrites happen in O(1) via map lookup rather than scanning at flush time</td></tr>
+            <tr><td><strong>Bus flushed last in Tick</strong></td><td>All gameplay operations within the frame settle before cosmetics are dispatched</td></tr>
+            <tr><td><strong>128/64 pre-reserve</strong></td><td>Eliminates reallocation for typical frame budgets while avoiding over-allocation</td></tr>
+            <tr><td><strong>Network sink as first-class delegate</strong></td><td>Server transport is just another sink &mdash; no special dispatch path</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="ccs-see-also">14. See Also</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Document</th>
+                <th>Relationship</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>18 &mdash; Cosmetic Cue Routing</td><td>Network relay transport via <code>AStatsX_NetCueRelay</code></td></tr>
+            <tr><td>19 &mdash; VFX / SFX Handles</td><td>Handle allocation, lookup, and lifetime management</td></tr>
+            <tr><td>07 &mdash; ForgeVM</td><td>Opcode dispatch that produces cues</td></tr>
+            <tr><td>20 &mdash; Replication</td><td>Split replication model (gameplay + cosmetic)</td></tr>
+        </tbody>
+    </table>
+
+</section>

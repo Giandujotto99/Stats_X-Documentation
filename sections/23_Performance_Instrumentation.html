@@ -1,0 +1,574 @@
+<section id="performance-instrumentation" class="tutorial-section">
+    <h1>Performance Instrumentation</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Compile-time performance instrumentation system with fine-grained observability across every runtime subsystem &mdash; integrating Unreal Insights Trace, CSV Profiler, and Cycle Stats backends with per-area enable/disable control from Project Settings.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#perf-overview">Overview</a></li>
+        <li><a href="#perf-architecture">Architecture</a></li>
+        <li><a href="#perf-configuration">Configuration</a></li>
+        <li><a href="#perf-build-integration">Build Integration</a></li>
+        <li><a href="#perf-profiling-backends">Profiling Backends</a></li>
+        <li><a href="#perf-macro-system">Macro System</a></li>
+        <li><a href="#perf-stat-groups">Stat Groups</a></li>
+        <li><a href="#perf-cycle-stat-reference">Cycle Stat Reference</a></li>
+        <li><a href="#perf-instrumentation-coverage">Instrumentation Coverage</a></li>
+        <li><a href="#perf-usage-example">Usage Example</a></li>
+        <li><a href="#perf-integration-notes">Integration Notes</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="perf-overview">1. Overview</h2>
+    <p>Stats_X ships a compile-time performance instrumentation system that provides fine-grained observability across every runtime subsystem. The system integrates with three Unreal profiling backends &mdash; <strong>Unreal Insights Trace</strong>, <strong>CSV Profiler</strong>, and <strong>Cycle Stats</strong> &mdash; and lets developers enable or disable each backend independently per subsystem area from Project Settings. All instrumentation compiles to zero-cost no-ops when disabled.</p>
+
+    <hr>
+
+    <h2 id="perf-architecture">2. Architecture</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Project Settings (UStatsXPerformanceSettings)
+         │
+         │  DefaultGame.ini
+         ▼
+Stats_X.Build.cs  ──────────────────────────────────────────────────────┐
+  ConfigurePerformanceInstrumentation()                                 │
+         │                                                              │
+         ├── Read InstrumentationRules from config                      │
+         ├── Resolve per-area backend selection                         │
+         └── Emit PublicDefinitions (compiler defines):                 │
+               STATSX_PERF_&lt;AREA&gt;_TRACE = 0|1                          │
+               STATSX_PERF_&lt;AREA&gt;_CSV = 0|1                            │
+               STATSX_PERF_&lt;AREA&gt;_CYCLE_STATS = 0|1                    │
+               STATSX_PERF_ANY_TRACE = 0|1                             │
+               STATSX_PERF_ANY_CSV = 0|1                               │
+               STATSX_PERF_ANY_CYCLE_STATS = 0|1                       │
+                                                                        │
+StatsXPerf.h  ◄─────────────────────────────────────────────────────────┘
+         │
+         ├── Conditional includes (CpuProfilerTrace.h, CsvProfiler.h, Stats.h)
+         ├── DECLARE_STATS_GROUP (7 stat groups)
+         ├── DECLARE_CYCLE_STAT_EXTERN (73 cycle stats)
+         ├── Base wrapper macros (STATSX_TRACE_SCOPE_STR, STATSX_CSV_SCOPE, STATSX_CYCLE_SCOPE)
+         ├── Per-area toggle macros (STATSX_&lt;AREA&gt;_TRACE_SCOPE, etc.)
+         └── Composite scope macros (STATSX_&lt;AREA&gt;_SCOPE)
+                    │
+                    ▼
+         Runtime source files (~94 instrumentation points)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="perf-configuration">3. Configuration</h2>
+
+    <h3>Project Settings</h3>
+    <p><strong>Path:</strong> Project Settings &gt; Plugins &gt; Stats_X Performance</p>
+    <p>The settings panel exposes a fixed-size array of <code>FStatsXPerfInstrumentationRule</code> entries &mdash; one per subsystem area. Each rule pairs an <code>EStatsXPerfArea</code> with an <code>EStatsXPerfBackend</code>.</p>
+    <p><strong>Class:</strong> <code>UStatsXPerformanceSettings</code> (extends <code>UDeveloperSettings</code>)</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>InstrumentationRules</code></td><td><code>TArray&lt;FStatsXPerfInstrumentationRule&gt;</code></td><td>Per-area backend assignments. Fixed at 9 entries (one per area).</td></tr>
+        </tbody>
+    </table>
+
+    <p>Changes require an <strong>editor restart and rebuild/repackage</strong> to take effect &mdash; the settings drive compile-time preprocessor defines.</p>
+
+    <h3>EStatsXPerfArea</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Macro Prefix</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>WorldSubsystem</code></td><td>World Subsystem</td><td><code>WORLD</code></td></tr>
+            <tr><td><code>VM</code></td><td>Forge VM</td><td><code>VM</code></td></tr>
+            <tr><td><code>StatsComponent</code></td><td>Stats Component</td><td><code>COMPONENT</code></td></tr>
+            <tr><td><code>Replication</code></td><td>Replication</td><td><code>REPLICATION</code></td></tr>
+            <tr><td><code>NetCue</code></td><td>Net Cue Relay</td><td><code>NETCUE</code></td></tr>
+            <tr><td><code>Nodes</code></td><td>Runtime Nodes</td><td><code>NODES</code></td></tr>
+            <tr><td><code>AssetLoads</code></td><td>Asset Loads</td><td><code>ASSETLOADS</code></td></tr>
+            <tr><td><code>CustomLogic</code></td><td>Custom Logic</td><td><code>CUSTOMLOGIC</code></td></tr>
+            <tr><td><code>InterceptorHooks</code></td><td>Interceptors</td><td><code>INTERCEPTORS</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXPerfBackend</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Display Name</th>
+                <th>Trace</th>
+                <th>CSV</th>
+                <th>Cycle Stats</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Disabled</code></td><td>Disabled</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td><code>Trace</code></td><td>Unreal Insights Trace</td><td>Yes</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td><code>Csv</code></td><td>CSV Profiler</td><td>&mdash;</td><td>Yes</td><td>&mdash;</td></tr>
+            <tr><td><code>CycleStats</code></td><td>Cycle Stats</td><td>&mdash;</td><td>&mdash;</td><td>Yes</td></tr>
+            <tr><td><code>TraceAndCsv</code></td><td>Trace + CSV</td><td>Yes</td><td>Yes</td><td>&mdash;</td></tr>
+            <tr><td><code>TraceAndCycleStats</code></td><td>Trace + Cycle Stats</td><td>Yes</td><td>&mdash;</td><td>Yes</td></tr>
+            <tr><td><code>CsvAndCycleStats</code></td><td>CSV + Cycle Stats</td><td>&mdash;</td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><code>All</code></td><td>All Backends</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Default:</strong> all areas are set to <code>Disabled</code>.</p>
+
+    <hr>
+
+    <h2 id="perf-build-integration">4. Build Integration</h2>
+    <p>The <code>Stats_X.Build.cs</code> module rules file reads the <code>InstrumentationRules</code> array from <code>DefaultGame.ini</code> at build time and emits preprocessor defines as <code>PublicDefinitions</code>.</p>
+    <p><strong>Config path:</strong> <code>/Script/Stats_X.StatsXPerformanceSettings</code> &rarr; <code>InstrumentationRules</code></p>
+    <p><strong>Per-area defines emitted (for each of the 9 areas):</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Define</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STATSX_PERF_&lt;AREA&gt;_BACKEND</code></td><td>Integer backend enum value.</td></tr>
+            <tr><td><code>STATSX_PERF_&lt;AREA&gt;_ENABLED</code></td><td><code>1</code> if any backend is active, <code>0</code> otherwise.</td></tr>
+            <tr><td><code>STATSX_PERF_&lt;AREA&gt;_TRACE</code></td><td><code>1</code> if Unreal Insights tracing is active.</td></tr>
+            <tr><td><code>STATSX_PERF_&lt;AREA&gt;_CSV</code></td><td><code>1</code> if CSV profiling is active.</td></tr>
+            <tr><td><code>STATSX_PERF_&lt;AREA&gt;_CYCLE_STATS</code></td><td><code>1</code> if cycle stat counters are active.</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Global aggregation defines:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Define</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STATSX_PERF_ENABLED</code></td><td><code>1</code> if any area has any backend enabled.</td></tr>
+            <tr><td><code>STATSX_PERF_ANY_ENABLED</code></td><td>Alias for <code>STATSX_PERF_ENABLED</code>.</td></tr>
+            <tr><td><code>STATSX_PERF_ANY_TRACE</code></td><td><code>1</code> if any area uses Trace. Gates <code>CpuProfilerTrace.h</code> include.</td></tr>
+            <tr><td><code>STATSX_PERF_ANY_CSV</code></td><td><code>1</code> if any area uses CSV. Gates <code>CsvProfiler.h</code> include.</td></tr>
+            <tr><td><code>STATSX_PERF_ANY_CYCLE_STATS</code></td><td><code>1</code> if any area uses Cycle Stats. Gates <code>Stats.h</code> include and stat declarations.</td></tr>
+        </tbody>
+    </table>
+
+    <p>This design ensures that <strong>header includes, stat group declarations, and cycle stat registrations are completely stripped</strong> from builds where no area enables the corresponding backend.</p>
+
+    <hr>
+
+    <h2 id="perf-profiling-backends">5. Profiling Backends</h2>
+
+    <h3>Unreal Insights Trace</h3>
+    <p>Emits CPU profiler events visible in the <strong>Unreal Insights</strong> timeline. Each scope appears as a named event span with precise start/end timestamps.</p>
+    <p><strong>Include:</strong> <code>ProfilingDebugging/CpuProfilerTrace.h</code> (conditional on <code>STATSX_PERF_ANY_TRACE</code>)</p>
+    <p><strong>Base macro:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>STATSX_TRACE_SCOPE_STR(NameLiteral)
+  &rarr; TRACE_CPUPROFILER_EVENT_SCOPE_STR(NameLiteral)</code></pre>
+    </div>
+
+    <h3>CSV Profiler</h3>
+    <p>Records scoped timing data to CSV files for offline analysis. All Stats_X metrics are grouped under a single <code>StatsX</code> CSV category.</p>
+    <p><strong>Include:</strong> <code>ProfilingDebugging/CsvProfiler.h</code> (conditional on <code>STATSX_PERF_ANY_CSV</code>)</p>
+    <p><strong>Category:</strong> <code>CSV_DEFINE_CATEGORY(StatsX, false)</code> &mdash; disabled by default, activate via <code>csv.Category StatsX</code> console command.</p>
+    <p><strong>Base macro:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>STATSX_CSV_SCOPE(StatName)
+  &rarr; CSV_SCOPED_TIMING_STAT(StatsX, StatName)</code></pre>
+    </div>
+
+    <h3>Cycle Stats</h3>
+    <p>Integrates with Unreal's built-in stat system, viewable via <code>stat</code> console commands (e.g., <code>stat StatsXRuntime</code>, <code>stat StatsXVM</code>).</p>
+    <p><strong>Include:</strong> <code>Stats/Stats.h</code> (conditional on <code>STATSX_PERF_ANY_CYCLE_STATS</code>)</p>
+    <p><strong>Base macro:</strong></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>STATSX_CYCLE_SCOPE(StatName)
+  &rarr; SCOPE_CYCLE_COUNTER(StatName)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="perf-macro-system">6. Macro System</h2>
+
+    <h3>Per-Area Toggle Macros</h3>
+    <p>Each area defines three toggle macros that resolve to either the base macro or a no-op, controlled by the corresponding <code>STATSX_PERF_&lt;AREA&gt;_*</code> define:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>STATSX_&lt;AREA&gt;_TRACE_SCOPE(NameLiteral)     &rarr; STATSX_TRACE_SCOPE_STR or no-op
+STATSX_&lt;AREA&gt;_CSV_SCOPE(StatName)           &rarr; STATSX_CSV_SCOPE or no-op
+STATSX_&lt;AREA&gt;_CYCLE_SCOPE(StatName)         &rarr; STATSX_CYCLE_SCOPE or no-op</code></pre>
+    </div>
+
+    <h3>Composite Scope Macros</h3>
+    <p>Each area provides a single composite macro that fires all three backends in one call:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>STATSX_&lt;AREA&gt;_SCOPE(NameLiteral, CsvStatName, CycleStatName)</code></pre>
+    </div>
+
+    <p><strong>Parameters:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Backend</th>
+                <th>Example</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>NameLiteral</code></td><td>Trace (string literal)</td><td><code>TEXT("StatsX.VM.Execute")</code></td></tr>
+            <tr><td><code>CsvStatName</code></td><td>CSV (identifier)</td><td><code>VMExecute</code></td></tr>
+            <tr><td><code>CycleStatName</code></td><td>Cycle Stats (stat name)</td><td><code>STAT_StatsXVMExecute</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Composite macros (9 total):</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Macro</th>
+                <th>Area</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STATSX_WORLD_SCOPE</code></td><td>World Subsystem</td></tr>
+            <tr><td><code>STATSX_VM_SCOPE</code></td><td>Forge VM</td></tr>
+            <tr><td><code>STATSX_COMPONENT_SCOPE</code></td><td>Stats Component</td></tr>
+            <tr><td><code>STATSX_REPLICATION_SCOPE</code></td><td>Replication</td></tr>
+            <tr><td><code>STATSX_NETCUE_SCOPE</code></td><td>Net Cue Relay</td></tr>
+            <tr><td><code>STATSX_NODES_SCOPE</code></td><td>Runtime Nodes</td></tr>
+            <tr><td><code>STATSX_ASSETLOADS_SCOPE</code></td><td>Asset Loads</td></tr>
+            <tr><td><code>STATSX_CUSTOMLOGIC_SCOPE</code></td><td>Custom Logic</td></tr>
+            <tr><td><code>STATSX_INTERCEPTORS_SCOPE</code></td><td>Interceptors</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="perf-stat-groups">7. Stat Groups</h2>
+    <p>Seven stat groups are declared under <code>STATCAT_Advanced</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Group</th>
+                <th>Console Command</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STATGROUP_StatsXRuntime</code></td><td><code>stat StatsXRuntime</code></td><td>World subsystem tick, attribute/modifier operations.</td></tr>
+            <tr><td><code>STATGROUP_StatsXVM</code></td><td><code>stat StatsXVM</code></td><td>ForgeVM execute, resume, step.</td></tr>
+            <tr><td><code>STATGROUP_StatsXNet</code></td><td><code>stat StatsXNet</code></td><td>Replication callbacks, NetCue pipeline.</td></tr>
+            <tr><td><code>STATGROUP_StatsXNodes</code></td><td><code>stat StatsXNodes</code></td><td>Runtime node execution (montage, VFX, SFX, etc.).</td></tr>
+            <tr><td><code>STATGROUP_StatsXAssetLoads</code></td><td><code>stat StatsXAssetLoads</code></td><td>Sync/async status definition loading.</td></tr>
+            <tr><td><code>STATGROUP_StatsXCustomLogic</code></td><td><code>stat StatsXCustomLogic</code></td><td>Custom check/action execution and context management.</td></tr>
+            <tr><td><code>STATGROUP_StatsXInterceptors</code></td><td><code>stat StatsXInterceptors</code></td><td>Interceptor registration, broadcasting, conditions, actions.</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="perf-cycle-stat-reference">8. Cycle Stat Reference</h2>
+
+    <h3>Runtime (STATGROUP_StatsXRuntime) &mdash; 8 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXWorldSubsystemTick</code></td><td>Full world subsystem tick frame.</td></tr>
+            <tr><td><code>STAT_StatsXWorldExecuteInstance</code></td><td>Single status instance execution.</td></tr>
+            <tr><td><code>STAT_StatsXWorldFlushPendingStatusUpdates</code></td><td>Pending status update flush pass.</td></tr>
+            <tr><td><code>STAT_StatsXComponentModifyAttribute</code></td><td>Attribute modification (delta apply).</td></tr>
+            <tr><td><code>STAT_StatsXComponentSetAttribute</code></td><td>Attribute direct set.</td></tr>
+            <tr><td><code>STAT_StatsXComponentAddModifier</code></td><td>Modifier registration.</td></tr>
+            <tr><td><code>STAT_StatsXComponentRemoveModifiersWithFilters</code></td><td>Filtered modifier removal.</td></tr>
+            <tr><td><code>STAT_StatsXComponentRecalculateAttribute</code></td><td>Full attribute recalculation from modifiers.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>VM (STATGROUP_StatsXVM) &mdash; 3 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXVMExecute</code></td><td>ForgeVM program execution entry.</td></tr>
+            <tr><td><code>STAT_StatsXVMResume</code></td><td>ForgeVM suspended program resume.</td></tr>
+            <tr><td><code>STAT_StatsXVMExecuteStep</code></td><td>Single VM instruction step.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Net &mdash; Replication (STATGROUP_StatsXNet) &mdash; 9 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXReplicationUpdateAttribute</code></td><td>Server-side attribute replication update.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationSynchronizeLocalAttributes</code></td><td>Bulk local attribute synchronization.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationStatusSeedBridge</code></td><td>Status seed bridge to Fast Array.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationStatusUpdateBridge</code></td><td>Status update bridge to Fast Array.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationAttributeApply</code></td><td>Client attribute replication callback.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationModifierApply</code></td><td>Client modifier replication callback.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationTagApply</code></td><td>Client tag replication callback.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationStatusSeedApply</code></td><td>Client status seed replication callback.</td></tr>
+            <tr><td><code>STAT_StatsXReplicationStatusUpdateApply</code></td><td>Client status update replication callback.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Net &mdash; NetCue (STATGROUP_StatsXNet) &mdash; 13 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXNetCueEnqueue</code></td><td>Cue enqueue into pending bus.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueFlushBus</code></td><td>Cue bus flush pass.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueRouteToNetwork</code></td><td>Network routing decision.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueGetOrCreateRelay</code></td><td>Relay actor lookup or creation.</td></tr>
+            <tr><td><code>STAT_StatsXNetCuePushFromServer</code></td><td>State cue push into relay Fast Array.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueBurstReceive</code></td><td>Client burst multicast receive.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueStateReceive</code></td><td>Client state replication receive.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueDispatchClient</code></td><td>Client-side cue dispatch.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueExecuteBuiltIn</code></td><td>Built-in cue handler execution.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueExecuteMontage</code></td><td>Montage cue execution.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueExecuteVFX</code></td><td>VFX spawn cue execution.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueExecuteSFX</code></td><td>SFX spawn cue execution.</td></tr>
+            <tr><td><code>STAT_StatsXNetCueRebuildStateIndex</code></td><td>State cue index rebuild.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Nodes (STATGROUP_StatsXNodes) &mdash; 8 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXNodeForEachActorInRange</code></td><td>Spatial query node execution.</td></tr>
+            <tr><td><code>STAT_StatsXNodeWaitForEvent</code></td><td>Single event wait registration.</td></tr>
+            <tr><td><code>STAT_StatsXNodeWaitForEvents</code></td><td>Multi-event wait registration.</td></tr>
+            <tr><td><code>STAT_StatsXNodePlayMontage</code></td><td>Montage play node.</td></tr>
+            <tr><td><code>STAT_StatsXNodeCastStatus</code></td><td>Status cast node.</td></tr>
+            <tr><td><code>STAT_StatsXNodeSendEvent</code></td><td>Event send node.</td></tr>
+            <tr><td><code>STAT_StatsXNodeSpawnVFX</code></td><td>VFX spawn node.</td></tr>
+            <tr><td><code>STAT_StatsXNodeSpawnSFX</code></td><td>SFX spawn node.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Asset Loads (STATGROUP_StatsXAssetLoads) &mdash; 6 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXAssetLoadWorldCastStatusSync</code></td><td>Synchronous world-level status cast load.</td></tr>
+            <tr><td><code>STAT_StatsXAssetLoadWorldCastStatusAsyncRequest</code></td><td>Async world-level status cast load request.</td></tr>
+            <tr><td><code>STAT_StatsXAssetLoadWorldCastStatusAsyncComplete</code></td><td>Async world-level status cast load completion.</td></tr>
+            <tr><td><code>STAT_StatsXAssetLoadComponentCastStatusSync</code></td><td>Synchronous component-level status cast load.</td></tr>
+            <tr><td><code>STAT_StatsXAssetLoadComponentCastStatusAsyncRequest</code></td><td>Async component-level status cast load request.</td></tr>
+            <tr><td><code>STAT_StatsXAssetLoadComponentCastStatusAsyncComplete</code></td><td>Async component-level status cast load completion.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Custom Logic (STATGROUP_StatsXCustomLogic) &mdash; 7 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXCustomLogicExecuteCheck</code></td><td>Custom check execution.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicExecuteAction</code></td><td>Custom action execution.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicSetupContext</code></td><td>Execution context setup.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicInjectForgeParams</code></td><td>ForgeVM parameter injection into custom logic.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicClearContext</code></td><td>Execution context teardown.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicMarkAsExecuting</code></td><td>Action executing state mark.</td></tr>
+            <tr><td><code>STAT_StatsXCustomLogicEndAction</code></td><td>Action end and cleanup.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Interceptors (STATGROUP_StatsXInterceptors) &mdash; 19 stats</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>STAT_StatsXInterceptorCallPropagation</code></td><td>Full propagation call chain.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorBroadcastEvents</code></td><td>Event broadcast dispatch.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorBroadcastLocal</code></td><td>Local interceptor broadcast.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorBroadcastGlobal</code></td><td>Global interceptor broadcast.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorCondition</code></td><td>Condition evaluation.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorAction</code></td><td>Action execution.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorRegisterLocalNode</code></td><td>Local node registration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorRegisterGlobalNode</code></td><td>Global node registration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterLocalNode</code></td><td>Local node unregistration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterGlobalNode</code></td><td>Global node unregistration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorRegisterLocalRuntime</code></td><td>Local runtime registration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorRegisterGlobalRuntime</code></td><td>Global runtime registration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterLocalRuntime</code></td><td>Local runtime unregistration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterGlobalRuntime</code></td><td>Global runtime unregistration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterForEvent</code></td><td>Per-event unregistration.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorUnregisterAllGlobalFromSource</code></td><td>Bulk global unregistration by source.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorSetupSourceData</code></td><td>Source data setup for interceptor evaluation.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorSetupTriggeringData</code></td><td>Triggering data setup for interceptor evaluation.</td></tr>
+            <tr><td><code>STAT_StatsXInterceptorClearTriggeringData</code></td><td>Triggering data teardown.</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Total: 73 cycle stats across 7 stat groups.</strong></p>
+
+    <hr>
+
+    <h2 id="perf-instrumentation-coverage">9. Instrumentation Coverage</h2>
+    <p>Approximate instrumentation point count by source file:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Area</th>
+                <th>Points</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX_WorldSubsystem.cpp</code></td><td>World, NetCue, AssetLoads, Interceptors</td><td>~14</td></tr>
+            <tr><td><code>StatsX_NetCueRelay.cpp</code></td><td>NetCue</td><td>~13</td></tr>
+            <tr><td><code>StatsX_StatsComponentBase.cpp</code></td><td>Component, Replication</td><td>~10</td></tr>
+            <tr><td><code>Nodes_Core.cpp</code></td><td>Nodes, CustomLogic</td><td>~15</td></tr>
+            <tr><td><code>StatsXReplication.cpp</code></td><td>Replication</td><td>4</td></tr>
+            <tr><td><code>ForgeVM.cpp</code></td><td>VM</td><td>3</td></tr>
+            <tr><td><code>ForgeCustomLogicBase.cpp</code></td><td>CustomLogic</td><td>3</td></tr>
+            <tr><td><code>ForgeCustomAction.cpp</code></td><td>CustomLogic</td><td>2</td></tr>
+            <tr><td><code>ForgeInterceptorBase.cpp</code></td><td>Interceptors</td><td>3</td></tr>
+            <tr><td><strong>Total</strong></td><td></td><td><strong>~94</strong></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="perf-usage-example">10. Usage Example</h2>
+    <p>A typical instrumentation point at a call site:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void UStatsX_WorldSubsystem::Tick(float DeltaTime)
+{
+    STATSX_WORLD_SCOPE(
+        TEXT("StatsX.WorldSubsystem.Tick"),   // Unreal Insights event name
+        WorldSubsystemTick,                    // CSV stat identifier
+        STAT_StatsXWorldSubsystemTick          // Cycle stat counter
+    );
+    // ... tick logic ...
+}</code></pre>
+    </div>
+
+    <p>When the World Subsystem area is configured with <code>All</code>, this single macro expands to:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TRACE_CPUPROFILER_EVENT_SCOPE_STR(TEXT("StatsX.WorldSubsystem.Tick"));
+CSV_SCOPED_TIMING_STAT(StatsX, WorldSubsystemTick);
+SCOPE_CYCLE_COUNTER(STAT_StatsXWorldSubsystemTick);</code></pre>
+    </div>
+
+    <p>When the area is set to <code>Disabled</code>, all three lines compile to nothing.</p>
+
+    <hr>
+
+    <h2 id="perf-integration-notes">11. Integration Notes</h2>
+
+    <ul>
+        <li><strong>Zero-cost when disabled.</strong> All instrumentation resolves to empty macros at compile time. No runtime branches, no function calls, no memory overhead.</li>
+        <li><strong>Per-area granularity.</strong> Enable profiling only where needed &mdash; e.g., enable Trace for VM and Cycle Stats for Replication, while leaving everything else disabled.</li>
+        <li><strong>Settings normalization.</strong> <code>UStatsXPerformanceSettings::NormalizeInstrumentationRules</code> ensures the rules array always contains exactly 9 entries (one per area), adding defaults for missing areas and discarding unknown entries on config load or editor change.</li>
+        <li><strong>Build dependency tracking.</strong> <code>Stats_X.Build.cs</code> registers <code>DefaultGame.ini</code> as an external dependency, so changes to instrumentation rules trigger a rebuild.</li>
+        <li><strong>CSV category default.</strong> The <code>StatsX</code> CSV category is defined with <code>false</code> (disabled). Enable it at runtime with the <code>csv.Category StatsX</code> console command before starting a CSV capture.</li>
+    </ul>
+
+</section>

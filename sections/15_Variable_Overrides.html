@@ -1,0 +1,783 @@
+<section id="variable-overrides" class="tutorial-section">
+    <h1>Variable Overrides</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVariableOverride, ApplyVariableOverrides, UStatsXBlueprintLibrary<br>
+        Caller-side variable customization at cast time &mdash; type-safe factories, raw byte serialization, object pool allocation, event payload reuse, and the full application pipeline.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy-overrides">Design Philosophy</a></li>
+        <li><a href="#override-pipeline">Override Pipeline</a></li>
+        <li><a href="#forgevariableoverride-struct">FForgeVariableOverride Struct</a></li>
+        <li><a href="#factory-methods-cpp">Factory Methods (C++)</a></li>
+        <li><a href="#blueprint-library">Blueprint Library</a></li>
+        <li><a href="#applyvariableoverrides-full-flow">ApplyVariableOverrides &mdash; Full Flow</a></li>
+        <li><a href="#type-validation-editor-only">Type Validation (Editor-Only)</a></li>
+        <li><a href="#object-class-overrides">Object &amp; Class Overrides</a></li>
+        <li><a href="#unsupported-override-targets">Unsupported Override Targets</a></li>
+        <li><a href="#cast-api-integration">Cast API Integration</a></li>
+        <li><a href="#event-payload-reuse">Event Payload Reuse</a></li>
+        <li><a href="#async-load-override-capture">Async Load &amp; Override Capture</a></li>
+        <li><a href="#api-reference-overrides">API Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy-overrides">1. Design Philosophy</h2>
+    <p>Variable overrides allow callers to <strong>customize initial variable values when casting a status</strong>, without modifying the compiled StatusDefinition. They are the primary mechanism for parameterizing generic statuses (e.g., setting damage amount, target tag, or duration multiplier at cast time).</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Pre-serialized raw bytes</strong></td><td>Scalar overrides stored as <code>TArray&lt;uint8&gt;</code> &mdash; memcpy directly into blob, no runtime type conversion</td></tr>
+            <tr><td><strong>Separate object path</strong></td><td>UObject* can&rsquo;t be stored as raw bytes &mdash; dedicated <code>ObjectValue</code> field with pool allocation</td></tr>
+            <tr><td><strong>Type-safe factories</strong></td><td><code>MakeFloat()</code>, <code>MakeInt32()</code>, etc. prevent byte-size mismatches at creation time</td></tr>
+            <tr><td><strong>Blueprint-exposed</strong></td><td>Full <code>UStatsXBlueprintLibrary</code> mirrors all C++ factories for visual scripting</td></tr>
+            <tr><td><strong>Applied after defaults, before execution</strong></td><td>Override values replace defaults without affecting compilation</td></tr>
+            <tr><td><strong>Reused as event payload</strong></td><td><code>SendForgeEvent()</code> accepts <code>TArray&lt;FForgeVariableOverride&gt;</code> as payload &mdash; same struct, same factories</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="override-pipeline">2. Override Pipeline</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Caller (C++ or Blueprint)
+│
+├─ Create TArray&lt;FForgeVariableOverride&gt;
+│   ├─ MakeFloat(StatsX.Variable.Damage, 150.f)
+│   ├─ MakeGameplayTag(StatsX.Variable.DamageType, Tag_Fire)
+│   └─ MakeObject(StatsX.Variable.Instigator, InstigatorActor)
+│
+├─ CastStatusAsync(StatusTag, Caster, Target, Overrides)
+│   └─ or CastStatusSync(...)
+│
+└───────────────────────────────────────────────────────────┐
+                                                            ▼
+ForgeVM::ExecuteStatus(StatusID, Definition, Caster, Target, &amp;Overrides)
+│
+├─ Pass 1: Allocate VariableBlob
+├─ Pass 2: Copy defaults from Pool_StructData
+├─ Pass 3: Fix up pool-backed defaults (tags, objects, arrays)
+│
+├─ ★ ApplyVariableOverrides(Overrides)  &larr; overrides applied here
+│   ├─ For each override: FindVariable(Tag) &rarr; memcpy or alloc object
+│   └─ Blob now contains overridden values
+│
+└─ Execute bytecode (handlers read overridden values from blob)</code></pre>
+    </div>
+
+    <p><strong>Timing guarantee:</strong> Overrides are applied <strong>after</strong> all default initialization is complete and <strong>before</strong> the first instruction executes. This means override values are always visible to the status logic from the very first instruction.</p>
+
+    <hr>
+
+    <h2 id="forgevariableoverride-struct">3. FForgeVariableOverride Struct</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatsXTypes.h (lines 955&ndash;1008)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT(BlueprintType)
+struct STATS_X_API FForgeVariableOverride
+{
+    GENERATED_BODY()
+
+    /** Variable tag identifying which variable to override */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variable Override",
+              meta = (Categories = "StatsX.Variable"))
+    FGameplayTag VariableTag;
+
+    /** Pre-serialized raw bytes in VariableBlob native format.
+     *  Ignored when bIsObjectOverride is true. */
+    UPROPERTY()
+    TArray&lt;uint8&gt; RawValue;
+
+    /** For Object/Class overrides: the UObject* to register in the context object pool. */
+    UPROPERTY()
+    TObjectPtr&lt;UObject&gt; ObjectValue = nullptr;
+
+    /** True if this override targets an Object/Class variable. */
+    UPROPERTY()
+    bool bIsObjectOverride = false;
+};</code></pre>
+    </div>
+
+    <h3>Field Responsibilities</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Scalar Types</th>
+                <th>Object/Class Types</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>VariableTag</code></td><td>Identifies the variable</td><td>Identifies the variable</td></tr>
+            <tr><td><code>RawValue</code></td><td>Pre-serialized bytes (sizeof(T))</td><td>Ignored</td></tr>
+            <tr><td><code>ObjectValue</code></td><td>Unused (nullptr)</td><td>The UObject* to inject</td></tr>
+            <tr><td><code>bIsObjectOverride</code></td><td><code>false</code></td><td><code>true</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Internal Serialization Template</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template &lt;typename T&gt;
+static FForgeVariableOverride MakeRaw(FGameplayTag Tag, const T&amp; Value)
+{
+    FForgeVariableOverride Override;
+    Override.VariableTag = Tag;
+    Override.RawValue.SetNumUninitialized(sizeof(T));
+    FMemory::Memcpy(Override.RawValue.GetData(), &amp;Value, sizeof(T));
+    return Override;
+}</code></pre>
+    </div>
+
+    <p>All scalar factories delegate to <code>MakeRaw&lt;T&gt;()</code>, which performs a bitwise copy of the value into a byte array of exactly <code>sizeof(T)</code> bytes.</p>
+
+    <hr>
+
+    <h2 id="factory-methods-cpp">4. Factory Methods (C++)</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatsXTypes.h (static methods)
+         Private/Data/StatsXTypes.cpp (implementations)</code></pre>
+    </div>
+
+    <h3>Scalar Factories (via MakeRaw)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Factory</th>
+                <th>Value Type</th>
+                <th>RawValue Size</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MakeFloat(Tag, float)</code></td><td><code>float</code></td><td>4 bytes</td></tr>
+            <tr><td><code>MakeInt32(Tag, int32)</code></td><td><code>int32</code></td><td>4 bytes</td></tr>
+            <tr><td><code>MakeBool(Tag, bool)</code></td><td><code>uint8</code> (0/1)</td><td>1 byte</td></tr>
+            <tr><td><code>MakeByte(Tag, uint8)</code></td><td><code>uint8</code></td><td>1 byte</td></tr>
+            <tr><td><code>MakeInt64(Tag, int64)</code></td><td><code>int64</code></td><td>8 bytes</td></tr>
+            <tr><td><code>MakeDouble(Tag, double)</code></td><td><code>double</code></td><td>8 bytes</td></tr>
+            <tr><td><code>MakeVector(Tag, FVector)</code></td><td><code>FVector</code></td><td>24 bytes</td></tr>
+            <tr><td><code>MakeRotator(Tag, FRotator)</code></td><td><code>FRotator</code></td><td>24 bytes</td></tr>
+            <tr><td><code>MakeTransform(Tag, FTransform)</code></td><td><code>FTransform</code></td><td>80 bytes</td></tr>
+            <tr><td><code>MakeLinearColor(Tag, FLinearColor)</code></td><td><code>FLinearColor</code></td><td>16 bytes</td></tr>
+            <tr><td><code>MakeGameplayTag(Tag, FGameplayTag)</code></td><td><code>FGameplayTag</code></td><td><code>sizeof(FGameplayTag)</code></td></tr>
+            <tr><td><code>MakeName(Tag, FName)</code></td><td><code>FName</code></td><td><code>sizeof(FName)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Bool Special Case</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FForgeVariableOverride FForgeVariableOverride::MakeBool(FGameplayTag Tag, bool Value)
+{
+    uint8 ByteVal = Value ? 1 : 0;
+    return MakeRaw(Tag, ByteVal);  // Serializes as uint8, not bool
+}</code></pre>
+    </div>
+
+    <p>Booleans are stored as <code>uint8</code> in the blob (1 byte), matching the VariableBlob encoding.</p>
+
+    <h3>Object/Class Factories</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FForgeVariableOverride FForgeVariableOverride::MakeObject(FGameplayTag Tag, UObject* Value)
+{
+    FForgeVariableOverride Override;
+    Override.VariableTag = Tag;
+    Override.ObjectValue = Value;
+    Override.bIsObjectOverride = true;
+    return Override;
+}
+
+FForgeVariableOverride FForgeVariableOverride::MakeClass(FGameplayTag Tag, UClass* Value)
+{
+    FForgeVariableOverride Override;
+    Override.VariableTag = Tag;
+    Override.ObjectValue = Value;      // UClass* stored as UObject*
+    Override.bIsObjectOverride = true;
+    return Override;
+}</code></pre>
+    </div>
+
+    <p>Object/Class overrides do <strong>not</strong> use <code>RawValue</code> &mdash; the actual UObject* is stored in <code>ObjectValue</code> and allocated into the context object pool at apply time.</p>
+
+    <hr>
+
+    <h2 id="blueprint-library">5. Blueprint Library</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Header  : Public/Helpers/StatsXBlueprintLibrary.h
+Source  : Private/Helpers/StatsXBlueprintLibrary.cpp</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UCLASS()
+class STATS_X_API UStatsXBlueprintLibrary : public UBlueprintFunctionLibrary</code></pre>
+    </div>
+
+    <p>All Blueprint factory nodes are <code>BlueprintPure</code> and delegate directly to the corresponding C++ static method:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Blueprint Node</th>
+                <th>Category</th>
+                <th>Delegates To</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MakeFloatOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeFloat</code></td></tr>
+            <tr><td><code>MakeIntOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeInt32</code></td></tr>
+            <tr><td><code>MakeBoolOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeBool</code></td></tr>
+            <tr><td><code>MakeByteOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeByte</code></td></tr>
+            <tr><td><code>MakeInt64Override</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeInt64</code></td></tr>
+            <tr><td><code>MakeDoubleOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeDouble</code></td></tr>
+            <tr><td><code>MakeVectorOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeVector</code></td></tr>
+            <tr><td><code>MakeRotatorOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeRotator</code></td></tr>
+            <tr><td><code>MakeTransformOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeTransform</code></td></tr>
+            <tr><td><code>MakeLinearColorOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeLinearColor</code></td></tr>
+            <tr><td><code>MakeGameplayTagOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeGameplayTag</code></td></tr>
+            <tr><td><code>MakeNameOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeName</code></td></tr>
+            <tr><td><code>MakeObjectOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeObject</code></td></tr>
+            <tr><td><code>MakeClassOverride</code></td><td><code>StatsX|Variable Override</code></td><td><code>FForgeVariableOverride::MakeClass</code></td></tr>
+        </tbody>
+    </table>
+
+    <p>All tag parameters use <code>meta = (Categories = "StatsX.Variable")</code> for filtered tag picker in the editor.</p>
+
+    <h3>Blueprint Usage Pattern</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>[Make Float Override] ─── Tag: StatsX.Variable.Damage, Value: 150
+          │
+[Make Tag Override] ────── Tag: StatsX.Variable.Element, Value: StatsX.Element.Fire
+          │
+[Make Array] ─────────────── TArray&lt;FForgeVariableOverride&gt;
+          │
+[Cast Status Async] ──────── StatusTag, Caster, Target, Overrides</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="applyvariableoverrides-full-flow">6. ApplyVariableOverrides &mdash; Full Flow</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/VM/ForgeVM.cpp (lines 1382&ndash;1473)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void FForgeVM::ApplyVariableOverrides(const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides)</code></pre>
+    </div>
+
+    <h3>Step-by-Step Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ApplyVariableOverrides(Overrides[])
+│
+├─ Guard: Definition must exist, VariableBlob must be non-empty
+│
+├─ For each FForgeVariableOverride:
+│   │
+│   ├─ 1. FindVariable(Override.VariableTag)
+│   │     └─ Binary search on sorted VariableHeaders
+│   │     └─ Not found &rarr; SKIP (editor warning)
+│   │
+│   ├─ 2. Container Mode Check
+│   │     └─ Array (1) or Set (2) &rarr; SKIP (unsafe, see Section 9)
+│   │
+│   ├─ 3a. [bIsObjectOverride == true]
+│   │     ├─ AllocContextObject(Override.ObjectValue) &rarr; uint16 index
+│   │     ├─ Bounds check: Header-&gt;Offset + 2 &le; BlobSize
+│   │     └─ Memcpy uint16 index &rarr; BlobData + Header-&gt;Offset
+│   │
+│   └─ 3b. [bIsObjectOverride == false]  (Scalar)
+│         ├─ ValueSize = Override.RawValue.Num()
+│         ├─ Bounds check: Header-&gt;Offset + ValueSize &le; BlobSize
+│         ├─ [Editor-only] Type size validation (Section 7)
+│         └─ Memcpy RawValue &rarr; BlobData + Header-&gt;Offset
+│
+└─ Done &mdash; blob contains overridden values</code></pre>
+    </div>
+
+    <h3>Key Characteristics</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Iteration</strong></td><td>Linear scan over overrides array &mdash; O(n &times; log m) total where n = overrides, m = variable count</td></tr>
+            <tr><td><strong>Lookup</strong></td><td><code>FindVariable()</code> &mdash; linear for &le;16 headers, binary search for &gt;16</td></tr>
+            <tr><td><strong>Write</strong></td><td>Direct <code>FMemory::Memcpy</code> into blob &mdash; no allocation for scalar types</td></tr>
+            <tr><td><strong>Safety</strong></td><td>Bounds-checked: offset + size must fit within blob</td></tr>
+            <tr><td><strong>Idempotent</strong></td><td>Multiple overrides for the same tag: last one wins (sequential application)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="type-validation-editor-only">7. Type Validation (Editor-Only)</h2>
+
+    <p>In <code>WITH_EDITOR</code> builds, <code>ApplyVariableOverrides</code> performs a size validation check before writing scalar overrides:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 ExpectedSize = 0;
+switch (Header-&gt;FieldType)
+{
+    case 1:  ExpectedSize = 4; break;                   // Float
+    case 2:  ExpectedSize = 4; break;                   // Int32
+    case 3:  ExpectedSize = 1; break;                   // Bool
+    case 4:  ExpectedSize = sizeof(FGameplayTag); break; // GameplayTag
+    case 6:  ExpectedSize = 4; break;                   // Enum
+    case 9:  ExpectedSize = sizeof(FName); break;       // Name
+    case 11: ExpectedSize = 1; break;                   // Byte
+    case 12: ExpectedSize = 8; break;                   // Int64
+    case 13: ExpectedSize = 8; break;                   // Double
+    case 14: ExpectedSize = sizeof(FVector); break;     // Vector
+    case 15: ExpectedSize = sizeof(FRotator); break;    // Rotator
+    case 16: ExpectedSize = sizeof(FTransform); break;  // Transform
+    case 17: ExpectedSize = sizeof(FLinearColor); break; // LinearColor
+    default: ExpectedSize = 0; break;
+}
+
+if (ExpectedSize &gt; 0 &amp;&amp; ValueSize != ExpectedSize)
+{
+    STATSX_LOG(Warning,
+        "ApplyVariableOverrides: Variable '%s' type size mismatch (expected %d, got %d)",
+        *Override.VariableTag.ToString(), ExpectedSize, ValueSize);
+    continue;  // SKIP &mdash; prevents corrupting adjacent variables
+}</code></pre>
+    </div>
+
+    <p>This catches mismatches like passing a <code>MakeFloat()</code> override for an <code>int64</code> variable (4 bytes vs 8 bytes). In shipping builds, the size check is skipped for performance &mdash; factories guarantee correct sizes when used properly.</p>
+
+    <hr>
+
+    <h2 id="object-class-overrides">8. Object &amp; Class Overrides</h2>
+
+    <p>Object/Class variables use <strong>pool index indirection</strong> in the blob (see doc 14). The override system handles this:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Override.ObjectValue = SomeActor*
+         │
+         ▼
+AllocContextObject(SomeActor) &rarr; uint16 PoolIndex (e.g., 3)
+         │
+         ▼
+VariableBlob[Header-&gt;Offset] = 0x0003 (2 bytes)
+         │
+         ▼
+Context.ContextObjectStack[3] = SomeActor*</code></pre>
+    </div>
+
+    <h3>Why Not RawValue?</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Reason</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>GC safety</strong></td><td>UObject* must be in a UPROPERTY-tracked container &mdash; raw bytes aren&rsquo;t tracked</td></tr>
+            <tr><td><strong>Pool allocation</strong></td><td>The blob stores a <code>uint16</code> index, not the pointer &mdash; allocation must happen at apply time</td></tr>
+            <tr><td><strong>Cross-domain</strong></td><td>Context pool indices are assigned per-execution &mdash; they can&rsquo;t be pre-baked</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Object Override Field Sizes</h3>
+
+    <p>Both Object and Class types occupy exactly 2 bytes in the blob (<code>sizeof(uint16)</code> = pool index).</p>
+
+    <hr>
+
+    <h2 id="unsupported-override-targets">9. Unsupported Override Targets</h2>
+
+    <h3>Array / Set Variables</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (Header-&gt;ContainerMode == 1 /*Array*/ || Header-&gt;ContainerMode == 2 /*Set*/)
+{
+    continue;  // Skip silently
+}</code></pre>
+    </div>
+
+    <p>Array and Set variables store a <code>uint16</code> handle into the <code>ContextArrayPool</code>. Overwriting this handle with raw bytes would <strong>corrupt the pool mapping</strong> &mdash; the handle is an opaque index assigned during initialization.</p>
+
+    <h3>Struct Variables</h3>
+
+    <p>Struct variables (FieldType 20) are not explicitly handled by the override system&rsquo;s size validation table. While raw byte overrides could theoretically work for POD-only structs, struct overrides are not officially supported because:</p>
+
+    <ul>
+        <li>Struct layouts depend on <code>FForgeStructDescriptor</code> (internal to the compiler)</li>
+        <li>Object/Class fields within structs need pool remapping</li>
+        <li>No factory method exists for arbitrary struct types</li>
+    </ul>
+
+    <h3>GameplayTagContainer Variables</h3>
+
+    <p>GameplayTagContainer overrides are not covered by the size validation table. The inline blob format (<code>[uint16 Count][Tag &times; Count]</code>) has a variable size depending on tag count, making raw byte override fragile.</p>
+
+    <hr>
+
+    <h2 id="cast-api-integration">10. Cast API Integration</h2>
+
+    <p>Both status casting APIs accept overrides as their final parameter:</p>
+
+    <h3>CastStatusAsync</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable, Category = "-XForge|Stats_X|Component|Status|Execution")
+int64 CastStatusAsync(
+    UPARAM(meta = (Categories = "StatsX.Status")) FGameplayTag StatusTag,
+    AActor* CasterActor,
+    AActor* TargetActor,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides);</code></pre>
+    </div>
+
+    <h3>CastStatusSync</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable, Category = "-XForge|Stats_X|Component|Status|Execution")
+EForgeExecutionResult CastStatusSync(
+    UPARAM(meta = (Categories = "StatsX.Status")) FGameplayTag StatusTag,
+    AActor* CasterActor,
+    AActor* TargetActor,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides);</code></pre>
+    </div>
+
+    <h3>ForgeVM::ExecuteStatus</h3>
+
+    <p>Both cast methods forward to the VM, which accepts overrides as an optional pointer:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>EForgeExecutionResult ExecuteStatus(
+    int64 StatusID,
+    const UPDA_StatusDefinition* Definition,
+    AActor* CasterActor,
+    AActor* TargetActor,
+    const TArray&lt;FForgeVariableOverride&gt;* Overrides = nullptr);</code></pre>
+    </div>
+
+    <p><strong>nullptr optimization:</strong> When the override array is empty, the component passes <code>nullptr</code> to avoid the overhead of iterating an empty array:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const bool bHasOverrides = Overrides.Num() &gt; 0;
+// ...
+StatsXWorldSubsystem-&gt;ExecuteStatus(StatusID, DA_StatusDefinition,
+    CasterActor, TargetActor, bHasOverrides ? &amp;Overrides : nullptr);</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="event-payload-reuse">11. Event Payload Reuse</h2>
+
+    <p><code>FForgeVariableOverride</code> is reused as the <strong>event payload</strong> for the Forge Event System:</p>
+
+    <h3>Component API</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable, Category = "StatsX|Events",
+          meta = (AutoCreateRefTerm = "Payload"))
+int32 SendForgeEvent(
+    UPARAM(meta = (Categories = "StatsX.Event")) FGameplayTag EventTag,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
+    </div>
+
+    <h3>WorldSubsystem API</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 SendForgeEvent(
+    FGameplayTag EventTag,
+    AActor* ScopeActor,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
+    </div>
+
+    <h3>Blueprint Library (Static)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable, Category = "StatsX|Events",
+          meta = (WorldContext = "WorldContextObject", AutoCreateRefTerm = "Payload"))
+static int32 SendForgeEvent(
+    const UObject* WorldContextObject,
+    FGameplayTag EventTag,
+    AActor* ScopeActor,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
+    </div>
+
+    <p><strong>Same factories, same struct</strong> &mdash; the <code>MakeFloat()</code>, <code>MakeObject()</code>, etc. factories work identically for both variable overrides and event payloads. When a <code>WaitForEvent</code> listener resumes, the payload overrides are applied to its variables automatically.</p>
+
+    <hr>
+
+    <h2 id="async-load-override-capture">12. Async Load &amp; Override Capture</h2>
+
+    <p>When <code>CastStatusAsync</code> triggers an async asset load, overrides must <strong>survive the async gap</strong>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (bHasOverrides)
+{
+    // Copy overrides into lambda capture (must survive async load)
+    TArray&lt;FForgeVariableOverride&gt; OverridesCopy = Overrides;
+
+    StreamableManager.RequestAsyncLoad(AssetToLoad,
+        FStreamableDelegate::CreateLambda(
+            [StatusID, SoftRefStatusData, WeakCaster, WeakTarget, WeakSubsystem,
+             CapturedOverrides = MoveTemp(OverridesCopy)]()
+            {
+                if (auto* Subsystem = WeakSubsystem.Get())
+                {
+                    Subsystem-&gt;ExecuteStatus(StatusID, LoadedDef,
+                        WeakCaster.Get(), WeakTarget.Get(), &amp;CapturedOverrides);
+                }
+            }));
+}
+else
+{
+    // No overrides &mdash; lightweight lambda without extra capture
+    StreamableManager.RequestAsyncLoad(AssetToLoad,
+        FStreamableDelegate::CreateLambda([...]() { /* no override param */ }));
+}</code></pre>
+    </div>
+
+    <h3>Key Details</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Aspect</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Copy semantics</strong></td><td>Overrides array is <strong>deep copied</strong> before capture (<code>OverridesCopy = Overrides</code>)</td></tr>
+            <tr><td><strong>Move into lambda</strong></td><td><code>MoveTemp(OverridesCopy)</code> avoids a second copy when captured</td></tr>
+            <tr><td><strong>Branch optimization</strong></td><td>Two lambda paths &mdash; with and without overrides &mdash; avoid empty array overhead</td></tr>
+            <tr><td><strong>Object lifetime</strong></td><td><code>ObjectValue</code> is <code>TObjectPtr&lt;UObject&gt;</code> &mdash; GC-tracked within the override copy</td></tr>
+            <tr><td><strong>Actor safety</strong></td><td>Caster/Target captured as <code>TWeakObjectPtr</code> &mdash; may be null by the time the load completes</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="api-reference-overrides">13. API Reference</h2>
+
+    <h3>FForgeVariableOverride</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>VariableTag</code></td><td><code>FGameplayTag</code></td><td>Target variable identifier</td></tr>
+            <tr><td><code>RawValue</code></td><td><code>TArray&lt;uint8&gt;</code></td><td>Pre-serialized scalar bytes</td></tr>
+            <tr><td><code>ObjectValue</code></td><td><code>TObjectPtr&lt;UObject&gt;</code></td><td>UObject* for object/class overrides</td></tr>
+            <tr><td><code>bIsObjectOverride</code></td><td><code>bool</code></td><td>Discriminant for object vs scalar path</td></tr>
+        </tbody>
+    </table>
+
+    <h3>C++ Factory Methods (Static on FForgeVariableOverride)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Parameter Type</th>
+                <th>Blob Size</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MakeFloat</code></td><td><code>float</code></td><td>4</td></tr>
+            <tr><td><code>MakeInt32</code></td><td><code>int32</code></td><td>4</td></tr>
+            <tr><td><code>MakeBool</code></td><td><code>bool</code> &rarr; <code>uint8</code></td><td>1</td></tr>
+            <tr><td><code>MakeByte</code></td><td><code>uint8</code></td><td>1</td></tr>
+            <tr><td><code>MakeInt64</code></td><td><code>int64</code></td><td>8</td></tr>
+            <tr><td><code>MakeDouble</code></td><td><code>double</code></td><td>8</td></tr>
+            <tr><td><code>MakeVector</code></td><td><code>FVector</code></td><td>24</td></tr>
+            <tr><td><code>MakeRotator</code></td><td><code>FRotator</code></td><td>24</td></tr>
+            <tr><td><code>MakeTransform</code></td><td><code>FTransform</code></td><td>80</td></tr>
+            <tr><td><code>MakeLinearColor</code></td><td><code>FLinearColor</code></td><td>16</td></tr>
+            <tr><td><code>MakeGameplayTag</code></td><td><code>FGameplayTag</code></td><td><code>sizeof(FGameplayTag)</code></td></tr>
+            <tr><td><code>MakeName</code></td><td><code>FName</code></td><td><code>sizeof(FName)</code></td></tr>
+            <tr><td><code>MakeObject</code></td><td><code>UObject*</code></td><td>2 (pool index)</td></tr>
+            <tr><td><code>MakeClass</code></td><td><code>UClass*</code></td><td>2 (pool index)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Blueprint Factory Nodes (UStatsXBlueprintLibrary)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Node</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MakeFloatOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeIntOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeBoolOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeByteOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeInt64Override</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeDoubleOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeVectorOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeRotatorOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeTransformOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeLinearColorOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeGameplayTagOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeNameOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeObjectOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+            <tr><td><code>MakeClassOverride</code></td><td><code>StatsX|Variable Override</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>VM Integration</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FForgeVM::ApplyVariableOverrides</code></td><td><code>void ApplyVariableOverrides(const TArray&lt;FForgeVariableOverride&gt;&amp;)</code></td></tr>
+            <tr><td><code>FForgeVM::ExecuteStatus</code></td><td><code>EForgeExecutionResult ExecuteStatus(int64, const UPDA_StatusDefinition*, AActor*, AActor*, const TArray&lt;FForgeVariableOverride&gt;* = nullptr)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Cast APIs (UStatsX_StatsComponentBase)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Returns</th>
+                <th>Override Param</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CastStatusAsync</code></td><td><code>int64</code> (StatusID)</td><td><code>const TArray&lt;FForgeVariableOverride&gt;&amp;</code></td></tr>
+            <tr><td><code>CastStatusSync</code></td><td><code>EForgeExecutionResult</code></td><td><code>const TArray&lt;FForgeVariableOverride&gt;&amp;</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Event APIs (Using Override as Payload)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Owner</th>
+                <th>Override/Payload Param</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SendForgeEvent</code></td><td><code>UStatsX_StatsComponentBase</code></td><td><code>const TArray&lt;FForgeVariableOverride&gt;&amp; Payload</code></td></tr>
+            <tr><td><code>SendForgeEvent</code></td><td><code>UStatsX_WorldSubsystem</code></td><td><code>const TArray&lt;FForgeVariableOverride&gt;&amp; Payload</code></td></tr>
+            <tr><td><code>SendForgeEvent</code></td><td><code>UStatsXBlueprintLibrary</code> (static)</td><td><code>const TArray&lt;FForgeVariableOverride&gt;&amp; Payload</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <p><em>Document generated from source &mdash; Stats_X v1.404</em></p>
+
+</section>

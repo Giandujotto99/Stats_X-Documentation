@@ -1,0 +1,674 @@
+<section id="vfx-sfx-handles" class="tutorial-section">
+    <h1>VFX / SFX Handles</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Handle-based registry for spawned Niagara particle systems and persistent audio components &mdash; allocation, registration, ForgeVM opcode handlers, cosmetic cue field mapping, and stale entry management.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#vfx-sfx-overview">Overview</a></li>
+        <li><a href="#handle-allocation">Handle Allocation</a></li>
+        <li><a href="#vfx-handle-registry-api">VFX Handle Registry API</a></li>
+        <li><a href="#sfx-handle-registry-api">SFX Handle Registry API</a></li>
+        <li><a href="#forgevm-opcode-handlers">ForgeVM Opcode Handlers</a></li>
+        <li><a href="#cosmetic-cue-field-mapping">Cosmetic Cue Field Mapping</a></li>
+        <li><a href="#enumerations">Enumerations</a></li>
+        <li><a href="#handle-lifecycle">Handle Lifecycle</a></li>
+        <li><a href="#network-execution-model">Network Execution Model</a></li>
+        <li><a href="#stale-entry-management">Stale Entry Management</a></li>
+        <li><a href="#vfx-sfx-constants">Constants</a></li>
+        <li><a href="#vfx-sfx-source-files">Source Files</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="vfx-sfx-overview">1. Overview</h2>
+
+    <p>Stats_X manages spawned Niagara particle systems and persistent audio components through a <strong>handle-based registry</strong> hosted on <code>UStatsX_WorldSubsystem</code>. Every VFX or SFX spawned by the ForgeVM receives a monotonically increasing <code>int64</code> handle. The subsystem maps that handle to a <code>TWeakObjectPtr</code> of the spawned component, enabling later operations &mdash; update, stop, or destroy &mdash; to locate the component by handle alone, even across the network.</p>
+
+    <p>The handle layer sits between the ForgeVM opcode handlers and the Cosmetic Cue bus, ensuring that:</p>
+
+    <ol>
+        <li>The server can reference effects by handle in cosmetic cues without holding a UObject pointer.</li>
+        <li>Clients can independently spawn and track their own component instances.</li>
+        <li>Stale entries are lazily purged so the registries stay bounded.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="handle-allocation">2. Handle Allocation</h2>
+
+    <p>Both VFX and SFX use independent monotonic <code>int64</code> allocators. Handle <code>0</code> is reserved as the invalid sentinel; all API entry points early-return on <code>Handle &lt;= 0</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>VFX</th>
+                <th>SFX</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Allocator field</td><td><code>NextCosmeticVFXHandle</code></td><td><code>NextCosmeticSFXHandle</code></td></tr>
+            <tr><td>Initial value</td><td><code>1</code></td><td><code>1</code></td></tr>
+            <tr><td>Storage map</td><td><code>TMap&lt;int64, TWeakObjectPtr&lt;UNiagaraComponent&gt;&gt;</code></td><td><code>TMap&lt;int64, TWeakObjectPtr&lt;UAudioComponent&gt;&gt;</code></td></tr>
+            <tr><td>Initial map capacity</td><td>128</td><td>128</td></tr>
+            <tr><td>Stale cleanup threshold</td><td>2048 entries</td><td>2048 entries</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Wraparound safety.</strong> On the astronomically unlikely overflow to <code>&lt;= 0</code>, the allocator resets to <code>1</code>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int64 Handle = NextCosmeticVFXHandle++;
+if (Handle &lt;= 0)
+{
+    Handle = 1;
+    NextCosmeticVFXHandle = 2;
+}</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="vfx-handle-registry-api">3. VFX Handle Registry API</h2>
+
+    <p>All methods live on <code>UStatsX_WorldSubsystem</code>.</p>
+
+    <h3>AllocateCosmeticVFXHandle</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int64 AllocateCosmeticVFXHandle()</code></pre>
+    </div>
+
+    <p>Returns the next monotonic VFX handle. Thread-safe only within game-thread tick.</p>
+
+    <h3>RegisterLocalVFXComponent</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void RegisterLocalVFXComponent(int64 VFXHandle, UNiagaraComponent* Component)</code></pre>
+    </div>
+
+    <p>Maps a handle to its spawned Niagara component. If <code>Component</code> is invalid, the entry is removed instead (defensive cleanup). When the map exceeds <strong>2048 entries</strong>, a stale-sweep pass iterates all entries and removes those whose weak pointer is no longer valid.</p>
+
+    <h3>FindLocalVFXComponent</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UNiagaraComponent* FindLocalVFXComponent(int64 VFXHandle)</code></pre>
+    </div>
+
+    <p>Returns the component for the given handle, or <code>nullptr</code>. If the weak pointer has gone stale, the entry is lazily removed on access.</p>
+
+    <h3>UnregisterLocalVFXComponent</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void UnregisterLocalVFXComponent(int64 VFXHandle)</code></pre>
+    </div>
+
+    <p>Removes the handle from the map unconditionally.</p>
+
+    <hr>
+
+    <h2 id="sfx-handle-registry-api">4. SFX Handle Registry API</h2>
+
+    <p>The SFX registry is structurally identical to the VFX registry, substituting <code>UAudioComponent</code> for <code>UNiagaraComponent</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>AllocateCosmeticSFXHandle</code></td><td><code>int64 AllocateCosmeticSFXHandle()</code></td></tr>
+            <tr><td><code>RegisterLocalSFXComponent</code></td><td><code>void RegisterLocalSFXComponent(int64 SFXHandle, UAudioComponent* Component)</code></td></tr>
+            <tr><td><code>FindLocalSFXComponent</code></td><td><code>UAudioComponent* FindLocalSFXComponent(int64 SFXHandle)</code></td></tr>
+            <tr><td><code>UnregisterLocalSFXComponent</code></td><td><code>void UnregisterLocalSFXComponent(int64 SFXHandle)</code></td></tr>
+        </tbody>
+    </table>
+
+    <p>Same stale-cleanup threshold of <strong>2048</strong> applies.</p>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Note</div>
+        <p>SFX handles are only allocated when <code>EStatsXSFXPlaybackPolicy == Persistent</code>. Fire-and-forget sounds receive handle <code>0</code> and are not tracked.</p>
+    </div>
+
+    <hr>
+
+    <h2 id="forgevm-opcode-handlers">5. ForgeVM Opcode Handlers</h2>
+
+    <p>Six opcodes interact with the handle registries. All are registered in <code>Nodes_Core.cpp</code> via <code>RegisterCoreNodes</code>.</p>
+
+    <h3>OP_SpawnVFX (327)</h3>
+
+    <p>Spawns a Niagara system at a world location.</p>
+
+    <p><strong>Instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>VFX System</td><td>Data0[24-41]</td><td><code>UNiagaraSystem*</code></td></tr>
+            <tr><td>Transform</td><td>Data0[42-59]</td><td><code>FTransform</code></td></tr>
+            <tr><td>Transform Space</td><td>Data1[0-17]</td><td><code>EStatsXVFXTransformSpace</code></td></tr>
+            <tr><td>Net Delivery</td><td>Data1[18-35]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td>VFX Handle output</td><td>Data1[36-51]</td><td>output offset (uint16)</td></tr>
+            <tr><td>Pool Policy</td><td>Continuation Data0[0-17]</td><td><code>EStatsXVFXPoolPolicy</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Execution flow:</strong></p>
+
+    <ol>
+        <li>Read VFX system, transform, space, delivery, and pool policy from instruction.</li>
+        <li>Resolve world transform based on <code>EStatsXVFXTransformSpace</code> (World / TargetRelative / CasterRelative).</li>
+        <li>Allocate VFX handle via <code>AllocateCosmeticVFXHandle()</code>.</li>
+        <li>On authority: emit <code>SpawnVFX</code> cosmetic cue carrying the handle, asset, transform, and policies.</li>
+        <li>Spawn locally via <code>UNiagaraFunctionLibrary::SpawnSystemAtLocation()</code> (skipped on dedicated server).</li>
+        <li>Register component with <code>RegisterLocalVFXComponent(Handle, Component)</code>.</li>
+        <li>Write handle to output pool offset.</li>
+    </ol>
+
+    <h3>OP_SpawnVFXAttachedtoActor (390)</h3>
+
+    <p>Spawns a Niagara system attached to an actor socket.</p>
+
+    <p><strong>Additional instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Parent Actor</td><td>Data0[42-59]</td><td><code>AActor*</code></td></tr>
+            <tr><td>Socket Name</td><td>Data1[0-17]</td><td><code>FName</code></td></tr>
+            <tr><td>Attach Rule</td><td>Data1[36-53]</td><td><code>EStatsXVFXAttachRule</code></td></tr>
+            <tr><td>Net Delivery</td><td>Continuation Data0[0-17]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td>Pool Policy</td><td>Continuation Data0[18-35]</td><td><code>EStatsXVFXPoolPolicy</code></td></tr>
+            <tr><td>VFX Handle output</td><td>Continuation Data0[36-51]</td><td>output offset (uint16)</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Execution flow:</strong></p>
+
+    <ol>
+        <li>Resolve attach component from parent actor's root or named socket.</li>
+        <li>Map <code>EStatsXVFXAttachRule</code> to <code>EAttachLocation</code> for Niagara.</li>
+        <li>Emit cosmetic cue with <code>ExplicitRouteActor</code> set to the parent actor.</li>
+        <li>Spawn via <code>UNiagaraFunctionLibrary::SpawnSystemAttached()</code>.</li>
+        <li>Register and write handle.</li>
+    </ol>
+
+    <p><strong>Socket fallback:</strong> If the named socket is not found, the handler logs a warning and falls back to the root component.</p>
+
+    <h3>OP_StopVFX (335)</h3>
+
+    <p>Stops and deactivates a previously spawned Niagara system.</p>
+
+    <p><strong>Instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>VFX Handle</td><td>Data0[24-41]</td><td><code>int64</code></td></tr>
+            <tr><td>Blend Out Time</td><td>Data0[42-59]</td><td><code>float</code></td></tr>
+            <tr><td>Net Delivery</td><td>Data1[0-17]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Execution flow (client / standalone):</strong></p>
+
+    <ol>
+        <li><code>FindLocalVFXComponent(Handle)</code>.</li>
+        <li>Set <code>bAutoDestroy = true</code>.</li>
+        <li>If <code>BlendOutTime &lt;= KINDA_SMALL_NUMBER</code> &rarr; <code>DeactivateImmediate()</code>.</li>
+        <li>Else &rarr; <code>Deactivate()</code> (Niagara blends out naturally).</li>
+        <li><code>UnregisterLocalVFXComponent(Handle)</code>.</li>
+    </ol>
+
+    <p><strong>Execution flow (authority):</strong> Emits a <code>StopVFX</code> cosmetic cue carrying the handle and blend-out time.</p>
+
+    <h3>OP_UpdateVFX (336)</h3>
+
+    <p>Updates the world transform of a live Niagara system.</p>
+
+    <p><strong>Instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>VFX Handle</td><td>Data0[24-41]</td><td><code>int64</code></td></tr>
+            <tr><td>Transform</td><td>Data0[42-59]</td><td><code>FTransform</code></td></tr>
+            <tr><td>Transform Space</td><td>Data1[0-17]</td><td><code>EStatsXVFXTransformSpace</code></td></tr>
+            <tr><td>Net Delivery</td><td>Data1[18-35]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+        </tbody>
+    </table>
+
+    <p>Resolves world transform from space, then calls <code>SetWorldLocationAndRotation()</code> and <code>SetWorldScale3D()</code> on the component.</p>
+
+    <h3>OP_SpawnSFX (337)</h3>
+
+    <p>Spawns an audio source at a world location.</p>
+
+    <p><strong>Instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Sound</td><td>Data0[24-41]</td><td><code>USoundBase*</code></td></tr>
+            <tr><td>Transform</td><td>Data0[42-59]</td><td><code>FTransform</code></td></tr>
+            <tr><td>Transform Space</td><td>Data1[0-17]</td><td><code>EStatsXVFXTransformSpace</code></td></tr>
+            <tr><td>Net Delivery</td><td>Data1[18-35]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+            <tr><td>SFX Handle output</td><td>Data1[36-51]</td><td>output offset (uint16)</td></tr>
+            <tr><td>Playback Policy</td><td>Continuation Data0[0-17]</td><td><code>EStatsXSFXPlaybackPolicy</code></td></tr>
+            <tr><td>Volume Multiplier</td><td>Continuation Data0[18-35]</td><td><code>float</code></td></tr>
+            <tr><td>Pitch Multiplier</td><td>Continuation Data0[36-53]</td><td><code>float</code></td></tr>
+            <tr><td>Start Time</td><td>Continuation Data1[0-17]</td><td><code>float</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Playback policies:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Policy</th>
+                <th>Spawn API</th>
+                <th>Handle</th>
+                <th>Tracked</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FireAndForget</code> (or <code>Auto</code>)</td><td><code>UGameplayStatics::PlaySoundAtLocation</code></td><td><code>0</code></td><td>No</td></tr>
+            <tr><td><code>Persistent</code></td><td><code>UGameplayStatics::SpawnSoundAtLocation</code></td><td>allocated</td><td>Yes</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Audio parameter validation:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Condition</th>
+                <th>Correction</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Both volume and pitch <code>&lt;= 0</code></td><td>Reset both to <code>1.0</code></td></tr>
+            <tr><td>Volume <code>&lt; 0</code></td><td>Reset to <code>1.0</code></td></tr>
+            <tr><td>Pitch <code>&lt;= 0</code></td><td>Reset to <code>1.0</code></td></tr>
+            <tr><td>Any non-finite</td><td>Reset to <code>1.0</code></td></tr>
+            <tr><td>Start time <code>&lt; 0</code> or non-finite</td><td>Reset to <code>0.0</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>OP_StopSFX (338)</h3>
+
+    <p>Stops a persistent audio component.</p>
+
+    <p><strong>Instruction fields:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Source</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>SFX Handle</td><td>Data0[24-41]</td><td><code>int64</code></td></tr>
+            <tr><td>Fade Out Time</td><td>Data0[42-59]</td><td><code>float</code></td></tr>
+            <tr><td>Net Delivery</td><td>Data1[0-17]</td><td><code>EStatsXVFXNetDelivery</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Execution flow (client / standalone):</strong></p>
+
+    <ol>
+        <li><code>FindLocalSFXComponent(Handle)</code>.</li>
+        <li>If <code>FadeOutTime &lt;= KINDA_SMALL_NUMBER</code> &rarr; <code>Stop()</code>.</li>
+        <li>Else &rarr; <code>FadeOut(FadeOutTime, 0.f)</code>.</li>
+        <li><code>UnregisterLocalSFXComponent(Handle)</code>.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="cosmetic-cue-field-mapping">6. Cosmetic Cue Field Mapping</h2>
+
+    <p>When the server emits a VFX/SFX cosmetic cue, the <code>FStatsXCosmeticCue</code> envelope carries all necessary data in its generic payload slots.</p>
+
+    <h3>SpawnVFX / SpawnVFXAttached</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Cue Field</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>SpawnVFX</code> or <code>SpawnVFXAttached</code></td></tr>
+            <tr><td><code>Asset</code></td><td><code>UNiagaraSystem*</code></td></tr>
+            <tr><td><code>Location</code> / <code>Rotation</code> / <code>Scale</code></td><td>World or relative transform</td></tr>
+            <tr><td><code>Int0</code></td><td>Transform space or attach rule (cast to enum)</td></tr>
+            <tr><td><code>Int1</code></td><td>Pool policy (cast to enum)</td></tr>
+            <tr><td><code>Int64_0</code></td><td>VFX handle</td></tr>
+            <tr><td><code>SectionName</code></td><td>Socket name (attached variant)</td></tr>
+            <tr><td><code>ExplicitRouteActor</code></td><td>Parent actor (attached variant)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>StopVFX</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Cue Field</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>StopVFX</code></td></tr>
+            <tr><td><code>Int64_0</code></td><td>VFX handle</td></tr>
+            <tr><td><code>Float0</code></td><td>Blend out time</td></tr>
+        </tbody>
+    </table>
+
+    <h3>UpdateVFX</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Cue Field</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>UpdateVFX</code></td></tr>
+            <tr><td><code>Int64_0</code></td><td>VFX handle</td></tr>
+            <tr><td><code>Location</code> / <code>Rotation</code> / <code>Scale</code></td><td>New transform</td></tr>
+            <tr><td><code>Int0</code></td><td>Transform space</td></tr>
+        </tbody>
+    </table>
+
+    <h3>SpawnSFX</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Cue Field</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>SpawnSFX</code></td></tr>
+            <tr><td><code>Asset</code></td><td><code>USoundBase*</code></td></tr>
+            <tr><td><code>Location</code> / <code>Rotation</code> / <code>Scale</code></td><td>World or relative transform</td></tr>
+            <tr><td><code>Int0</code></td><td>Transform space</td></tr>
+            <tr><td><code>Int1</code></td><td>Playback policy</td></tr>
+            <tr><td><code>Float0</code></td><td>Volume multiplier</td></tr>
+            <tr><td><code>Float1</code></td><td>Pitch multiplier</td></tr>
+            <tr><td><code>Float2</code></td><td>Start time</td></tr>
+            <tr><td><code>Int64_0</code></td><td>SFX handle (0 if fire-and-forget)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>StopSFX</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Cue Field</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CueType</code></td><td><code>StopSFX</code></td></tr>
+            <tr><td><code>Int64_0</code></td><td>SFX handle</td></tr>
+            <tr><td><code>Float0</code></td><td>Fade out time</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="enumerations">7. Enumerations</h2>
+
+    <h3>EStatsXVFXTransformSpace</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>World</code></td><td>Input transform is already in world space.</td></tr>
+            <tr><td><code>TargetRelative</code></td><td>Input transform is relative to the target actor.</td></tr>
+            <tr><td><code>CasterRelative</code></td><td>Input transform is relative to the caster actor.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXAttachRule</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>KeepRelativeOffset</code></td><td>Input transform used as local offset relative to parent/socket.</td></tr>
+            <tr><td><code>KeepWorldTransform</code></td><td>Input transform treated as resolved world transform.</td></tr>
+            <tr><td><code>SnapToTargetIncludingScale</code></td><td>Snap everything to parent/socket; input ignored.</td></tr>
+            <tr><td><code>SnapToTargetNotIncludingScale</code></td><td>Snap location and rotation; preserve input scale.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXNetDelivery</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Runtime default (currently maps to burst unreliable).</td></tr>
+            <tr><td><code>BurstUnreliable</code></td><td>Fire-and-forget multicast.</td></tr>
+            <tr><td><code>StateReliable</code></td><td>Reliable state-channel delivery with dedup.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXSFXPlaybackPolicy</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Runtime default (currently maps to fire-and-forget).</td></tr>
+            <tr><td><code>FireAndForget</code></td><td>One-shot playback, no handle tracking.</td></tr>
+            <tr><td><code>Persistent</code></td><td>Spawns a tracked <code>UAudioComponent</code> with handle.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatsXVFXPoolPolicy</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Auto</code></td><td>Maps to Niagara <code>AutoRelease</code>.</td></tr>
+            <tr><td><code>None</code></td><td>Disable Niagara pooling for this spawn.</td></tr>
+            <tr><td><code>AutoRelease</code></td><td>Pool with auto-release lifecycle.</td></tr>
+            <tr><td><code>ManualRelease</code></td><td>Pool with manual release (<code>bAutoDestroy = false</code>).</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="handle-lifecycle">8. Handle Lifecycle</h2>
+
+    <h3>VFX Lifecycle</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Server / Standalone                          Client (via Cosmetic Cue)
+───────────────────                          ────────────────────────
+AllocateCosmeticVFXHandle() &rarr; Handle         ExecuteBuiltInCue(SpawnVFX)
+SpawnSystemAtLocation() &rarr; Component            SpawnSystemAtLocation() &rarr; Component
+RegisterLocalVFXComponent(Handle, Comp)        RegisterLocalVFXComponent(Handle, Comp)
+     │                                              │
+     ▼  (gameplay continues)                        ▼
+FindLocalVFXComponent(Handle) &rarr; Comp         FindLocalVFXComponent(Handle) &rarr; Comp
+     │  UpdateVFX / StopVFX                         │  ExecuteBuiltInCue(Stop/Update)
+     ▼                                              ▼
+UnregisterLocalVFXComponent(Handle)          UnregisterLocalVFXComponent(Handle)</code></pre>
+    </div>
+
+    <h3>SFX Lifecycle (Persistent)</h3>
+
+    <p>Same flow as VFX, substituting <code>UAudioComponent</code> and <code>SFX</code> methods. Fire-and-forget sounds bypass the handle registry entirely.</p>
+
+    <hr>
+
+    <h2 id="network-execution-model">9. Network Execution Model</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Context</th>
+                <th>Local spawn</th>
+                <th>Cue emitted</th>
+                <th>Handle registered</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Dedicated server</td><td>No</td><td>Yes</td><td>No</td></tr>
+            <tr><td>Listen server</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+            <tr><td>Standalone</td><td>Yes</td><td>No</td><td>Yes</td></tr>
+            <tr><td>Client (from cue)</td><td>Yes</td><td>No</td><td>Yes</td></tr>
+        </tbody>
+    </table>
+
+    <p>On a <strong>dedicated server</strong>, VFX/SFX opcodes only emit cosmetic cues &mdash; no Niagara or audio components are spawned. Clients receive the cues through the <code>NetCueRelay</code> and execute the spawn locally via <code>ExecuteBuiltInCue</code>, registering the component in their own local handle registry.</p>
+
+    <hr>
+
+    <h2 id="stale-entry-management">10. Stale Entry Management</h2>
+
+    <p>Both registries share the same cleanup strategy:</p>
+
+    <ol>
+        <li><strong>Lazy removal on lookup.</strong> <code>FindLocal*Component</code> removes stale weak pointers on access.</li>
+        <li><strong>Threshold sweep on registration.</strong> When <code>Map.Num() &gt; 2048</code>, <code>RegisterLocal*Component</code> iterates the entire map and removes all entries whose <code>TWeakObjectPtr</code> is no longer valid.</li>
+        <li><strong>Subsystem teardown.</strong> <code>Deinitialize</code> empties both maps and resets allocators to <code>1</code>.</li>
+    </ol>
+
+    <p>This design avoids per-tick iteration costs while bounding worst-case map growth.</p>
+
+    <hr>
+
+    <h2 id="vfx-sfx-constants">11. Constants</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Invalid handle sentinel</td><td><code>0</code></td><td>All API guards check <code>&lt;= 0</code></td></tr>
+            <tr><td>Initial allocator value</td><td><code>1</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+            <tr><td>Initial map capacity</td><td><code>128</code></td><td><code>StatsX_WorldSubsystem.cpp</code> &mdash; <code>Initialize</code></td></tr>
+            <tr><td>Stale cleanup threshold</td><td><code>2048</code></td><td><code>RegisterLocalVFXComponent</code> / <code>RegisterLocalSFXComponent</code></td></tr>
+            <tr><td><code>KINDA_SMALL_NUMBER</code></td><td>Engine constant (~1e-4)</td><td>Blend-out / fade-out immediate-vs-gradual threshold</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="vfx-sfx-source-files">12. Source Files</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Public/Data/StatsXTypes.h</code></td><td>VFX/SFX enumerations (lines 164&ndash;238).</td></tr>
+            <tr><td><code>Public/Data/StatsXCosmeticCueTypes.h</code></td><td><code>EStatsXCosmeticCueType</code> values and <code>FStatsXCosmeticCue</code> envelope.</td></tr>
+            <tr><td><code>Public/Core/StatsX_WorldSubsystem.h</code></td><td>Handle registry API declarations, private allocator and map fields.</td></tr>
+            <tr><td><code>Private/Core/StatsX_WorldSubsystem.cpp</code></td><td>Handle Allocate / Register / Find / Unregister implementations (lines 641&ndash;775).</td></tr>
+            <tr><td><code>Private/Nodes/Nodes_Core.cpp</code></td><td>Opcode handlers: SpawnVFX, SpawnVFXAttached, StopVFX, UpdateVFX, SpawnSFX, StopSFX.</td></tr>
+            <tr><td><code>Private/Net/StatsX_NetCueRelay.cpp</code></td><td><code>ExecuteBuiltInCue</code> &mdash; client-side spawn from received cues.</td></tr>
+        </tbody>
+    </table>
+
+</section>

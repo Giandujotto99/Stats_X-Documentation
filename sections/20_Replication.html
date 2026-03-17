@@ -1,0 +1,820 @@
+<section id="replication" class="tutorial-section">
+    <h1>Replication</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
+        Layer: <strong>Component / Network</strong> &mdash; server-authoritative gameplay state replication via <code>FFastArraySerializer</code>.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#split-replication-model">Split Replication Model</a></li>
+        <li><a href="#replication-architecture">Replication Architecture</a></li>
+        <li><a href="#replicated-properties">Replicated Properties</a></li>
+        <li><a href="#fast-array-serializer-overview">Fast Array Serializer Overview</a></li>
+        <li><a href="#attribute-replication">Attribute Replication</a></li>
+        <li><a href="#modifier-replication">Modifier Replication</a></li>
+        <li><a href="#status-tag-replication">Status Tag Replication</a></li>
+        <li><a href="#status-seed-replication">Status Seed Replication</a></li>
+        <li><a href="#status-update-replication">Status Update Replication</a></li>
+        <li><a href="#client-side-delegate-summary">Client-Side Delegate Summary</a></li>
+        <li><a href="#authority-gate-pattern">Authority Gate Pattern</a></li>
+        <li><a href="#status-instances-and-replication">Status Instances and Replication</a></li>
+        <li><a href="#client-sync-retry">Client Sync Retry</a></li>
+        <li><a href="#per-attribute-replication-opt-out">Per-Attribute Replication Opt-Out</a></li>
+        <li><a href="#performance-instrumentation">Performance Instrumentation</a></li>
+        <li><a href="#replication-design-decisions">Design Decisions</a></li>
+        <li><a href="#replication-see-also">See Also</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="split-replication-model">1. Split Replication Model</h2>
+    <p>Stats_X separates network replication into two independent channels:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Channel</th>
+                <th>Transport</th>
+                <th>Owner</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Gameplay state</strong></td><td>6 <code>FFastArraySerializer</code> arrays on <code>UStatsX_StatsComponentBase</code></td><td>Component (this document)</td><td>Attributes, modifiers, status tags, lifecycle seeds, delta updates</td></tr>
+            <tr><td><strong>Cosmetic state</strong></td><td><code>AStatsX_NetCueRelay</code> actors</td><td>World Subsystem</td><td>VFX, SFX, montage cues (see 18 &mdash; Cosmetic Cue Routing)</td></tr>
+        </tbody>
+    </table>
+
+    <p>This split ensures gameplay correctness (reliable, delta-compressed) is decoupled from presentation bandwidth (unreliable bursts + state streams).</p>
+
+    <hr>
+
+    <h2 id="replication-architecture">2. Replication Architecture</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code> SERVER (Authority)
+ ──────────────────
+ UStatsX_StatsComponentBase
+   ├── ReplicatedAttributes      ──► FFastArraySerializer (delta)
+   ├── ReplicatedModifiers       ──► FFastArraySerializer (delta)
+   ├── ReplicatedCastedTags      ──► FFastArraySerializer (delta)
+   ├── ReplicatedReceivedTags    ──► FFastArraySerializer (delta)
+   ├── ReplicatedStatusSeeds     ──► FFastArraySerializer (delta)
+   └── ReplicatedStatusUpdates   ──► FFastArraySerializer (delta)
+                                      │
+                                      ▼
+ CLIENT (Simulated/Autonomous)
+ ─────────────────────────────
+   PostReplicatedAdd / PostReplicatedChange / PreReplicatedRemove
+     ├── Sync local data structures (maps, containers)
+     ├── Mark dirty for recalculation (modifiers)
+     └── Broadcast Blueprint delegates</code></pre>
+    </div>
+
+    <p>All six arrays use <code>DOREPLIFETIME</code> without conditions &mdash; unconditional replication to all connected clients. No <code>OnRep_</code> callbacks; all client-side logic flows through the <code>FFastArraySerializer</code> item callbacks instead.</p>
+
+    <hr>
+
+    <h2 id="replicated-properties">3. Replicated Properties</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_StatsComponentBase.h:118-216
+        Private/Core/StatsX_StatsComponentBase.cpp:318-328</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void UStatsX_StatsComponentBase::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedAttributes);
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedModifiers);
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedCastedTags);
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedReceivedTags);
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedStatusSeeds);
+    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedStatusUpdates);
+}</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="fast-array-serializer-overview">4. Fast Array Serializer Overview</h2>
+    <p>Each replicated array follows the same pattern:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h (entire file, 444 lines)</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FFastArraySerializerItem</code> subclass</td><td>One replicated record (attribute, modifier, tag, seed, or update)</td></tr>
+            <tr><td><code>FFastArraySerializer</code> subclass</td><td>Container with <code>TArray&lt;Item&gt;</code>, <code>OwnerComponent</code> back-pointer, <code>NetDeltaSerialize</code></td></tr>
+            <tr><td><code>TStructOpsTypeTraits</code> specialization</td><td>Enables <code>WithNetDeltaSerializer</code> for the outer struct</td></tr>
+            <tr><td><code>Initialize(OwnerComponent)</code></td><td>Called during component init to bind the back-pointer</td></tr>
+            <tr><td><code>MarkItemDirty(Item)</code></td><td>Server-side: flags an item for next delta replication pass</td></tr>
+            <tr><td><code>MarkArrayDirty()</code></td><td>Server-side: flags the entire array for full resync</td></tr>
+        </tbody>
+    </table>
+
+    <p>The <code>OwnerComponent</code> field is marked <code>NotReplicated</code> &mdash; it is set locally on both server and client during component initialization.</p>
+
+    <hr>
+
+    <h2 id="attribute-replication">5. Attribute Replication</h2>
+
+    <h3>5.1 FReplicatedAttributeItem</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:24-49</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>Identifies the attribute (e.g. <code>StatsX.Attribute.Health</code>)</td></tr>
+            <tr><td><code>AttributeValue</code></td><td><code>FStatAttribute</code></td><td>Full attribute snapshot</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.2 FStatAttribute (Replicated Payload)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:442-489</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Current</code></td><td><code>float</code></td><td>Actual usable value (e.g. current HP)</td></tr>
+            <tr><td><code>Max</code></td><td><code>float</code></td><td>Calculated maximum: <code>(Base + TotalAdditive) * TotalMultiplicative</code></td></tr>
+            <tr><td><code>Base</code></td><td><code>float</code></td><td>Unmodified foundation value</td></tr>
+            <tr><td><code>bOverflows</code></td><td><code>bool</code></td><td>If true, disables all clamping</td></tr>
+            <tr><td><code>bReplicated</code></td><td><code>bool</code></td><td>If false, attribute is server-only &mdash; not added to Fast Array</td></tr>
+        </tbody>
+    </table>
+
+    <p>The <code>bReplicated</code> flag is a <strong>per-attribute opt-out</strong>. Attributes marked <code>bReplicated = false</code> are never added to <code>ReplicatedAttributes</code>, saving bandwidth for server-only data (e.g. internal timers, scratch values).</p>
+
+    <h3>5.3 Client-Side Callbacks</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_StatsComponentBase.cpp:935-1024</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PostReplicatedAdd</code></td><td>Add to local <code>StatsAttributes</code> map, broadcast <code>OnAttributeChanged</code></td></tr>
+            <tr><td><code>PostReplicatedChange</code></td><td>Update local map, broadcast <code>OnAttributeChanged</code> (client-only)</td></tr>
+            <tr><td><code>PreReplicatedRemove</code></td><td>Remove from local map, broadcast change event (client-only)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.4 Server-Side Dirty Path</h3>
+    <p>When the server modifies an attribute:</p>
+    <ol>
+        <li>Update <code>StatsAttributes</code> map.</li>
+        <li>Find or create the corresponding <code>FReplicatedAttributeItem</code> in the Fast Array.</li>
+        <li>Call <code>MarkItemDirty(Item)</code> &mdash; queues for next <code>NetDeltaSerialize</code> pass.</li>
+        <li>Uses <code>AttributeIndexCache</code> (<code>TMap&lt;FGameplayTag, int32&gt;</code>) for O(1) lookup.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="modifier-replication">6. Modifier Replication</h2>
+
+    <h3>6.1 FReplicatedModifierItem</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:111-128</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Modifier</code></td><td><code>FStatModifier</code></td><td>Complete modifier data</td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.2 FStatModifier (Replicated Payload)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:732-775</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>InstanceID</code></td><td><code>int32</code></td><td>Unique modifier identifier</td></tr>
+            <tr><td><code>OwnerID</code></td><td><code>int64</code></td><td>Status instance that created this modifier</td></tr>
+            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>Target attribute</td></tr>
+            <tr><td><code>SourceTag</code></td><td><code>FGameplayTag</code></td><td>Origin of the modifier (buff, equipment, etc.)</td></tr>
+            <tr><td><code>AdditiveValue</code></td><td><code>float</code></td><td>Flat additive bonus: <code>Max += AdditiveValue</code></td></tr>
+            <tr><td><code>MultiplicativeValue</code></td><td><code>float</code></td><td>Multiplicative factor: <code>Max *= MultiplicativeValue</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.3 Client-Side Callbacks</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Core/StatsX_StatsComponentBase.cpp:1543-1604</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PostReplicatedAdd</code></td><td>Client-only: <code>MarkAttributeDirty(AttributeTag)</code> for recalculation</td></tr>
+            <tr><td><code>PostReplicatedChange</code></td><td><code>MarkAttributeDirty(AttributeTag)</code> for recalculation</td></tr>
+            <tr><td><code>PreReplicatedRemove</code></td><td><code>MarkAttributeDirty(AttributeTag)</code> for recalculation</td></tr>
+        </tbody>
+    </table>
+
+    <p>All three callbacks trigger attribute recalculation rather than applying the modifier value directly &mdash; the client recomputes <code>Max</code> from the full modifier set for consistency.</p>
+
+    <hr>
+
+    <h2 id="status-tag-replication">7. Status Tag Replication</h2>
+    <p>Stats_X tracks two independent tag containers per component &mdash; <strong>casted</strong> (statuses this actor applied) and <strong>received</strong> (statuses applied to this actor).</p>
+
+    <h3>7.1 FReplicatedTagItem</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:178-209</code></pre>
+    </div>
+
+    <p>Single <code>FGameplayTag Tag</code> field. The struct provides <strong>overloaded callbacks</strong> for both <code>FReplicatedCastedTagArray</code> and <code>FReplicatedReceivedTagArray</code>.</p>
+
+    <h3>7.2 Casted Tags</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:218-248
+        Private/Core/StatsX_StatsComponentBase.cpp:1993-2052</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PostReplicatedAdd</code></td><td>Client-only: <code>CastedStatusesContainer.AddTag(Tag)</code>, broadcast <code>OnCastedStatusTagChanged(Tag, true)</code></td></tr>
+            <tr><td><code>PostReplicatedChange</code></td><td>No-op (tags are immutable &mdash; add/remove only)</td></tr>
+            <tr><td><code>PreReplicatedRemove</code></td><td>Client-only: <code>CastedStatusesContainer.RemoveTag(Tag)</code>, broadcast <code>OnCastedStatusTagChanged(Tag, false)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>7.3 Received Tags</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:257-287
+        Private/Core/StatsX_StatsComponentBase.cpp:2060-2109</code></pre>
+    </div>
+
+    <p>Identical pattern with <code>ReceivedStatusesContainer</code> and <code>OnReceivedStatusTagChanged</code>.</p>
+
+    <h3>7.4 Local Containers</h3>
+    <p>The component maintains two <code>FGameplayTagContainer</code> fields for fast client-side queries:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FGameplayTagContainer CastedStatusesContainer;    // synced from ReplicatedCastedTags
+FGameplayTagContainer ReceivedStatusesContainer;   // synced from ReplicatedReceivedTags</code></pre>
+    </div>
+
+    <p>Plus per-tag index caches (<code>CastedTagIndexCache</code>, <code>ReceivedTagIndexCache</code>) for O(1) Fast Array item lookup.</p>
+
+    <hr>
+
+    <h2 id="status-seed-replication">8. Status Seed Replication</h2>
+    <p>Seeds provide <strong>lifecycle boundary notifications</strong> &mdash; when a status is added or removed from the component.</p>
+
+    <h3>8.1 FReplicatedStatusSeedItem</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:300-328</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Unique status instance identifier</td></tr>
+            <tr><td><code>bCasted</code></td><td><code>bool</code></td><td>True for caster-side, false for receiver-side</td></tr>
+            <tr><td><code>Seed</code></td><td><code>FStatusSeedData</code></td><td>Minimal snapshot</td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.2 FStatusSeedData (Replicated Payload)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:344-376</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Identity</td></tr>
+            <tr><td><code>StatusTag</code></td><td><code>FGameplayTag</code></td><td>Status definition tag</td></tr>
+            <tr><td><code>ServerStartTimeSeconds</code></td><td><code>float</code></td><td>Server world time when lifecycle started</td></tr>
+            <tr><td><code>MaxDurationSeconds</code></td><td><code>float</code></td><td>&le; 0 means infinite</td></tr>
+            <tr><td><code>TickIntervalSeconds</code></td><td><code>float</code></td><td>0 means non-periodic</td></tr>
+            <tr><td><code>MaxIterations</code></td><td><code>int32</code></td><td>-1 means infinite</td></tr>
+            <tr><td><code>StackCount</code></td><td><code>int32</code></td><td>Current stack count</td></tr>
+            <tr><td><code>Revision</code></td><td><code>int32</code></td><td>Monotonic per-status revision for stale protection</td></tr>
+        </tbody>
+    </table>
+
+    <p>The seed carries enough data for clients to compute remaining time locally (<code>ServerStartTimeSeconds + MaxDurationSeconds - CurrentServerTime</code>), eliminating the need for continuous timer replication.</p>
+
+    <h3>8.3 Client-Side Callbacks</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Data/StatsXReplication.cpp:75-104</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PostReplicatedAdd</code></td><td>Client-only: broadcast <code>OnCastedStatusSet</code> / <code>OnReceivedStatusSet</code> with <code>EStatusSetAction::Added</code></td></tr>
+            <tr><td><code>PostReplicatedChange</code></td><td>No-op (lifecycle-oriented; field changes don&rsquo;t emit lifecycle events)</td></tr>
+            <tr><td><code>PreReplicatedRemove</code></td><td>Client-only: broadcast with <code>EStatusSetAction::Removed</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.4 EStatusSetAction</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:289-293</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Added</code></td><td>Status just became active</td></tr>
+            <tr><td><code>Removed</code></td><td>Status just expired/was removed</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="status-update-replication">9. Status Update Replication</h2>
+    <p>Updates provide <strong>delta event notifications</strong> for non-deducible mutations (stack changes, refreshes, runtime tuning).</p>
+
+    <h3>9.1 FReplicatedStatusUpdateItem</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXReplication.h:378-406</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>EventID</code></td><td><code>int64</code></td><td>Monotonic unique identifier per component stream</td></tr>
+            <tr><td><code>bCasted</code></td><td><code>bool</code></td><td>Caster-side or receiver-side</td></tr>
+            <tr><td><code>UpdateData</code></td><td><code>FStatusUpdateData</code></td><td>Delta payload</td></tr>
+        </tbody>
+    </table>
+
+    <h3>9.2 FStatusUpdateData (Replicated Payload)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:393-423</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Target status instance</td></tr>
+            <tr><td><code>Revision</code></td><td><code>int32</code></td><td>Monotonic per-status revision</td></tr>
+            <tr><td><code>Reason</code></td><td><code>EStatusUpdateReason</code></td><td>What triggered this update</td></tr>
+            <tr><td><code>ChangedFields</code></td><td><code>int32</code> (bitmask)</td><td>Which fields carry valid data</td></tr>
+            <tr><td><code>StackCount</code></td><td><code>int32</code></td><td>New stack count (if bit set)</td></tr>
+            <tr><td><code>ServerStartTimeSeconds</code></td><td><code>float</code></td><td>New start time (if bit set)</td></tr>
+            <tr><td><code>MaxDurationSeconds</code></td><td><code>float</code></td><td>New duration (if bit set)</td></tr>
+            <tr><td><code>TickIntervalSeconds</code></td><td><code>float</code></td><td>New tick interval (if bit set)</td></tr>
+            <tr><td><code>MaxIterations</code></td><td><code>int32</code></td><td>New max iterations (if bit set)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>9.3 EStatusUpdateReason</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:297-303</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StackChanged</code></td><td>Stack count modified</td></tr>
+            <tr><td><code>Refreshed</code></td><td>Duration/timer reset</td></tr>
+            <tr><td><code>StackChangedAndRefreshed</code></td><td>Both</td></tr>
+            <tr><td><code>RuntimeTuning</code></td><td>Programmatic parameter change</td></tr>
+        </tbody>
+    </table>
+
+    <h3>9.4 EStatusUpdateField (Bitmask)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:307-315</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Flag</th>
+                <th>Value</th>
+                <th>Field</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>None</code></td><td>0</td><td>No fields</td></tr>
+            <tr><td><code>StackCount</code></td><td>1</td><td><code>StackCount</code> is valid</td></tr>
+            <tr><td><code>StartTime</code></td><td>2</td><td><code>ServerStartTimeSeconds</code> is valid</td></tr>
+            <tr><td><code>MaxDuration</code></td><td>4</td><td><code>MaxDurationSeconds</code> is valid</td></tr>
+            <tr><td><code>TickInterval</code></td><td>8</td><td><code>TickIntervalSeconds</code> is valid</td></tr>
+            <tr><td><code>MaxIterations</code></td><td>16</td><td><code>MaxIterations</code> is valid</td></tr>
+        </tbody>
+    </table>
+
+    <p>This bitmask avoids sending full payloads when only one or two fields change.</p>
+
+    <h3>9.5 Event Ordering</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Data/StatsXReplication.cpp:54-72
+        Public/Core/StatsX_StatsComponentBase.h:224-231</code></pre>
+    </div>
+
+    <p>The status update stream uses <strong>monotonic EventIDs</strong> to prevent duplicate/out-of-order processing:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int64 NextStatusUpdateEventID = 1;                     // server allocator
+int64 LastAcceptedCastedStatusUpdateEventID = 0;        // client watermark
+int64 LastAcceptedReceivedStatusUpdateEventID = 0;      // client watermark</code></pre>
+    </div>
+
+    <p><code>ShouldAcceptStatusUpdateEvent</code> rejects events with <code>EventID &le; LastAccepted</code>, then advances the watermark. Separate watermarks for casted vs received streams prevent cross-contamination.</p>
+
+    <h3>9.6 Client-Side Callbacks</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Private/Data/StatsXReplication.cpp:106-145</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PostReplicatedAdd</code></td><td>Client-only: check event ordering, broadcast <code>OnCastedStatusUpdate</code> / <code>OnReceivedStatusUpdate</code></td></tr>
+            <tr><td><code>PostReplicatedChange</code></td><td>Client-only: same as PostAdd (with ordering check)</td></tr>
+            <tr><td><code>PreReplicatedRemove</code></td><td>No-op (delta stream; remove doesn&rsquo;t carry semantic meaning)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="client-side-delegate-summary">10. Client-Side Delegate Summary</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_StatsComponentBase.h</code></pre>
+    </div>
+
+    <p>All delegates are <code>BlueprintAssignable</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Delegate</th>
+                <th>Parameters</th>
+                <th>Trigger</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>OnAttributeChanged</code></td><td><code>FGameplayTag AttributeTag, FStatAttribute NewValue</code></td><td>Attribute value changed</td></tr>
+            <tr><td><code>OnCastedStatusTagChanged</code></td><td><code>FGameplayTag StatusTag, bool bAdded</code></td><td>Casted tag added/removed</td></tr>
+            <tr><td><code>OnReceivedStatusTagChanged</code></td><td><code>FGameplayTag StatusTag, bool bAdded</code></td><td>Received tag added/removed</td></tr>
+            <tr><td><code>OnCastedStatusSet</code></td><td><code>FStatusSetData Data</code></td><td>Casted status lifecycle (Added/Removed)</td></tr>
+            <tr><td><code>OnReceivedStatusSet</code></td><td><code>FStatusSetData Data</code></td><td>Received status lifecycle (Added/Removed)</td></tr>
+            <tr><td><code>OnCastedStatusUpdate</code></td><td><code>FStatusUpdateData Data</code></td><td>Casted status delta event</td></tr>
+            <tr><td><code>OnReceivedStatusUpdate</code></td><td><code>FStatusUpdateData Data</code></td><td>Received status delta event</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="authority-gate-pattern">11. Authority Gate Pattern</h2>
+    <p>All Fast Array callbacks share a common guard:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>static bool ShouldHandleClientReplication(const UStatsX_StatsComponentBase* OwnerComponent)
+{
+    return OwnerComponent &amp;&amp; OwnerComponent-&gt;GetOwnerRole() != ROLE_Authority;
+}</code></pre>
+    </div>
+
+    <p>This ensures:</p>
+    <ul>
+        <li><strong>Server</strong> &rarr; callbacks are no-ops (server already has authoritative state).</li>
+        <li><strong>Client</strong> &rarr; callbacks sync local structures and broadcast delegates.</li>
+    </ul>
+
+    <p>Attribute callbacks additionally guard broadcasts with a role check to handle edge cases like replication rollbacks where <code>PostReplicatedChange</code> may fire on authority.</p>
+
+    <hr>
+
+    <h2 id="status-instances-and-replication">12. Status Instances and Replication</h2>
+    <p><code>FStatusInstance</code> is <strong>not directly replicated</strong>. Instances exist only on the server in the <code>FStatusInstancePool</code>. Clients receive:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>What clients see</th>
+                <th>Source array</th>
+                <th>What it provides</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Which statuses are active</td><td><code>ReplicatedStatusSeeds</code></td><td>StatusID, tag, timing data, stack count</td></tr>
+            <tr><td>Status tags for queries</td><td><code>ReplicatedCastedTags</code> / <code>ReplicatedReceivedTags</code></td><td><code>FGameplayTagContainer</code> membership</td></tr>
+            <tr><td>Runtime mutations</td><td><code>ReplicatedStatusUpdates</code></td><td>Stack changes, refreshes, tuning</td></tr>
+            <tr><td>Attribute effects</td><td><code>ReplicatedAttributes</code> / <code>ReplicatedModifiers</code></td><td>Final computed values</td></tr>
+        </tbody>
+    </table>
+
+    <p>This design avoids replicating the full <code>FStatusInstance</code> (variable blobs, PC counters, timers, object pools) &mdash; only the minimal data needed for client-side UI, queries, and cosmetic logic.</p>
+
+    <hr>
+
+    <h2 id="client-sync-retry">13. Client Sync Retry</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Core/StatsX_StatsComponentBase.h:260-265
+        Private/Core/StatsX_StatsComponentBase.cpp:270-274</code></pre>
+    </div>
+
+    <p>On <code>BeginPlay</code>, non-authority components schedule a <code>SyncRetryTimerHandle</code> to call <code>SynchronizeLocalAttributes</code>. This handles the race condition where the Fast Array may not be initialized when the component begins play on a late-joining client. Once all items are synchronized, the timer is cleared.</p>
+
+    <hr>
+
+    <h2 id="per-attribute-replication-opt-out">14. Per-Attribute Replication Opt-Out</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  Public/Data/StatsXTypes.h:464-465
+        Public/Core/StatsX_StatsComponentBase.h:391-392</code></pre>
+    </div>
+
+    <p>Each <code>FStatAttribute</code> carries a <code>bReplicated</code> flag (default <code>true</code>). Attributes with <code>bReplicated = false</code> are never inserted into the <code>ReplicatedAttributes</code> Fast Array. The runtime API <code>SetEnableReplicated(AttributeTag, bReplicated)</code> allows toggling this at runtime.</p>
+
+    <p>Use cases: internal timers, server-only scratch values, debug counters.</p>
+
+    <hr>
+
+    <h2 id="performance-instrumentation">15. Performance Instrumentation</h2>
+    <p>Every callback is wrapped with <code>STATSX_REPLICATION_SCOPE</code>:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Scope</th>
+                <th>Where</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Replication.Attribute.PostAdd</code></td><td>Attribute add</td></tr>
+            <tr><td><code>StatsX.Replication.Attribute.PostChange</code></td><td>Attribute change</td></tr>
+            <tr><td><code>StatsX.Replication.Attribute.PreRemove</code></td><td>Attribute remove</td></tr>
+            <tr><td><code>StatsX.Replication.Modifier.PostAdd</code></td><td>Modifier add</td></tr>
+            <tr><td><code>StatsX.Replication.Modifier.PostChange</code></td><td>Modifier change</td></tr>
+            <tr><td><code>StatsX.Replication.Modifier.PreRemove</code></td><td>Modifier remove</td></tr>
+            <tr><td><code>StatsX.Replication.CastedTag.PostAdd</code></td><td>Casted tag add</td></tr>
+            <tr><td><code>StatsX.Replication.CastedTag.PreRemove</code></td><td>Casted tag remove</td></tr>
+            <tr><td><code>StatsX.Replication.ReceivedTag.PostAdd</code></td><td>Received tag add</td></tr>
+            <tr><td><code>StatsX.Replication.ReceivedTag.PreRemove</code></td><td>Received tag remove</td></tr>
+            <tr><td><code>StatsX.Replication.StatusSeed.PostAdd</code></td><td>Seed add</td></tr>
+            <tr><td><code>StatsX.Replication.StatusSeed.PreRemove</code></td><td>Seed remove</td></tr>
+            <tr><td><code>StatsX.Replication.StatusUpdate.PostAdd</code></td><td>Update add</td></tr>
+            <tr><td><code>StatsX.Replication.StatusUpdate.PostChange</code></td><td>Update change</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="replication-design-decisions">16. Design Decisions</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>6 independent Fast Arrays</strong></td><td>Each domain (attributes, modifiers, tags, seeds, updates) has different change frequency and payload size &mdash; separate arrays allow UE5&rsquo;s delta serializer to optimize each independently</td></tr>
+            <tr><td><strong>No conditional replication</strong></td><td>All gameplay state is relevant to all connected clients (UI, queries, predictions)</td></tr>
+            <tr><td><strong>No OnRep_ callbacks</strong></td><td>Fast Array item callbacks provide finer granularity (per-item add/change/remove) vs monolithic OnRep</td></tr>
+            <tr><td><strong>Separate casted/received tag arrays</strong></td><td>Different gameplay meaning, independent lifecycle, separate delegate bindings</td></tr>
+            <tr><td><strong>Seed + Update split</strong></td><td>Seeds (lifecycle) are few and long-lived; updates (deltas) are frequent and transient &mdash; different replication profiles</td></tr>
+            <tr><td><strong>Monotonic EventID ordering</strong></td><td>Prevents duplicate/out-of-order update processing on clients without needing sequence ACKs</td></tr>
+            <tr><td><strong>bReplicated per-attribute opt-out</strong></td><td>Saves bandwidth for server-only scratch values without requiring separate non-replicated storage</td></tr>
+            <tr><td><strong>MarkAttributeDirty (modifiers)</strong></td><td>Clients recompute attribute Max from full modifier set rather than applying individual modifier deltas &mdash; guarantees consistency</td></tr>
+            <tr><td><strong>Status instances not replicated</strong></td><td>Variable blobs, PC counters, object pools are server-only execution state &mdash; clients only need observable results</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="replication-see-also">17. See Also</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Document</th>
+                <th>Relationship</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>02 &mdash; Attribute System</td><td>Attributes being replicated</td></tr>
+            <tr><td>03 &mdash; Modifier System</td><td>Modifiers being replicated</td></tr>
+            <tr><td>05 &mdash; Status Instance</td><td>Server-side instances (not replicated directly)</td></tr>
+            <tr><td>10 &mdash; Component System</td><td>Component that owns the replicated arrays</td></tr>
+            <tr><td>18 &mdash; Cosmetic Cue Routing</td><td>Separate cosmetic replication channel</td></tr>
+            <tr><td>21 &mdash; Network Cue Relay</td><td>NetCueRelay actor replication</td></tr>
+        </tbody>
+    </table>
+
+</section>

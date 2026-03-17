@@ -1,0 +1,1030 @@
+<section id="forge-event-system" class="tutorial-section">
+    <h1>Forge Event System</h1>
+
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; SendForgeEvent, WaitForEvent, RegisterEventListener, ProcessPendingEventResumes<br>
+        Named event dispatch with scope filtering, typed payload delivery, trigger budgets, timeout expiry, and deterministic next-tick resume ordering.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#architecture-overview">Architecture Overview</a></li>
+        <li><a href="#data-structures">Data Structures</a></li>
+        <li><a href="#listener-registration">Listener Registration</a></li>
+        <li><a href="#event-dispatch">Event Dispatch &mdash; SendForgeEvent</a></li>
+        <li><a href="#op-waitforevent">OP_WaitForEvent Handler</a></li>
+        <li><a href="#op-waitforevents">OP_WaitForEvents Handler</a></li>
+        <li><a href="#op-sendevent">OP_SendEvent Handler</a></li>
+        <li><a href="#op-oneventtriggered-op-endasyncevent">OP_OnEventTriggered / OP_EndAsyncEvent</a></li>
+        <li><a href="#processpendingeventresumes">ProcessPendingEventResumes</a></li>
+        <li><a href="#payload-delivery">Payload Delivery</a></li>
+        <li><a href="#trigger-budget-management">Trigger Budget Management</a></li>
+        <li><a href="#timeout-expiry-system">Timeout Expiry System</a></li>
+        <li><a href="#auto-termination">Auto-Termination</a></li>
+        <li><a href="#tick-integration">Tick Integration</a></li>
+        <li><a href="#scope-filtering-semantics">Scope Filtering Semantics</a></li>
+        <li><a href="#api-reference">API Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy">1. Design Philosophy</h2>
+    <p>The Forge Event System enables <strong>status-to-status and gameplay-to-status communication</strong> through named, scope-filtered events with typed variable payloads.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Named events via GameplayTag</strong></td><td>Loose coupling &mdash; sender doesn&rsquo;t need to know listeners, only the event tag</td></tr>
+            <tr><td><strong>Scope filtering by actor</strong></td><td>Target-specific events (e.g., &ldquo;only fire events affecting this character&rdquo;)</td></tr>
+            <tr><td><strong>Next-tick resume</strong></td><td>Deterministic FIFO ordering &mdash; events queued this frame, handlers run next frame</td></tr>
+            <tr><td><strong>Shared payload</strong></td><td><code>TSharedPtr&lt;TArray&lt;FForgeVariableOverride&gt;&gt;</code> &mdash; one allocation shared across all resumed listeners</td></tr>
+            <tr><td><strong>Trigger budget</strong></td><td><code>MaxTriggersRemaining</code> &mdash; finite or infinite, auto-remove when exhausted</td></tr>
+            <tr><td><strong>Timeout expiry</strong></td><td>Min-heap with lazy invalidation &mdash; O(1) per frame when nothing expires</td></tr>
+            <tr><td><strong>Auto-termination</strong></td><td>Suspended instances with no remaining listeners/async ops are terminated automatically</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="architecture-overview">2. Architecture Overview</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>                    +--------------------------------+
+                    |         Event Sender            |
+                    |  (OP_SendEvent / BP / C++)      |
+                    +---------------+----------------+
+                                    |
+                    SendForgeEvent(EventTag, ScopeActor, Payload)
+                                    |
+                    +---------------v----------------+
+                    |     UStatsX_WorldSubsystem      |
+                    |                                 |
+                    |  EventListenersByTag             |
+                    |  +-------------------------+    |
+                    |  | "OnDamage" -&gt; [L1, L2]   |    |
+                    |  | "OnHeal"   -&gt; [L3]       |    |
+                    |  +-------------------------+    |
+                    |                                 |
+                    |  Scope filter -&gt; Queue resume    |
+                    +---------------+----------------+
+                                    |
+                    PendingEventResumes (FIFO queue)
+                                    |
+                    +---------------v----------------+
+                    |    Next Tick: ProcessPending     |
+                    |                                 |
+                    |  1. ApplyEventPayloadToInstance  |
+                    |  2. ExecuteInstance(ResumePC)    |
+                    |  3. Handler -&gt; OP_EndAsyncEvent   |
+                    |     +-- Re-arm + re-suspend      |
+                    +---------------------------------+</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="data-structures">3. Data Structures</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Core/StatsX_WorldSubsystem.h (lines 506&ndash;575)</code></pre>
+    </div>
+
+    <h3>FForgeEventListener</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeEventListener
+{
+    int64 ListenerID = 0;               // Unique monotonic ID
+    int64 StatusID = 0;                 // Status instance waiting for this event
+    int32 ResumePC = 0;                 // PC to resume at when event fires
+    TWeakObjectPtr&lt;AActor&gt; ScopeActor;  // Actor scope filter (nullptr = global)
+    int32 MaxTriggersRemaining = -1;    // &lt;0=infinite, &gt;0=count, 0=exhausted
+    float MaxWaitingTime = -1.0f;       // &lt;0=infinite, &gt;=0=timeout in seconds
+    double RegistrationWorldTime = 0.0; // World time at registration
+};</code></pre>
+    </div>
+
+    <h3>FForgeEventListenerLocation</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeEventListenerLocation
+{
+    FGameplayTag EventTag;     // Which event tag this listener is under
+    int32 Index = INDEX_NONE;  // Index within EventListenersByTag[EventTag]
+};</code></pre>
+    </div>
+
+    <p>Enables O(1) removal: given a ListenerID, find its array position without scanning.</p>
+
+    <h3>FForgeQueuedEventResume</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeQueuedEventResume
+{
+    int64 StatusID = 0;
+    int32 ResumePC = 0;
+    TSharedPtr&lt;TArray&lt;FForgeVariableOverride&gt;, ESPMode::ThreadSafe&gt; SharedPayload;
+};</code></pre>
+    </div>
+
+    <h3>FListenerExpiryEntry</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FListenerExpiryEntry
+{
+    double ExpiryTime;    // RegistrationWorldTime + MaxWaitingTime
+    int64  ListenerID;    // For lazy invalidation
+    bool operator&lt;(const FListenerExpiryEntry&amp; Other) const
+    {
+        return ExpiryTime &lt; Other.ExpiryTime;
+    }
+};</code></pre>
+    </div>
+
+    <h3>Indexing Maps (Three-Map System)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Map</th>
+                <th>Type</th>
+                <th>Purpose</th>
+                <th>Complexity</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>EventListenersByTag</code></td><td><code>TMap&lt;FGameplayTag, TArray&lt;FForgeEventListener&gt;&gt;</code></td><td>Primary storage: event tag &rarr; listeners</td><td>O(1) lookup by tag</td></tr>
+            <tr><td><code>ListenerIDsByStatusID</code></td><td><code>TMap&lt;int64, TArray&lt;int64&gt;&gt;</code></td><td>Reverse index: status &rarr; its listener IDs</td><td>O(k) cleanup on status removal</td></tr>
+            <tr><td><code>ListenerLocationByID</code></td><td><code>TMap&lt;int64, FForgeEventListenerLocation&gt;</code></td><td>Position index: listener &rarr; tag + array index</td><td>O(1) removal by ID</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Additional State</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>PendingEventResumes</code></td><td><code>TArray&lt;FForgeQueuedEventResume&gt;</code></td><td>FIFO resume queue consumed next tick</td></tr>
+            <tr><td><code>PendingAsyncResumes</code></td><td><code>TArray&lt;FForgeQueuedAsyncResume&gt;</code></td><td>Montage/callback resumes (processed first)</td></tr>
+            <tr><td><code>ListenerExpiryHeap</code></td><td><code>TArray&lt;FListenerExpiryEntry&gt;</code></td><td>Min-heap for timeout management</td></tr>
+            <tr><td><code>NextEventListenerID</code></td><td><code>int64</code></td><td>Monotonic allocator (0 = reserved invalid)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="listener-registration">4. Listener Registration</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 2951&ndash;3029)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void RegisterEventListener(
+    const FGameplayTag&amp; EventTag,
+    int64 StatusID,
+    int32 ResumePC,
+    AActor* ScopeActor,
+    int32 MaxTriggers = -1,
+    float MaxWaitingTime = -1.0f);</code></pre>
+    </div>
+
+    <h3>Registration Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>RegisterEventListener(EventTag, StatusID, ResumePC, ScopeActor, MaxTriggers, MaxWaitingTime)
+|
++-- Guard: EventTag valid, StatusID != 0
++-- Guard: MaxTriggers == 0 -&gt; skip (disabled)
+|
++-- Deduplication check:
+|   +-- Find existing listeners for this StatusID
+|   +-- If same EventTag + ResumePC + ScopeActor already registered -&gt; return
+|
++-- Allocate monotonic ListenerID (skip collisions)
+|
++-- Add to EventListenersByTag[EventTag]
+|   +-- FForgeEventListener with all fields populated
+|
++-- Add to ListenerLocationByID[ListenerID]
+|   +-- FForgeEventListenerLocation{EventTag, ArrayIndex}
+|
++-- Add to ListenerIDsByStatusID[StatusID]
+|   +-- Append ListenerID
+|
++-- If MaxWaitingTime &gt;= 0:
+    +-- Push FListenerExpiryEntry to ListenerExpiryHeap (O(log N))</code></pre>
+    </div>
+
+    <h3>Deduplication</h3>
+
+    <p>The system prevents duplicate listeners for the exact same (EventTag, ResumePC, ScopeActor) combination on a given StatusID. This guards against re-entry scenarios where <code>OP_WaitForEvent</code> might fire twice for the same node.</p>
+
+    <hr>
+
+    <h2 id="event-dispatch">5. Event Dispatch &mdash; SendForgeEvent</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 3052&ndash;3151)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 SendForgeEvent(
+    FGameplayTag EventTag,
+    AActor* ScopeActor,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
+    </div>
+
+    <h3>Dispatch Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>SendForgeEvent(EventTag, ScopeActor, Payload)
+|
++-- Guard: EventTag valid
++-- Find ListenerArray = EventListenersByTag[EventTag]
+|   +-- Empty or missing -&gt; return 0
+|
++-- Create SharedPayload (TSharedPtr, one allocation for all listeners)
+|   +-- Only allocated if Payload is non-empty
+|
++-- For each Listener in ListenerArray:
+|   |
+|   +-- Scope filter: if ScopeActor &amp;&amp; Listener.ScopeActor != ScopeActor -&gt; skip
+|   |
+|   +-- Validate instance: FindByStatusID -&gt; must exist and be active
+|   |   +-- Dead/inactive -&gt; mark for removal
+|   |
+|   +-- QueueEventResume(StatusID, ResumePC, SharedPayload)
+|   |   +-- Appends to PendingEventResumes (processed next tick)
+|   |
+|   +-- Budget: decrement MaxTriggersRemaining
+|   |   +-- Was &gt;0, now 0 -&gt; mark for removal
+|   |   +-- Already 0 -&gt; mark for removal (defensive)
+|   |   +-- &lt;0 -&gt; infinite, keep
+|   |
+|   +-- ++ResumedCount
+|
++-- Collect AffectedStatusIDs from listeners marked for removal
++-- RemoveEventListenerByID for each marked listener
++-- AutoTerminateIfEmpty for each affected StatusID
+|
++-- return ResumedCount</code></pre>
+    </div>
+
+    <h3>Shared Payload Optimization</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TSharedPtr&lt;TArray&lt;FForgeVariableOverride&gt;, ESPMode::ThreadSafe&gt; SharedPayload;
+if (!Payload.IsEmpty())
+{
+    SharedPayload = MakeShared&lt;TArray&lt;FForgeVariableOverride&gt;, ESPMode::ThreadSafe&gt;(Payload);
+}</code></pre>
+    </div>
+
+    <p>One copy of the payload is shared across all queued resumes from the same <code>SendForgeEvent</code> call. Thread-safe reference counting ensures the payload survives until all listeners have consumed it.</p>
+
+    <hr>
+
+    <h2 id="op-waitforevent">6. OP_WaitForEvent Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (lines 2248&ndash;2405)
+OpCode  : 330</code></pre>
+    </div>
+
+    <h3>Instruction Layout</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-39]:  ArrayHeaderIdx (16 bits) -&gt; Pool_ArraysHeaders
+Data0[40-57]:  Event Tag (18-bit data operand -&gt; FGameplayTag)
+
+ArrayHeader branches (via Pool_Ints):
+  Index 0: ImmediatePC  -- "" (immediate flow, executes once then suspends)
+  Index 1: TriggeredPC  -- "Event Triggered" (resume point when event fires)</code></pre>
+    </div>
+
+    <h3>Execution Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>OP_WaitForEvent(Context, Instr)
+|
++-- Read ArrayHeaderIdx -&gt; resolve ImmediatePC and TriggeredPC from Pool_Ints
++-- Read EventTag from instruction
+|
++-- Ensure active instance (RegisterAsActiveInstance if needed)
+|
++-- Re-entry check: HasActiveListenersForStatusID?
+|   +-- Yes -&gt; re-suspend (don't register duplicate listener)
+|
++-- Resolve ScopeActor: TargetActor first, then CasterActor
+|
++-- RegisterEventListener(EventTag, StatusID, TriggeredPC, ScopeActor)
+|
++-- Set instance state:
+|   +-- SavedPC = CurrentNodeIdx (if not owned by another async node)
+|   +-- SuspendTimer = BIG_NUMBER (infinite)
+|   +-- Duration = -1.0f
+|   +-- State = Suspended
+|   +-- SetWaitingForAsyncEvents(true)
+|
++-- Context.PC = ImmediatePC (execute immediate branch NOW)
+|
++-- return Continue (not Suspended -- immediate branch runs first)</code></pre>
+    </div>
+
+    <p><strong>Key insight:</strong> The handler returns <code>Continue</code>, not <code>Suspended</code>. The immediate branch executes in the same frame. The instance is already marked as Suspended, so when the immediate branch&rsquo;s <code>OP_EndEventBlock</code> returns, the VM exits with Completed/Suspended and the instance stays in the pool waiting for the event.</p>
+
+    <hr>
+
+    <h2 id="op-waitforevents">7. OP_WaitForEvents Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (lines 2407&ndash;2607)
+OpCode  : 371</code></pre>
+    </div>
+
+    <p>Multi-event variant that registers listeners for <strong>multiple events</strong> from a compiled tag list, each with its own handler PC, trigger count, and timeout.</p>
+
+    <h3>ArrayHeader Layout (via Pool_Ints)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>[Start+0]:  ImmediatePC
+[Start+1]:  OnCompletedPC (reserved)
+[Start+2]:  TagPoolIdx_0
+[Start+3]:  HandlerPC_0
+[Start+4]:  MaxTriggers_0
+[Start+5]:  MaxWaitBits_0
+[Start+6]:  TagPoolIdx_1
+[Start+7]:  HandlerPC_1
+...
+NumEvents = (Header.Count - 2) / 4</code></pre>
+    </div>
+
+    <p>Each event entry has a stride of 4: TagPoolIdx, HandlerPC, MaxTriggers, MaxWaitBits.</p>
+
+    <h3>Key Differences from WaitForEvent</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Feature</th>
+                <th>WaitForEvent</th>
+                <th>WaitForEvents</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Events</td><td>Single</td><td>Multiple (compiled list)</td></tr>
+            <tr><td>Per-event triggers</td><td>Infinite only</td><td>Configurable per event</td></tr>
+            <tr><td>Per-event timeout</td><td>None</td><td>Configurable per event</td></tr>
+            <tr><td>Nested mode</td><td>No</td><td>Yes (works inside behavior nodes)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="op-sendevent">8. OP_SendEvent Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (lines 5007&ndash;5203)
+OpCode  : 325</code></pre>
+    </div>
+
+    <h3>Instruction Layout</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]:  Event Tag (18-bit -&gt; FGameplayTag)
+Data0[42-59]:  Scope Actor (18-bit -&gt; UObject*, cast to AActor*)
+Data1[0-15]:   ResumedCount output offset (16 bits)
+Data1[16-23]:  Payload override count (8 bits)
+
+Continuation instructions (1 per override entry):
+  ContInstr.Data0[0-17]:   Variable Tag (18-bit -&gt; FGameplayTag)
+  ContInstr.Data0[18-25]:  FieldType (8 bits)
+  ContInstr.Data0[26+]:    Type-specific value (via ReadValue)</code></pre>
+    </div>
+
+    <h3>Payload Construction</h3>
+
+    <p>For each override, a continuation instruction encodes:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>FieldType</th>
+                <th>Value</th>
+                <th>Read From</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>1 (Float)</td><td><code>ReadValue&lt;float&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>2 (Int32)</td><td><code>ReadValue&lt;int32&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>3 (Bool)</td><td><code>ReadValue&lt;bool&gt;(Cont, 0, 26)</code> &rarr; <code>uint8</code></td><td>Raw bytes</td></tr>
+            <tr><td>4 (GameplayTag)</td><td><code>ReadValue&lt;FGameplayTag&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>5 (Object)</td><td><code>ReadValue&lt;UObject*&gt;(Cont, 1, 0)</code></td><td>Object override</td></tr>
+            <tr><td>8 (Class)</td><td><code>ReadValue&lt;UClass*&gt;(Cont, 1, 0)</code></td><td>Object override</td></tr>
+            <tr><td>9 (Name)</td><td><code>ReadValue&lt;FName&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>11 (Byte)</td><td><code>ReadValue&lt;uint8&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>12 (Int64)</td><td><code>ReadValue&lt;int64&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>13 (Double)</td><td><code>ReadValue&lt;double&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>14 (Vector)</td><td><code>ReadValue&lt;FVector&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>15 (Rotator)</td><td><code>ReadValue&lt;FRotator&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>16 (Transform)</td><td><code>ReadValue&lt;FTransform&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+            <tr><td>17 (LinearColor)</td><td><code>ReadValue&lt;FLinearColor&gt;(Cont, 0, 26)</code></td><td>Raw bytes</td></tr>
+        </tbody>
+    </table>
+
+    <p>Payload overrides are built as <code>TArray&lt;FForgeVariableOverride&gt;</code> (same struct as Variable Overrides) and passed to <code>SendForgeEvent()</code>.</p>
+
+    <h3>Execution Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>OP_SendEvent(Context, Instr)
+|
++-- Read EventTag, ScopeActor
++-- Read OverrideCount from Data1[16..23]
++-- Build Payload[] from continuation instructions
++-- Subsystem-&gt;SendForgeEvent(EventTag, ScopeActor, Payload)
++-- WriteOutput&lt;int32&gt;(OutputOffset, ResumedCount)
++-- Skip continuation slots
++-- return Continue</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="op-oneventtriggered-op-endasyncevent">9. OP_OnEventTriggered / OP_EndAsyncEvent</h2>
+
+    <h3>OP_OnEventTriggered (OpCode 372)</h3>
+
+    <p>A <strong>no-op marker</strong> that serves as the entry point for compiled event handler blocks:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>Registry.RegisterHandler(ForgeOpCodes::OP_OnEventTriggered,
+    [](FForgeVMContext&amp; Context, const FStatusInstruction&amp;) -&gt; EForgeExecutionResult
+    {
+        return EForgeExecutionResult::Continue;
+    });</code></pre>
+    </div>
+
+    <p>The actual event handler logic is the bytecode between <code>OP_OnEventTriggered</code> and <code>OP_EndAsyncEvent</code>.</p>
+
+    <h3>OP_EndAsyncEvent (System OpCode 11)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/VM/ForgeVM.cpp (lines 1256&ndash;1269)</code></pre>
+    </div>
+
+    <p>Terminates an async event handler block:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>case OP_EndAsyncEvent:
+{
+    if (GlobalContext.Instance)
+    {
+        GlobalContext.Instance-&gt;State = EStatusInstanceState::Suspended;
+        GlobalContext.Instance-&gt;SetWaitingForAsyncEvents(true);
+    }
+    return EForgeExecutionResult::Suspended;
+}</code></pre>
+    </div>
+
+    <p><strong>Critical invariant:</strong> <code>OP_EndAsyncEvent</code> does <strong>NOT</strong> modify <code>SavedPC</code> or <code>SuspendTimer</code>. Event handlers execute as &ldquo;interrupts&rdquo; via <code>OverridePC</code> &mdash; they must not corrupt the primary async node&rsquo;s persistent state. This ensures timer-based nodes (Delay, LoopBehavior) continue their countdowns undisturbed after event handler completion.</p>
+
+    <hr>
+
+    <h2 id="processpendingeventresumes">10. ProcessPendingEventResumes</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 2807&ndash;2867)</code></pre>
+    </div>
+
+    <h3>Processing Flow</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ProcessPendingEventResumes()
+|
++-- Guard: InstancePool exists, PendingEventResumes non-empty
+|
++-- Move PendingEventResumes to LocalQueue (MoveTemp)
+|   +-- Any events queued during handler execution -&gt; next tick
+|
++-- For each FForgeQueuedEventResume in LocalQueue:
+|   |
+|   +-- Find instance by StatusID -&gt; must exist and be active
+|   |
+|   +-- Check IsWaitingForAsyncEvents() -&gt; must be true
+|   |   +-- False -&gt; skip (handler suspended for another reason)
+|   |
+|   +-- Save PreState = Instance-&gt;State
+|   |
+|   +-- Clear bWaitingForAsyncEvents flag
+|   |
+|   +-- Apply payload: ApplyEventPayloadToInstance(*Instance, *SharedPayload)
+|   |
+|   +-- Set Instance-&gt;State = Active
+|   |
+|   +-- ExecuteInstance(*Instance, PendingResume.ResumePC)
+|   |   +-- Handler runs from TriggeredPC -&gt; ... -&gt; OP_EndAsyncEvent
+|   |
+|   +-- If handler completed normally (IsWaitingForAsyncEvents re-armed):
+|       +-- Restore Instance-&gt;State = PreState
+|
++-- Done</code></pre>
+    </div>
+
+    <h3>Key Behaviors</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Behavior</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>FIFO ordering</strong></td><td>Events processed in the order they were queued</td></tr>
+            <tr><td><strong>One-frame isolation</strong></td><td>LocalQueue = MoveTemp &mdash; new events during handler go to next tick</td></tr>
+            <tr><td><strong>State preservation</strong></td><td>PreState saved/restored to not disturb behavior node scheduling</td></tr>
+            <tr><td><strong>Flag gating</strong></td><td><code>IsWaitingForAsyncEvents()</code> checked per resume &mdash; if handler suspended (e.g., Delay), remaining events for that StatusID are deferred</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="payload-delivery">11. Payload Delivery</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 3282&ndash;3360)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void ApplyEventPayloadToInstance(FStatusInstance&amp; Instance,
+    const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
+    </div>
+
+    <h3>Application Rules</h3>
+
+    <p>For each <code>FForgeVariableOverride</code> in the payload:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Variable Type</th>
+                <th>Handling</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Object / Class</strong> (Single)</td><td><code>Instance.AllocObject(ObjectValue)</code> &rarr; write <code>uint16</code> index to blob</td></tr>
+            <tr><td><strong>Array / Set</strong></td><td><strong>Skipped</strong> &mdash; handle indirection makes raw override unsafe</td></tr>
+            <tr><td><strong>GameplayTagContainer</strong></td><td>Size validated: <code>2 &le; RawSize &le; ExpectedSize</code> (variable count)</td></tr>
+            <tr><td><strong>Scalar</strong></td><td>Size validated: <code>RawSize == ExpectedSize</code>, then <code>Memcpy</code> to blob</td></tr>
+        </tbody>
+    </table>
+
+    <p>Payload is applied to <code>Instance-&gt;VariableBlob</code> directly (not the context blob), ensuring the handler reads fresh values immediately.</p>
+
+    <hr>
+
+    <h2 id="trigger-budget-management">12. Trigger Budget Management</h2>
+
+    <h3>MaxTriggersRemaining Semantics</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Meaning</th>
+                <th>Behavior on Event</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>&lt; 0</td><td>Infinite</td><td>Never removed by budget</td></tr>
+            <tr><td>0</td><td>Exhausted/Disabled</td><td>Skipped in registration, removed if encountered</td></tr>
+            <tr><td>&gt; 0</td><td>Finite count</td><td>Decremented each trigger, removed when 0</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Budget Decrement in SendForgeEvent</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (Listener.MaxTriggersRemaining &gt; 0)
+{
+    --Listener.MaxTriggersRemaining;
+    if (Listener.MaxTriggersRemaining == 0)
+        ListenerIDsToRemove.Add(Listener.ListenerID);
+}
+else if (Listener.MaxTriggersRemaining == 0)
+{
+    ListenerIDsToRemove.Add(Listener.ListenerID);  // Defensive
+}
+// else: &lt; 0 = infinite, keep</code></pre>
+    </div>
+
+    <p>After removal, <code>AutoTerminateIfEmpty</code> checks whether the instance should be terminated.</p>
+
+    <hr>
+
+    <h2 id="timeout-expiry-system">13. Timeout Expiry System</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 3153&ndash;3191)</code></pre>
+    </div>
+
+    <h3>Min-Heap Architecture</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ListenerExpiryHeap (sorted by ExpiryTime ascending)
++----------------------------------------------+
+| [ExpiryTime=10.5, ID=42] [ET=12.0, ID=99].. |
+|           ^                                  |
+|      Heap top (earliest expiry)              |
++----------------------------------------------+</code></pre>
+    </div>
+
+    <h3>DrainExpiredListeners (Per-Tick)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>DrainExpiredListeners()
+|
++-- Guard: heap non-empty
++-- Now = GetWorld()-&gt;GetTimeSeconds()
+|
++-- While heap top ExpiryTime &lt;= Now:
+|   +-- HeapPop entry
+|   +-- Lazy invalidation: ListenerLocationByID.Find(ListenerID)
+|   |   +-- Not found -&gt; listener already removed, skip
+|   +-- Collect AffectedStatusID
+|   +-- RemoveEventListenerByID(ListenerID)
+|   +-- AutoTerminateIfEmpty(AffectedStatusID)
+|
++-- Done</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Complexity</th>
+                <th>Scenario</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>O(1)</td><td>Nothing expired (heap top &gt; Now)</td></tr>
+            <tr><td>O(K log N)</td><td>K listeners expired (K pops from N-sized heap)</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Lazy invalidation:</strong> Expired heap entries may reference listeners already removed by <code>SendForgeEvent</code> or status termination. The location map check catches these stale entries.</p>
+
+    <hr>
+
+    <h2 id="auto-termination">14. Auto-Termination</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Core/StatsX_WorldSubsystem.cpp (lines 3193&ndash;3280)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AutoTerminateIfEmpty(int64 StatusID);</code></pre>
+    </div>
+
+    <p>Called after listener removal to check if a suspended instance has <strong>no remaining reason to stay alive</strong>.</p>
+
+    <h3>Guard Checks (Do NOT Terminate If Any Pass)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Guard</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>1</td><td>Listeners remain in <code>ListenerIDsByStatusID</code></td><td>Still waiting for events</td></tr>
+            <tr><td>2</td><td>Pending async resume queued (montage signal)</td><td>Montage callback will fire</td></tr>
+            <tr><td>3</td><td>Active <code>UForge_MontageCallbackHelper</code></td><td>Montage still playing</td></tr>
+            <tr><td>4</td><td><code>ActiveCustomLogic != nullptr</code></td><td>Async custom action in progress</td></tr>
+            <tr><td>5</td><td>Pending event resume in <code>PendingEventResumes</code></td><td>Same-frame SendForgeEvent</td></tr>
+            <tr><td>6</td><td><code>Instance-&gt;Duration &gt; 0.f</code></td><td>Behavior node with finite duration</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Termination</h3>
+
+    <p>If all guards pass:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool bExecuteOnEndEvent = ResolveNaturalTerminationOnEndPolicy(Instance-&gt;Definition);
+if (Instance-&gt;bHasPendingOnEndOverride)
+    bExecuteOnEndEvent = Instance-&gt;bPendingOnEndOverrideValue;
+
+TerminateInstance(*Instance, EStatusTerminateReason::Expired, bExecuteOnEndEvent);</code></pre>
+    </div>
+
+    <p>The OnEnd event block (if configured) executes before final cleanup.</p>
+
+    <hr>
+
+    <h2 id="tick-integration">15. Tick Integration</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>TickInstances(DeltaTime)
+|
++-- STEP 1: DrainExpiredListeners()
+|   +-- Remove timed-out listeners, auto-terminate empty instances
+|
++-- STEP 2.5a: ProcessPendingAsyncResumes()     &lt;-- montage callbacks FIRST
+|   +-- Execute queued montage/animation resumes
+|
++-- STEP 2.5b: ProcessPendingEventResumes()     &lt;-- event resumes SECOND
+|   +-- Apply payload, execute event handlers
+|
++-- STEP 3: Tick scheduled instances (TickInterval &gt; 0)
+|   +-- Multi-exec catch-up from heap
+|
++-- STEP 4: Resume suspended instances (SuspendTimer expired)
+|   +-- Delay nodes, etc.
+|
++-- FlushPendingStatusUpdates()</code></pre>
+    </div>
+
+    <p><strong>Critical ordering:</strong> Async resumes (montage callbacks) are processed <strong>before</strong> event resumes. This ensures that montage completion handlers update instance state before event handlers observe it.</p>
+
+    <hr>
+
+    <h2 id="scope-filtering-semantics">16. Scope Filtering Semantics</h2>
+
+    <h3>Registration (WaitForEvent)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>AActor* ScopeActor = Instance-&gt;TargetActor.Get();
+if (!ScopeActor)
+    ScopeActor = Instance-&gt;CasterActor.Get();
+
+RegisterEventListener(EventTag, StatusID, TriggeredPC, ScopeActor);</code></pre>
+    </div>
+
+    <p>Default scope resolution: <strong>Target actor first</strong>, then <strong>Caster actor</strong> as fallback.</p>
+
+    <h3>Dispatch (SendForgeEvent)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (ScopeActor &amp;&amp; Listener.ScopeActor.Get() != ScopeActor)
+    continue;  // Skip non-matching listeners</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Sender ScopeActor</th>
+                <th>Listener ScopeActor</th>
+                <th>Match?</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>nullptr</code> (broadcast)</td><td>Any</td><td>Yes &mdash; all listeners receive</td></tr>
+            <tr><td><code>ActorA</code></td><td><code>ActorA</code></td><td>Yes &mdash; exact match</td></tr>
+            <tr><td><code>ActorA</code></td><td><code>ActorB</code></td><td>No &mdash; skipped</td></tr>
+            <tr><td><code>ActorA</code></td><td><code>nullptr</code></td><td>No &mdash; listener has no scope</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="api-reference">17. API Reference</h2>
+
+    <h3>WorldSubsystem &mdash; Public</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>RegisterEventListener</code></td><td><code>void RegisterEventListener(const FGameplayTag&amp;, int64 StatusID, int32 ResumePC, AActor* ScopeActor, int32 MaxTriggers = -1, float MaxWaitingTime = -1.0f)</code></td></tr>
+            <tr><td><code>UnregisterEventListeners</code></td><td><code>void UnregisterEventListeners(int64 StatusID)</code></td></tr>
+            <tr><td><code>SendForgeEvent</code></td><td><code>int32 SendForgeEvent(FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code> &mdash; BlueprintCallable</td></tr>
+            <tr><td><code>HasActiveListenersForStatusID</code></td><td><code>bool HasActiveListenersForStatusID(int64) const</code></td></tr>
+            <tr><td><code>QueueAsyncResume</code></td><td><code>void QueueAsyncResume(int64 StatusID, int32 ResumePC)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>WorldSubsystem &mdash; Private</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ProcessPendingEventResumes</code></td><td>Consume FIFO queue, apply payload, execute handlers</td></tr>
+            <tr><td><code>ProcessPendingAsyncResumes</code></td><td>Consume montage callback queue</td></tr>
+            <tr><td><code>DrainExpiredListeners</code></td><td>Pop expired entries from min-heap</td></tr>
+            <tr><td><code>AutoTerminateIfEmpty</code></td><td>Terminate instances with no remaining async operations</td></tr>
+            <tr><td><code>ApplyEventPayloadToInstance</code></td><td>Write override payload into instance VariableBlob</td></tr>
+            <tr><td><code>RemoveEventListenerByID</code></td><td>Swap-and-move removal from all three maps</td></tr>
+            <tr><td><code>QueueEventResume</code></td><td>Append to PendingEventResumes</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Component &mdash; Public</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SendForgeEvent</code></td><td><code>int32 SendForgeEvent(FGameplayTag EventTag, const TArray&lt;FForgeVariableOverride&gt;&amp; Payload)</code> &mdash; BlueprintCallable</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Blueprint Library &mdash; Static</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SendForgeEvent</code></td><td><code>static int32 SendForgeEvent(const UObject* WorldContextObject, FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code> &mdash; BlueprintCallable</td></tr>
+        </tbody>
+    </table>
+
+    <h3>OpCode Handlers</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>OpCode</th>
+                <th>Name</th>
+                <th>Handler</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>330</td><td><code>OP_WaitForEvent</code></td><td><code>Nodes_Flow::WaitForEvent</code></td></tr>
+            <tr><td>371</td><td><code>OP_WaitForEvents</code></td><td><code>Nodes_Flow::WaitForEvents</code></td></tr>
+            <tr><td>325</td><td><code>OP_SendEvent</code></td><td><code>Nodes_Action::SendEvent</code></td></tr>
+            <tr><td>372</td><td><code>OP_OnEventTriggered</code></td><td>No-op marker (lambda)</td></tr>
+            <tr><td>11</td><td><code>OP_EndAsyncEvent</code></td><td>System opcode &mdash; re-arm + re-suspend</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Data Structures</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Struct</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FForgeEventListener</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+            <tr><td><code>FForgeEventListenerLocation</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+            <tr><td><code>FForgeQueuedEventResume</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+            <tr><td><code>FForgeQueuedAsyncResume</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+            <tr><td><code>FListenerExpiryEntry</code></td><td><code>StatsX_WorldSubsystem.h</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <p><em>Document generated from source &mdash; Stats_X v1.404</em></p>
+
+</section>
