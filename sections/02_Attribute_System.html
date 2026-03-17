@@ -1,0 +1,965 @@
+<section id="attribute-system" class="tutorial-section">
+                    <h1>Attribute System</h1>
+                    
+                    <div class="info-box info">
+                        <div class="info-title">ℹ️ Version Info</div>
+                        <p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7</p>
+                    </div>
+
+                    <hr>
+
+                    <h2>Table of Contents</h2>
+                    <ol>
+                        <li><a href="#overview">Overview</a></li>
+                        <li><a href="#core-concept-the-value-triplet">Core Concept: The Value Triplet</a></li>
+                        <li><a href="#attribute-categories">Attribute Categories</a></li>
+                        <li><a href="#fstatattribute-struct">FStatAttribute Struct</a></li>
+                        <li><a href="#sub-attributes">Sub-Attributes</a></li>
+                        <li><a href="#clamping-and-overflow">Clamping &amp; Overflow</a></li>
+                        <li><a href="#modifier-integration">Modifier Integration</a></li>
+                        <li><a href="#initialization-api">Initialization API</a></li>
+                        <li><a href="#modification-api">Modification API</a></li>
+                        <li><a href="#query-api">Query API</a></li>
+                        <li><a href="#threshold-system">Threshold System</a></li>
+                        <li><a href="#replication">Replication</a></li>
+                        <li><a href="#events-and-delegates">Events &amp; Delegates</a></li>
+                        <li><a href="#damage-mitigation-integration">Damage Mitigation Integration</a></li>
+                        <li><a href="#vm-interaction">VM Interaction</a></li>
+                        <li><a href="#operator-overloads">Operator Overloads</a></li>
+                        <li><a href="#best-practices">Best Practices</a></li>
+                    </ol>
+
+                    <hr>
+
+                    <h2 id="overview">Overview</h2>
+                    <p>Every gameplay-relevant value in Stats_X is an <strong>Attribute</strong> — a tag-identified value triplet stored in <code>UStatsX_StatsComponentBase</code>. Attributes represent anything from player health and mana to movement speed, armor, or arbitrary storage values.</p>
+
+                    <p>The system is built on three pillars:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Pillar</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Tag-driven identity</strong></td>
+                                <td>Every attribute is identified by a <code>FGameplayTag</code> under <code>StatsX.Attribute.*</code>, enabling data-driven design with zero hard-coded references</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Triplet structure</strong></td>
+                                <td>Each attribute holds three floats (<code>Current</code>, <code>Max</code>, <code>Base</code>) plus behavior flags, covering both resource-type and stat-type use cases in a single struct</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Modifier-aware Max</strong></td>
+                                <td>The <code>Max</code> value is recalculated from <code>Base</code> + modifiers whenever the modifier stack changes, keeping the separation between base stats and runtime buffs/debuffs</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <hr>
+
+                    <h2 id="core-concept-the-value-triplet">Core Concept: The Value Triplet</h2>
+                    <p>Every attribute stores three numeric values and two behavioral flags:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Structure</span>
+                        </div>
+                        <pre><code>┌─────────────────────────────────────────────────────┐
+│                   FStatAttribute                     │
+├─────────────────────────────────────────────────────┤
+│  Current  : float   (the live, usable value)        │
+│  Max      : float   (upper bound, modifier-derived) │
+│  Base     : float   (innate value, level/design)    │
+│  bOverflows  : bool (disable all clamping)          │
+│  bReplicated : bool (network sync flag)             │
+└─────────────────────────────────────────────────────┘</code></pre>
+                    </div>
+
+                    <p><strong>Relationship between values:</strong></p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Formula</span>
+                        </div>
+                        <pre><code>Base ──┐
+       ├── Modifiers applied ──► Max = (Base + ΣAdditive) × ΠMultiplicative
+       │
+Current ──── clamped to [0, Max] (unless bOverflows = true)</code></pre>
+                    </div>
+
+                    <h3>Example: Health Attribute</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Example</span>
+                        </div>
+                        <pre><code>Base = 100       (innate HP from character level)
+Modifiers:       +50 Additive (armor buff), ×1.2 Multiplicative (vitality perk)
+Max = (100 + 50) × 1.2 = 180
+Current = 180    (full health)
+
+After taking 60 damage:
+Current = 120    (clamped to [0, 180])</code></pre>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="attribute-categories">Attribute Categories</h2>
+                    <p>Stats_X defines two semantic categories under the <code>StatsX.Attribute</code> tag hierarchy. Both use the same <code>FStatAttribute</code> struct — the difference is purely semantic and affects editor UI filtering.</p>
+
+                    <h3>Resource Attributes (<code>StatsX.Attribute.Resource</code>)</h3>
+                    <p>Resources have <strong>independent</strong> <code>Current</code> and <code>Max</code> values. <code>Current</code> changes frequently during gameplay while <code>Max</code> is driven by modifiers.</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Example</th>
+                                <th>Current</th>
+                                <th>Max</th>
+                                <th>Base</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Health</td><td>85.0</td><td>200.0</td><td>100.0</td></tr>
+                            <tr><td>Mana</td><td>30.0</td><td>150.0</td><td>80.0</td></tr>
+                            <tr><td>Stamina</td><td>100.0</td><td>100.0</td><td>100.0</td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Stat Attributes (<code>StatsX.Attribute.Stat</code>)</h3>
+                    <p>Stats use <code>Current == Max</code> at initialization. The value represents a magnitude rather than a consumable pool.</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Example</th>
+                                <th>Current / Max</th>
+                                <th>Base</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>MoveSpeed</td><td>600.0</td><td>600.0</td></tr>
+                            <tr><td>Armor</td><td>45.0</td><td>25.0</td></tr>
+                            <tr><td>CritChance</td><td>0.15</td><td>0.05</td></tr>
+                        </tbody>
+                    </table>
+
+                    <div class="info-box tip">
+                        <div class="info-title">💡 Note</div>
+                        <p>The runtime makes no distinction between Resource and Stat attributes. The separate initialization functions (<code>InitializeResourceAttribute</code> / <code>InitializeStatAttribute</code>) are convenience methods that differ only in their parameter signatures and editor tag filtering.</p>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="fstatattribute-struct">FStatAttribute Struct</h2>
+                    <p><strong>Source:</strong> <code>Data/StatsXTypes.h</code></p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>USTRUCT(BlueprintType)
+struct STATS_X_API FStatAttribute
+{
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Current = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Max = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Base = 0.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bOverflows = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bReplicated = true;
+};</code></pre>
+                    </div>
+
+                    <h3>Constructors</h3>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Signature</th>
+                                <th>Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>FStatAttribute()</code></td>
+                                <td>Default: all zeros, clamped, replicated</td>
+                            </tr>
+                            <tr>
+                                <td><code>FStatAttribute(float Current, float Max, float Base, bool bOverflows = false, bool bReplicated = true)</code></td>
+                                <td>Full parameterized</td>
+                            </tr>
+                            <tr>
+                                <td><code>explicit FStatAttribute(float Value)</code></td>
+                                <td>Convenience: sets Current = Max = Base = Value, clamped, replicated</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <hr>
+
+                    <h2 id="sub-attributes">Sub-Attributes</h2>
+                    <p>Each attribute's individual values are addressed through <strong>Sub-Attribute tags</strong>:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Sub-Attribute Tag</th>
+                                <th>Field</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>StatsX.SubAttribute.Current</code></td>
+                                <td><code>Current</code></td>
+                                <td>The live, consumable value</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.SubAttribute.Max</code></td>
+                                <td><code>Max</code></td>
+                                <td>The modifier-derived upper bound</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.SubAttribute.Base</code></td>
+                                <td><code>Base</code></td>
+                                <td>The innate foundation value</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.SubAttribute.Overflows</code></td>
+                                <td><code>bOverflows</code></td>
+                                <td>Clamping behavior flag</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.SubAttribute.Replicated</code></td>
+                                <td><code>bReplicated</code></td>
+                                <td>Network replication flag</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <p>Sub-Attribute tags are used in both the C++/Blueprint API and in VM instructions to specify which part of an attribute to read or write.</p>
+
+                    <hr>
+
+                    <h2 id="clamping-and-overflow">Clamping &amp; Overflow</h2>
+
+                    <h3>Standard Mode (<code>bOverflows = false</code>)</h3>
+                    <p>All clamping rules are enforced automatically:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Clamping Rule</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Current</code></td><td>Clamped to <code>[0, Max]</code></td></tr>
+                            <tr><td><code>Max</code></td><td>Clamped to <code>[0, +∞)</code></td></tr>
+                            <tr><td><code>Base</code></td><td>Clamped to <code>[0, +∞)</code></td></tr>
+                        </tbody>
+                    </table>
+
+                    <p>Clamping cascades: setting a new <code>Max</code> that is lower than <code>Current</code> will also re-clamp <code>Current</code>.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Snippet</span>
+                        </div>
+                        <pre><code>SetMax(50.0)  →  Max = 50.0
+                 Current = min(Current, 50.0)</code></pre>
+                    </div>
+
+                    <h3>Overflow Mode (<code>bOverflows = true</code>)</h3>
+                    <p><strong>All constraints are disabled.</strong> Values can be negative, exceed limits, or take any float value. This mode is designed for:</p>
+                    <ul>
+                        <li>Arbitrary storage (e.g., world positions, timer accumulators)</li>
+                        <li>Signed values (e.g., temperature that can go below zero)</li>
+                        <li>Uncapped stats (e.g., a damage multiplier with no upper bound)</li>
+                    </ul>
+
+                    <h3>Mode Transition</h3>
+                    <p>When switching from overflow to standard mode via <code>SetOverflows(false)</code>, all values are immediately re-clamped:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void SetOverflows(bool InOverflows)
+{
+    bOverflows = InOverflows;
+    if (!bOverflows) { ClampAll(); }  // Base → Max → Current
+}</code></pre>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="modifier-integration">Modifier Integration</h2>
+                    <p>Modifiers affect <strong>only the Max value</strong> of an attribute. The recalculation formula is:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Formula</span>
+                        </div>
+                        <pre><code>Max = (Base + ΣAdditiveValue) × ΠMultiplicativeValue</code></pre>
+                    </div>
+
+                    <p>Where:</p>
+                    <ul>
+                        <li><code>ΣAdditiveValue</code> = sum of all <code>FStatModifier.AdditiveValue</code> for this attribute</li>
+                        <li><code>ΠMultiplicativeValue</code> = product of all <code>FStatModifier.MultiplicativeValue</code> for this attribute</li>
+                    </ul>
+
+                    <h3>Recalculation Flow</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Flow</span>
+                        </div>
+                        <pre><code>AddModifier() / RemoveModifier*()
+  │
+  ├─ MarkAttributeDirty(AttributeTag)
+  │    └─ Adds tag to DirtyAttributes set
+  │
+  └─ RecalculateAllDirtyAttributes()    [called automatically]
+       └─ For each dirty attribute:
+            ├─ Compute ΣAdditive, ΠMultiplicative from all modifiers
+            ├─ Max = (Base + ΣAdditive) × ΠMultiplicative
+            ├─ ClampMax() → ClampCurrent()
+            ├─ UpdateReplicatedAttribute()
+            ├─ BroadcastAttributeChange()
+            └─ CheckAttributeThresholds()</code></pre>
+                    </div>
+
+                    <div class="info-box warning">
+                        <div class="info-title">⚠️ Important</div>
+                        <p>Modifiers never touch <code>Current</code> or <code>Base</code> directly. If a modifier is removed and <code>Max</code> drops below <code>Current</code>, the system re-clamps <code>Current</code> automatically.</p>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="initialization-api">Initialization API</h2>
+                    <p>All initialization methods are <code>BlueprintCallable</code> and available on <code>UStatsX_StatsComponentBase</code>.</p>
+
+                    <h3>InitializeAttribute</h3>
+                    <p>The generic initializer for any attribute type, including overflow attributes.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void InitializeAttribute(
+    FGameplayTag AttributeTag,     // e.g., StatsX.Attribute.Resource.Health
+    float CurrentValue,            // Initial current value
+    float MaxValue,                // Initial max value
+    float BaseValue,               // Initial base value
+    bool bOverflows,               // Enable overflow mode
+    bool bOverwriteExisting,       // Overwrite if already initialized
+    bool bReplicated = true);      // Enable replication</code></pre>
+                    </div>
+
+                    <h3>InitializeResourceAttribute</h3>
+                    <p>Convenience wrapper with editor tag filtering to <code>StatsX.Attribute.Resource.*</code>.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void InitializeResourceAttribute(
+    FGameplayTag AttributeTag,     // Filtered to StatsX.Attribute.Resource.*
+    float CurrentValue,
+    float MaxValue,
+    float BaseValue,
+    bool bOverflows,
+    bool bOverwriteExisting,
+    bool bReplicated = true);</code></pre>
+                    </div>
+
+                    <h3>InitializeStatAttribute</h3>
+                    <p>Convenience wrapper for stat-type attributes where <code>Current == Max</code>.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void InitializeStatAttribute(
+    FGameplayTag AttributeTag,     // Filtered to StatsX.Attribute.Stat.*
+    float Value,                   // Sets both Current and Max
+    float BaseValue,
+    bool bOverflows,
+    bool bOverwriteExisting,
+    bool bReplicated = true);</code></pre>
+                    </div>
+
+                    <h3>RemoveAttribute</h3>
+                    <p>Removes an attribute from the component entirely.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void RemoveAttribute(FGameplayTag AttributeTag);</code></pre>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="modification-api">Modification API</h2>
+
+                    <h3>Modify Operations</h3>
+                    <p>The <code>EAttributeModifyOp</code> enum defines six modification operations:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Operation</th>
+                                <th>Symbol</th>
+                                <th>Formula</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Set</code></td><td><code>=</code></td><td><code>Value = Delta</code></td><td>Absolute set</td></tr>
+                            <tr><td><code>Transaction</code></td><td><code>+</code></td><td><code>Value += Delta</code></td><td>Additive change (positive or negative)</td></tr>
+                            <tr><td><code>Multiply</code></td><td><code>×</code></td><td><code>Value *= Delta</code></td><td>Multiplicative scaling</td></tr>
+                            <tr><td><code>Divide</code></td><td><code>÷</code></td><td><code>Value /= Delta</code></td><td>Division</td></tr>
+                            <tr><td><code>Min</code></td><td><code>min</code></td><td><code>Value = min(Value, Delta)</code></td><td>Floor clamp</td></tr>
+                            <tr><td><code>Max</code></td><td><code>max</code></td><td><code>Value = max(Value, Delta)</code></td><td>Ceiling clamp</td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>ModifyAttribute</h3>
+                    <p>Applies a delta to a specific sub-attribute using the <code>Transaction</code> operation.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>float ModifyAttribute(
+    FGameplayTag AttributeTag,      // Which attribute
+    FGameplayTag SubAttributeTag,   // Which sub-attribute (Current, Max, Base)
+    float Delta,                    // Amount to add (positive or negative)
+    AActor* Causer = nullptr);      // Optional causer for threshold callbacks</code></pre>
+                    </div>
+
+                    <p><strong>Returns:</strong> The new value of the modified sub-attribute.</p>
+
+                    <p><strong>Side effects:</strong></p>
+                    <ol>
+                        <li>Automatic clamping applied (unless overflow mode)</li>
+                        <li>Replication triggered (if <code>bReplicated = true</code>)</li>
+                        <li><code>OnAttributeChanged</code> delegate broadcast</li>
+                        <li>Threshold checks evaluated</li>
+                    </ol>
+
+                    <h3>SetAttribute</h3>
+                    <p>Overwrites a sub-attribute value directly.</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void SetAttribute(
+    FGameplayTag AttributeTag,
+    FGameplayTag SubAttributeTag,
+    float NewValue,
+    AActor* Causer = nullptr);</code></pre>
+                    </div>
+
+                    <h3>SetEnableOverflows / SetEnableReplicated</h3>
+                    <p>Runtime toggles for attribute behavior flags:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>void SetEnableOverflows(FGameplayTag AttributeTag, bool bOverflowsEnabled);
+void SetEnableReplicated(FGameplayTag AttributeTag, bool bReplicated);</code></pre>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="query-api">Query API</h2>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Return Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>GetAttributeValue(Tag)</code></td>
+                                <td><code>FStatAttribute</code></td>
+                                <td>Full triplet struct</td>
+                            </tr>
+                            <tr>
+                                <td><code>GetSubAttributeValue(Tag, SubTag)</code></td>
+                                <td><code>float</code></td>
+                                <td>Single sub-attribute value</td>
+                            </tr>
+                            <tr>
+                                <td><code>HasAttribute(Tag)</code></td>
+                                <td><code>bool</code></td>
+                                <td>O(1) existence check</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Example (Blueprint)</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Unreal Blueprint</span>
+                        </div>
+                        <pre><code>// Get current health
+float HP = Component-&gt;GetSubAttributeValue(
+    StatsX.Attribute.Resource.Health,
+    StatsX.SubAttribute.Current);
+
+// Get full attribute data
+FStatAttribute HealthData = Component-&gt;GetAttributeValue(
+    StatsX.Attribute.Resource.Health);
+
+float Percent = HealthData.GetPercent();   // Current / Max (0.0 - 1.0)
+float Missing = HealthData.GetMissing();   // Max - Current
+bool bFull    = HealthData.IsFull();       // Current &gt;= Max
+bool bEmpty   = HealthData.IsEmpty();      // Current &lt;= 0
+bool bDepleted = HealthData.IsDepleted();  // Alias for IsEmpty()</code></pre>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="threshold-system">Threshold System</h2>
+                    <p>Thresholds are <strong>attribute monitors</strong> that fire a delegate when a sub-attribute value crosses a specified boundary. They run automatically after every attribute modification.</p>
+
+                    <h3>FAttributeThreshold</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>USTRUCT(BlueprintType)
+struct FAttributeThreshold
+{
+    FGameplayTag AttributeTag;       // Which attribute to monitor
+    FGameplayTag SubAttributeTag;    // Which sub-attribute (default: Current)
+    float ThresholdValue;            // The boundary value
+    EThresholdComparison Comparison; // How to compare
+    bool bRemoveAfterTrigger;        // One-shot or persistent
+};</code></pre>
+                    </div>
+
+                    <h3>Comparison Modes</h3>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Mode</th>
+                                <th>Triggers When</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>LessOrEqual</code></td><td><code>NewValue &lt;= ThresholdValue</code></td></tr>
+                            <tr><td><code>GreaterOrEqual</code></td><td><code>NewValue &gt;= ThresholdValue</code></td></tr>
+                            <tr><td><code>CrossingBelow</code></td><td><code>OldValue &gt; ThresholdValue &amp;&amp; NewValue &lt;= ThresholdValue</code></td></tr>
+                            <tr><td><code>CrossingAbove</code></td><td><code>OldValue &lt; ThresholdValue &amp;&amp; NewValue &gt;= ThresholdValue</code></td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>API</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>// Register a threshold, returns handle for removal
+int32 AddAttributeThreshold(const FAttributeThreshold&amp; Threshold);
+
+// Remove by handle
+bool RemoveAttributeThreshold(int32 Handle);
+
+// Bulk removal
+void ClearAllThresholds();
+void ClearThresholdsForAttribute(FGameplayTag AttributeTag);
+
+// Quick check for early-exit optimization
+bool HasActiveThresholds() const;</code></pre>
+                    </div>
+
+                    <h3>Evaluation Flow</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Flow</span>
+                        </div>
+                        <pre><code>ModifyAttribute() or SetAttribute()
+  │
+  └─ CheckAttributeThresholds(AttributeTag, SubAttributeTag, OldValue, NewValue, Causer)
+       │
+       └─ For each threshold matching AttributeTag:
+            ├─ Evaluate comparison against (OldValue, NewValue)
+            ├─ If triggered:
+            │    ├─ Broadcast OnAttributeThresholdReached
+            │    └─ If bRemoveAfterTrigger → auto-remove threshold
+            └─ Continue to next</code></pre>
+                    </div>
+
+                    <h3>Delegate Signature</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>DECLARE_DYNAMIC_MULTICAST_DELEGATE_SixParams(FOnAttributeThresholdReached,
+    FGameplayTag, AttributeTag,
+    FGameplayTag, SubAttributeTag,
+    float, OldValue,
+    float, NewValue,
+    int32, ThresholdHandle,
+    AActor*, Causer);</code></pre>
+                    </div>
+
+                    <h3>Use Cases</h3>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Scenario</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Death trigger</td><td><code>Health.Current</code>, <code>LessOrEqual</code>, Value = <code>0</code>, one-shot</td></tr>
+                            <tr><td>Low health warning</td><td><code>Health.Current</code>, <code>CrossingBelow</code>, Value = <code>20%</code> of Max, persistent</td></tr>
+                            <tr><td>Level-up trigger</td><td><code>Experience.Current</code>, <code>GreaterOrEqual</code>, Value = <code>NextLevelXP</code>, one-shot</td></tr>
+                            <tr><td>Shield break</td><td><code>Shield.Current</code>, <code>CrossingBelow</code>, Value = <code>0</code>, one-shot</td></tr>
+                        </tbody>
+                    </table>
+
+                    <hr>
+
+                    <h2 id="replication">Replication</h2>
+
+                    <h3>Storage</h3>
+                    <p>Attributes are stored locally in:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>TMap&lt;FGameplayTag, FStatAttribute&gt; StatsAttributes;</code></pre>
+                    </div>
+
+                    <p>And replicated via:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>UPROPERTY(Replicated)
+FReplicatedAttributeArray ReplicatedAttributes;  // FFastArraySerializer</code></pre>
+                    </div>
+
+                    <h3>Sync Flow</h3>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Flow</span>
+                        </div>
+                        <pre><code>Server: ModifyAttribute()
+  ├─ Update StatsAttributes[Tag]
+  ├─ UpdateReplicatedAttribute(Tag, NewValue)
+  │    └─ Find or create item in ReplicatedAttributes
+  │    └─ MarkItemDirty() → delta replication
+  └─ Broadcast local delegate
+
+Client: OnRep (FastArraySerializer callback)
+  ├─ SynchronizeLocalAttributes()
+  │    └─ Rebuild StatsAttributes from ReplicatedAttributes
+  └─ BroadcastAttributeChange()</code></pre>
+                    </div>
+
+                    <h3>Per-Attribute Replication Control</h3>
+                    <p>Each attribute has an independent <code>bReplicated</code> flag. When <code>false</code>, the attribute exists only on the authority side and is never sent to clients. This is useful for:</p>
+
+                    <ul>
+                        <li>Server-only internal tracking values</li>
+                        <li>Sensitive data that clients should not know</li>
+                        <li>Optimization: reducing bandwidth for non-essential attributes</li>
+                    </ul>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>// Make attribute server-only
+Component-&gt;SetEnableReplicated(StatsX.Attribute.InternalScore, false);</code></pre>
+                    </div>
+
+                    <h3>Client Sync Retry</h3>
+                    <p>If a client receives replicated attributes before the component's <code>StatsAttributes</code> map is initialized (race condition during BeginPlay), the system schedules a retry:</p>
+                    <ul>
+                        <li>Up to <strong>10 retry attempts</strong> (<code>MaxSyncRetries</code>)</li>
+                        <li>Timer-based retry via <code>ScheduleSyncRetry()</code></li>
+                    </ul>
+
+                    <hr>
+
+                    <h2 id="events-and-delegates">Events &amp; Delegates</h2>
+
+                    <h3>OnAttributeChanged</h3>
+                    <p>Fires after any attribute modification (server and client, post-replication).</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAttributeChanged,
+    FGameplayTag, AttributeTag,
+    FStatAttribute, NewValue);</code></pre>
+                    </div>
+
+                    <p><strong>Binding (Blueprint):</strong></p>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>Component.OnAttributeChanged.AddDynamic(this, &amp;MyClass::HandleAttributeChanged);</code></pre>
+                    </div>
+
+                    <h3>OnAttributeThresholdReached</h3>
+                    <p>Fires when a monitored threshold boundary is crossed. See <a href="#threshold-system">Threshold System</a>.</p>
+
+                    <h3>Broadcast Order</h3>
+                    <p>After any attribute modification, the system fires events in this order:</p>
+                    <ol>
+                        <li><code>UpdateReplicatedAttribute()</code> — queue for delta replication</li>
+                        <li><code>BroadcastAttributeChange()</code> — fire <code>OnAttributeChanged</code></li>
+                        <li><code>CheckAttributeThresholds()</code> — evaluate and fire <code>OnAttributeThresholdReached</code></li>
+                    </ol>
+
+                    <hr>
+
+                    <h2 id="damage-mitigation-integration">Damage Mitigation Integration</h2>
+                    <p>The component provides built-in damage mitigation support through a <strong>DamageType → Resistance</strong> mapping:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>// Map: DamageType tag → array of resistance attribute tags
+TMap&lt;FGameplayTag, FGameplayTagContainer&gt; DamageToResistancesMap;</code></pre>
+                    </div>
+
+                    <h3>Mitigation Formulas</h3>
+                    <p>Four built-in formulas are available, identified by tags:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Formula Tag</th>
+                                <th>Formula</th>
+                                <th>Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>StatsX.MitigationFormula.XFlat</code></td>
+                                <td><code>Damage - Resistance</code></td>
+                                <td>Flat damage reduction</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.MitigationFormula.XPercentage</code></td>
+                                <td><code>Damage × (1 - Resistance%)</code></td>
+                                <td>Percentage damage reduction</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.MitigationFormula.XDiminishing</code></td>
+                                <td><code>Damage × ScaleFactor / (ScaleFactor + Resistance)</code></td>
+                                <td>Diminishing returns (LoL/Dota style)</td>
+                            </tr>
+                            <tr>
+                                <td><code>StatsX.MitigationFormula.XExponentialDecay</code></td>
+                                <td><code>Damage × e^(-Resistance / ScaleFactor)</code></td>
+                                <td>Exponential decay</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Scale Factors</h3>
+                    <p>Two per-component scale factors are available for advanced formulas:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>float DiminishingMitigationScaleFactor = 100.f;     // Used by Diminishing formula
+float ExponentialDecayMitigationScaleFactor = 100.f; // Used by ExponentialDecay formula</code></pre>
+                    </div>
+
+                    <div class="info-box tip">
+                        <div class="info-title">💡 Detailed Guide</div>
+                        <p>Detailed documentation of the mitigation system is covered in <strong>22 — Damage Mitigation</strong>.</p>
+                    </div>
+
+                    <hr>
+
+                    <h2 id="vm-interaction">VM Interaction</h2>
+                    <p>The ForgeVM interacts with attributes through dedicated OpCodes. The VM reads and writes attribute values on Caster/Target components via the execution context.</p>
+
+                    <h3>Key OpCodes</h3>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>OpCode</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>OP_ModifyAttribute</code></td><td>Modify a sub-attribute value (with interceptors)</td></tr>
+                            <tr><td><code>OP_SetAttribute</code></td><td>Set a sub-attribute to an absolute value</td></tr>
+                            <tr><td><code>OP_GetAttribute</code></td><td>Read a sub-attribute value into the context stack</td></tr>
+                            <tr><td><code>OP_CheckAttribute</code></td><td>Branch based on attribute comparison</td></tr>
+                            <tr><td><code>OP_AddModifier</code></td><td>Add a modifier to an attribute</td></tr>
+                            <tr><td><code>OP_RemoveModifiers</code></td><td>Remove modifiers by filter criteria</td></tr>
+                            <tr><td><code>OP_CheckCost</code></td><td>Verify sufficient resource before execution</td></tr>
+                            <tr><td><code>OP_ApplyCost</code></td><td>Deduct resource cost</td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Data Source for Attribute Operations</h3>
+                    <p>VM instructions reference attributes by tag index (16-bit index into the definition's tag literal pool). The target component is resolved from the <code>FForgeVMContext</code> based on a <code>ENodeLogicTarget</code> flag (<code>Caster</code> or <code>Target</code>).</p>
+
+                    <hr>
+
+                    <h2 id="operator-overloads">Operator Overloads</h2>
+                    <p><code>FStatAttribute</code> supports component-wise arithmetic for batch operations:</p>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Operator</th>
+                                <th>Behavior</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>A + B</code></td>
+                                <td>Component-wise addition of Current, Max, Base. Overflow = <code>A.bOverflows || B.bOverflows</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>A - B</code></td>
+                                <td>Component-wise subtraction. Same overflow propagation</td>
+                            </tr>
+                            <tr>
+                                <td><code>A += B</code></td>
+                                <td>In-place add with auto-clamp</td>
+                            </tr>
+                            <tr>
+                                <td><code>A -= B</code></td>
+                                <td>In-place subtract with auto-clamp</td>
+                            </tr>
+                            <tr>
+                                <td><code>A == B</code></td>
+                                <td>True if Current, Max, and Base all match</td>
+                            </tr>
+                            <tr>
+                                <td><code>A != B</code></td>
+                                <td>True if any value differs</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <hr>
+
+                    <h2 id="best-practices">Best Practices</h2>
+
+                    <h3>1. Choose the Right Initialization Method</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Scenario</th>
+                                <th>Method</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Health, Mana, Stamina</td>
+                                <td><code>InitializeResourceAttribute()</code> — independent Current and Max</td>
+                            </tr>
+                            <tr>
+                                <td>Speed, Armor, CritChance</td>
+                                <td><code>InitializeStatAttribute()</code> — Current mirrors Max</td>
+                            </tr>
+                            <tr>
+                                <td>Timers, positions, uncapped values</td>
+                                <td><code>InitializeAttribute()</code> with <code>bOverflows = true</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>2. Prefer Transaction Over Set</h3>
+                    <p>Use <code>ModifyAttribute()</code> (Transaction) for gameplay changes. Use <code>SetAttribute()</code> only for absolute resets (respawn, initialization). Transaction preserves the existing value context and plays well with interceptors.</p>
+
+                    <h3>3. Use Thresholds Instead of Polling</h3>
+                    <p>Instead of checking <code>if (Health &lt;= 0)</code> every frame, register a threshold:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>FAttributeThreshold DeathThreshold;
+DeathThreshold.AttributeTag = HealthTag;
+DeathThreshold.ThresholdValue = 0.f;
+DeathThreshold.Comparison = EThresholdComparison::LessOrEqual;
+DeathThreshold.bRemoveAfterTrigger = true;
+Component-&gt;AddAttributeThreshold(DeathThreshold);</code></pre>
+                    </div>
+
+                    <h3>4. Control Replication Granularity</h3>
+                    <p>Mark non-essential attributes as <code>bReplicated = false</code> to reduce bandwidth:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">C++</span>
+                        </div>
+                        <pre><code>// Server-only analytics tracking
+InitializeAttribute(InternalDPSTracker, 0, 0, 0, true, false, /*bReplicated*/ false);</code></pre>
+                    </div>
+
+                    <h3>5. Batch Modifier Operations</h3>
+                    <p>When applying multiple modifiers simultaneously (e.g., equipping a full gear set), the dirty flag system naturally batches recalculations. All modifiers are added, then <code>RecalculateAllDirtyAttributes()</code> processes them in a single pass.</p>
+
+                    <h3>6. Tag Hierarchy for Flexible Queries</h3>
+                    <p>Structure your attribute tags hierarchically:</p>
+
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-lang">Tags</span>
+                        </div>
+                        <pre><code>StatsX.Attribute.Resource.Health
+StatsX.Attribute.Resource.Mana
+StatsX.Attribute.Resource.Stamina
+StatsX.Attribute.Stat.MoveSpeed
+StatsX.Attribute.Stat.Armor
+StatsX.Attribute.Stat.CritChance</code></pre>
+                    </div>
+
+                    <p>This enables broad queries (e.g., "has any Resource attribute") while keeping individual attributes addressable.</p>
+
+                </section>

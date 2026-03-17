@@ -40,9 +40,22 @@
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-section">
-                <div class="sidebar-title">Documentation</div>
+                <div class="sidebar-title">Core Concepts</div>
                 <ul class="sidebar-nav">
-                    <li><a href="#coming-soon" data-section="coming-soon" class="active">Coming Soon</a></li>
+                    <li><a href="#architecture-overview" data-section="architecture-overview">Architecture Overview</a></li>
+                    <li><a href="#attribute-system" data-section="attribute-system">Attribute System</a></li>
+                    <li><a href="#modifier-system" data-section="modifier-system">Modifier System</a></li>
+                    <li><a href="#status-definition" data-section="status-definition">Status Definition</a></li>
+                    <li><a href="#status-instance" data-section="status-instance">Status Instance</a></li>
+                    <li><a href="#status-instance-pool" data-section="status-instance-pool">Status Instance Pool</a></li>
+                    <li><a href="#forge-vm" data-section="forge-vm">ForgeVM</a></li>
+                    <li><a href="#execution-context" data-section="execution-context">Execution Context</a></li>
+                    <li><a href="#instruction-format" data-section="instruction-format">Instruction Format</a></li>
+                    <li><a href="#component-system" data-section="component-system">Component System</a></li>
+                    <li><a href="#interceptor-system" data-section="interceptor-system">Interceptor System</a></li>
+                    <li><a href="#custom-logic-check" data-section="custom-logic-check">Custom Logic &mdash; Check</a></li>
+                    <li><a href="#custom-logic-action" data-section="custom-logic-action">Custom Logic &mdash; Action</a></li>
+                    <li><a href="#variable-system" data-section="variable-system" class="active">Variable System</a></li>
                 </ul>
             </div>
         </aside>
@@ -50,18 +63,7 @@
         <!-- Main Content -->
         <main class="main-content content">
             <div class="content-wrapper">
-                <section id="coming-soon" class="tutorial-section active">
-                    <h1>v1.4 Documentation</h1>
-                    <p style="color: var(--text-secondary); margin-bottom: 32px;">
-                        Complete API reference for Stats_X v1.4
-                    </p>
-                    <div class="info-box info">
-                        <div class="info-title">Coming Soon</div>
-                        <p>The v1.4 documentation is currently being prepared. In the meantime, you can check out the
-                            <a href="docs-v1.0.html">v1.0 documentation</a> for reference.
-                        </p>
-                    </div>
-                </section>
+                <!-- Sections will be loaded here dynamically by JS -->
             </div>
         </main>
     </div>
@@ -76,6 +78,124 @@
     </footer>
 
     <script src="js/main.js"></script>
+
+    <!-- SPA Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const contentContainer = document.querySelector('.content-wrapper');
+            const navLinks = document.querySelectorAll('.sidebar-nav a');
+            
+            // Map section IDs to their corresponding HTML file in the sections folder
+            const sectionFiles = {
+                'architecture-overview': '01_Architecture_Overview.html',
+                'attribute-system': '02_Attribute_System.html',
+                'modifier-system': '03_Modifier_System.html',
+                'status-definition': '04_Status_Definition.html',
+                'status-instance': '05_Status_Instance.html',
+                'status-instance-pool': '06_Status_Instance_Pool.html',
+                'forge-vm': '07_ForgeVM.html',
+                'execution-context': '08_Execution_Context.html',
+                'instruction-format': '09_Instruction_Format.html',
+                'component-system': '10_Component_System.html',
+                'interceptor-system': '11_Interceptor_System.html',
+                'custom-logic-check': '12_Custom_Logic_Check.html',
+                'custom-logic-action': '13_Custom_Logic_Action.html',
+                'variable-system': '14_Variable_System.html'
+                // Add more mappings here as new sections are created
+            };
+
+            // Load section content dynamically
+            async function loadSection(sectionId) {
+                const filename = sectionFiles[sectionId];
+                if (!filename) {
+                    contentContainer.innerHTML = '<section class="tutorial-section active"><h2>Section not found</h2><p>This section has not been implemented yet or the mapping is missing.</p></section>';
+                    return;
+                }
+
+                try {
+                    // Show a loading state (optional)
+                    contentContainer.innerHTML = '<div style="padding: 4rem; text-align: center; color: var(--text-muted);"><h3>Loading section...</h3></div>';
+
+                    // Fetch the HTML file from the sections folder
+                    const response = await fetch(`sections/${filename}`);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    let htmlContent = await response.text();
+                    
+                    // Assegna classe "active" esplicita al volo in modo che le animazioni o visibilità (se ce ne sono in CSS) agiscano
+                    htmlContent = htmlContent.replace('class="tutorial-section"', 'class="tutorial-section active"');
+
+                    // Inject the content
+                    contentContainer.innerHTML = htmlContent;
+
+                    // Update active state in sidebar
+                    navLinks.forEach(link => {
+                        if (link.getAttribute('data-section') === sectionId) {
+                            link.classList.add('active');
+                            // Ensure the active link is visible in the sidebar
+                            link.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        } else {
+                            link.classList.remove('active');
+                        }
+                    });
+
+                    // Scroll to top of the content area
+                    document.querySelector('.main-content').scrollTop = 0;
+
+                } catch (error) {
+                    console.error('Error loading section:', error);
+                    contentContainer.innerHTML = `<section class="tutorial-section active"><h2>Error Loading Section</h2><p>Could not load <code>${filename}</code>. Make sure the server is running.</p><pre>${error.message}</pre></section>`;
+                }
+            }
+
+            // Handle navigation clicks
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    // Only intercept if we have a mapping for this section
+                    const sectionId = link.getAttribute('data-section');
+                    if (sectionFiles[sectionId]) {
+                        e.preventDefault();
+                        
+                        // Update URL hash without jumping
+                        history.pushState(null, null, `#${sectionId}`);
+                        
+                        // Close mobile menu if open
+                        const sidebar = document.querySelector('.sidebar');
+                        if (sidebar) sidebar.classList.remove('active');
+                        
+                        // Load the section
+                        loadSection(sectionId);
+                    }
+                });
+            });
+
+            // Handle initial load based on URL hash
+            const initialHash = window.location.hash.substring(1);
+            if (initialHash && sectionFiles[initialHash]) {
+                loadSection(initialHash);
+            } else {
+                // Default to the first section
+                loadSection('architecture-overview');
+                history.replaceState(null, null, '#architecture-overview');
+            }
+
+            // Handle browser forward/back buttons
+            window.addEventListener('popstate', () => {
+                const hash = window.location.hash.substring(1);
+                if (hash && sectionFiles[hash]) {
+                    loadSection(hash);
+                }
+            });
+
+            // Mobile menu toggle
+            const menuToggle = document.querySelector('.mobile-menu-toggle');
+            if(menuToggle) {
+                menuToggle.addEventListener('click', () => {
+                    document.querySelector('.sidebar').classList.toggle('active');
+                });
+            }
+        });
+    </script>
 </body>
 
 </html>

@@ -1,0 +1,1016 @@
+<section id="interceptor-system" class="tutorial-section">
+    <h1>Interceptor System</h1>
+    
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; UForgeInterceptorBase, FInterceptorRegistration, BroadcastInterceptorEvents<br>
+        Condition / Action pattern for observing and altering status execution at any point in the graph &mdash; per-caster, per-target, or world-wide.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#core-concepts">Core Concepts</a></li>
+        <li><a href="#scopes">Scopes</a></li>
+        <li><a href="#phases">Phases</a></li>
+        <li><a href="#interceptor-base-class">Interceptor Base Class</a></li>
+        <li><a href="#registration-data">Registration Data</a></li>
+        <li><a href="#registry-architecture">Registry Architecture</a></li>
+        <li><a href="#registration-api">Registration API</a></li>
+        <li><a href="#unregistration-api">Unregistration API</a></li>
+        <li><a href="#broadcast-pipeline">Broadcast Pipeline</a></li>
+        <li><a href="#dispatch-loop">Dispatch Loop</a></li>
+        <li><a href="#reentrancy-safety">Reentrancy Safety</a></li>
+        <li><a href="#payload-system">Payload System</a></li>
+        <li><a href="#variable-access">Variable Access</a></li>
+        <li><a href="#context-accessors">Context Accessors</a></li>
+        <li><a href="#gc-safety">GC Safety</a></li>
+        <li><a href="#performance-instrumentation">Performance Instrumentation</a></li>
+        <li><a href="#api-reference">API Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy">1. Design Philosophy</h2>
+    <p>Interceptors provide an <strong>observer-with-veto</strong> pattern for the ForgeVM execution pipeline. Any node in the StatusForge graph can emit Pre/Post events; registered interceptors receive those events, inspect (and optionally modify) the execution context, and may <strong>halt</strong> the entire status execution.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Condition/Action split</strong></td><td>Separate filter pass from effect pass &mdash; Condition never mutates state, Action may write and halt</td></tr>
+            <tr><td><strong>Three scopes</strong></td><td>Caster, Target, Global &mdash; maps directly to the three perspectives of a status interaction</td></tr>
+            <tr><td><strong>Priority ordering</strong></td><td>Higher-priority interceptors execute first within a scope</td></tr>
+            <tr><td><strong>Deferred removal</strong></td><td>Interceptors removed during dispatch are marked pending, flushed after the dispatch loop</td></tr>
+            <tr><td><strong>Nested-safe</strong></td><td><code>TriggerFrameStack</code> with <code>TInlineAllocator&lt;4&gt;</code> supports recursive casts without corruption</td></tr>
+            <tr><td><strong>UObject-based</strong></td><td><code>UForgeInterceptorBase : UObject</code> &mdash; participates in GC, supports Blueprint/C++ subclassing</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="core-concepts">2. Core Concepts</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>StatusForge Graph Node
+       │
+       ├─── Pre-Event broadcast ──► Interceptors (Condition → Action)
+       │                                   │
+       │                               halt? ──► Skip instruction, jump to end
+       │                                   │
+       ▼                                   ▼
+   Execute Instruction                 continue
+       │
+       ├─── Post-Event broadcast ──► Interceptors (Condition → Action)
+       │                                   │
+       │                               halt? ──► Abort remaining execution
+       │                                   │
+       ▼                                   ▼
+   Next Instruction                    continue</code></pre>
+    </div>
+
+    <p>The interceptor system touches three subsystems:</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Subsystem</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>BroadcastInterceptorEvents()</code> (StatsXHelpers)</td><td>Entry point &mdash; parses scope suffix, routes to correct registry</td></tr>
+            <tr><td><code>UStatsX_StatsComponentBase</code></td><td>Hosts Caster-scope and Target-scope registries</td></tr>
+            <tr><td><code>UStatsX_WorldSubsystem</code></td><td>Hosts Global-scope registry</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="scopes">3. Scopes</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UENUM(BlueprintType)
+enum class EInterceptorScope : uint8
+{
+    Caster,   // Events where this actor is the caster
+    Target,   // Events where this actor is the target
+    Global    // World-wide events (WorldSubsystem)
+};</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Scope</th>
+                <th>Registry Owner</th>
+                <th>Typical Use Case</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Caster</strong></td><td><code>UStatsX_StatsComponentBase</code> (caster's component)</td><td>"When <strong>I</strong> cast a damage status, boost it by 20%"</td></tr>
+            <tr><td><strong>Target</strong></td><td><code>UStatsX_StatsComponentBase</code> (target's component)</td><td>"When <strong>I</strong> receive a healing status, halve it"</td></tr>
+            <tr><td><strong>Global</strong></td><td><code>UStatsX_WorldSubsystem</code></td><td>"Whenever <strong>anyone</strong> deals fire damage in this world, log it"</td></tr>
+        </tbody>
+    </table>
+
+    <p>The scope is encoded in the <strong>broadcast tag suffix</strong>:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Broadcast tag : StatsX.Event.Pre.OnHealthDamaged.Caster   ← scope suffix
+Registration tag : StatsX.Event.Pre.OnHealthDamaged         ← no suffix</code></pre>
+    </div>
+    <p><code>BroadcastInterceptorEvents()</code> strips the suffix via <code>RequestDirectParent()</code> to derive the registration tag.</p>
+
+    <hr>
+
+    <h2 id="phases">4. Phases</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UENUM(BlueprintType)
+enum class EInterceptorEventPhase : uint8
+{
+    Pre,   // Called BEFORE the instruction executes
+    Post   // Called AFTER the instruction executes
+};</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Phase</th>
+                <th>Payload Available</th>
+                <th>Can Modify Inputs?</th>
+                <th>Can Read Outputs?</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Pre</strong></td><td>Inputs of the next node</td><td>Yes (Context/Instance sources)</td><td>No &mdash; not yet computed</td></tr>
+            <tr><td><strong>Post</strong></td><td>Inputs + outputs of the previous node</td><td>Yes (Context/Instance sources)</td><td>Yes</td></tr>
+        </tbody>
+    </table>
+
+    <p>Both phases can return <code>false</code> from <code>Action()</code> to <strong>halt</strong> status execution.</p>
+
+    <hr>
+
+    <h2 id="interceptor-base-class">5. Interceptor Base Class</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Header  : Public/Interceptors/ForgeInterceptorBase.h
+Source  : Private/Interceptors/ForgeInterceptorBase.cpp</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UCLASS(Abstract, BlueprintType, Blueprintable, meta = (DisplayName = "Interceptor"))
+class STATS_X_API UForgeInterceptorBase : public UObject</code></pre>
+    </div>
+
+    <h3>5.1 Lifecycle Methods (System-Called)</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>When Called</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SetupSourceData(...)</code></td><td>Once at registration</td><td>Stores weak pointers to the actor/component that <strong>registered</strong> the interceptor</td></tr>
+            <tr><td><code>SetupTriggeringData(...)</code></td><td>Each trigger, before Condition/Action</td><td>Pushes a <code>FTriggerFrame</code> onto the stack</td></tr>
+            <tr><td><code>ClearTriggeringData()</code></td><td>After Condition/Action</td><td>Pops the top <code>FTriggerFrame</code> (no shrink)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>5.2 Override Points</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Default</th>
+                <th>Return Semantics</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Condition()</code></td><td><code>true</code> (handle all events)</td><td><code>true</code> = proceed to Action, <code>false</code> = skip this interceptor</td></tr>
+            <tr><td><code>Action()</code></td><td><code>true</code> (continue execution)</td><td><code>true</code> = continue status execution, <code>false</code> = <strong>HALT</strong> execution</td></tr>
+        </tbody>
+    </table>
+    <p>Both are <code>BlueprintNativeEvent</code> &mdash; overridable in Blueprint or C++.</p>
+
+    <h3>5.3 TriggerFrameStack</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FTriggerFrame
+{
+    FForgeVMContext* Context = nullptr;
+    EInterceptorEventPhase Phase = EInterceptorEventPhase::Pre;
+};
+
+TArray&lt;FTriggerFrame, TInlineAllocator&lt;4&gt;&gt; TriggerFrameStack;</code></pre>
+    </div>
+    <p>The stack supports <strong>nested broadcasts</strong>: if an interceptor's Action triggers another status cast that fires interceptor events on the same interceptor instance, the new frame is pushed on top. <code>GetActiveContext()</code> and <code>GetActivePhase()</code> always return the <strong>top</strong> frame.</p>
+    <ul>
+        <li><code>TInlineAllocator&lt;4&gt;</code> &mdash; 4 frames inline, no heap allocation for typical nesting depths.</li>
+        <li><code>Pop(EAllowShrinking::No)</code> &mdash; no reallocation on pop.</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="registration-data">6. Registration Data</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct FInterceptorRegistration
+{
+    UPROPERTY()
+    TObjectPtr&lt;UForgeInterceptorBase&gt; Interceptor;   // The instance
+
+    TWeakObjectPtr&lt;UObject&gt; Owner;                    // For cleanup on owner destroy
+    float RegistrationTime = 0.0f;                    // Debug timestamp
+    int32 Priority = 0;                               // Higher = earlier execution
+    int64 SourceStatusID = 0;                          // StatusID that registered (0 = unknown)
+    bool bPendingRemoval = false;                      // Deferred removal flag
+};</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Interceptor</code></td><td>Strong <code>TObjectPtr</code> &mdash; keeps the UObject alive</td></tr>
+            <tr><td><code>Owner</code></td><td>Weak reference &mdash; enables bulk unregistration when an owner is destroyed</td></tr>
+            <tr><td><code>Priority</code></td><td>Passed from the RegisterInterceptor node input; higher values execute first</td></tr>
+            <tr><td><code>SourceStatusID</code></td><td>Enables bulk unregistration by status ID (e.g., when a status is removed, clean up its interceptors)</td></tr>
+            <tr><td><code>bPendingRemoval</code></td><td>Set during dispatch to avoid iterator invalidation; flushed when <code>DispatchDepth</code> returns to 0</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="registry-architecture">7. Registry Architecture</h2>
+
+    <p>Each registry (Caster, Target, Global) uses an identical 5-part data structure:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────────────────────────────────────────────────────┐
+│ TMultiMap&lt;FGameplayTag, int32&gt;  EventToHandlesMap        │ ← event tag → handle(s)
+│ TMap&lt;int32, FInterceptorRegistration&gt;  ActiveRegistrations│ ← handle → registration
+│ FGameplayTagContainer  EventsWithInterceptors            │ ← fast early-exit cache
+│ int32  DispatchDepth                                     │ ← reentrancy counter
+│ TSet&lt;int32&gt;  PendingRemovalHandles                       │ ← deferred removal set
+└──────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h3>Component-Side (Caster + Target)</h3>
+    <p><code>UStatsX_StatsComponentBase</code> holds <strong>two</strong> copies &mdash; one prefixed <code>Caster*</code>, one prefixed <code>Target*</code>:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>CasterEventToHandlesMap          TargetEventToHandlesMap
+CasterActiveRegistrations        TargetActiveRegistrations
+CasterEventsWithInterceptors     TargetEventsWithInterceptors
+CasterInterceptorDispatchDepth   TargetInterceptorDispatchDepth
+CasterPendingRemovalHandles      TargetPendingRemovalHandles</code></pre>
+    </div>
+
+    <h3>WorldSubsystem-Side (Global)</h3>
+    <p><code>UStatsX_WorldSubsystem</code> holds one copy:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>GlobalEventToHandlesMap
+GlobalActiveRegistrations
+GlobalEventsWithInterceptors
+GlobalInterceptorDispatchDepth
+GlobalPendingRemovalHandles
+NextGlobalInterceptorHandle</code></pre>
+    </div>
+
+    <h3>Early-Exit Cache</h3>
+    <p><code>EventsWithInterceptors</code> (<code>FGameplayTagContainer</code>) provides <strong>O(1) tag membership</strong> check. Before iterating the <code>EventToHandlesMap</code>, the system checks:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (!EventsCache-&gt;HasTag(EventTag))
+    return true;  // No interceptors → continue execution immediately</code></pre>
+    </div>
+    <p>The cache is <strong>rebuilt per-tag</strong> after registration changes via <code>RefreshInterceptorEventCacheTag()</code>.</p>
+
+    <hr>
+
+    <h2 id="registration-api">8. Registration API</h2>
+
+    <h3>8.1 Component-Side (Caster / Target)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 UStatsX_StatsComponentBase::RegisterInterceptor(
+    const FGameplayTag&amp; EventTag,
+    TSubclassOf&lt;UForgeInterceptorBase&gt; InterceptorClass,
+    EInterceptorScope Scope,
+    int32 Priority,
+    AActor* SourceActor,
+    UStatsX_StatsComponentBase* SourceComponent,
+    int64 SourceStatusID = 0);</code></pre>
+    </div>
+    <p><strong>Flow:</strong></p>
+    <ol>
+        <li>Select maps based on <code>Scope</code> (Caster or Target).</li>
+        <li><code>NewObject&lt;UForgeInterceptorBase&gt;(this, InterceptorClass)</code> &mdash; interceptor is <strong>outer'd</strong> to the component.</li>
+        <li><code>Interceptor-&gt;SetupSourceData(SourceActor, SourceComponent)</code>.</li>
+        <li>Build <code>FInterceptorRegistration</code> with Priority, RegistrationTime, SourceStatusID.</li>
+        <li>Assign monotonic handle via <code>NextInterceptorHandle++</code>.</li>
+        <li>Insert into <code>EventToHandlesMap</code> and <code>ActiveRegistrations</code>.</li>
+        <li>Add event tag to <code>EventsWithInterceptors</code> cache.</li>
+        <li>Return handle (or <code>-1</code> on failure).</li>
+    </ol>
+
+    <h3>8.2 WorldSubsystem-Side (Global)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 UStatsX_WorldSubsystem::RegisterGlobalInterceptor(
+    const FGameplayTag&amp; EventTag,
+    TSubclassOf&lt;UForgeInterceptorBase&gt; InterceptorClass,
+    int32 Priority,
+    AActor* SourceActor,
+    UStatsX_StatsComponentBase* SourceComponent,
+    int64 SourceStatusID = 0);</code></pre>
+    </div>
+    <p>Identical logic, operating on <code>Global*</code> maps and <code>NextGlobalInterceptorHandle</code>.</p>
+
+    <hr>
+
+    <h2 id="unregistration-api">9. Unregistration API</h2>
+
+    <h3>9.1 By Handle</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool UnregisterInterceptor(int32 Handle);              // Component
+bool UnregisterGlobalInterceptor(int32 Handle);         // WorldSubsystem</code></pre>
+    </div>
+    <p><strong>Reentrancy-aware:</strong> If <code>DispatchDepth &gt; 0</code>, the handle is <strong>marked pending</strong> (<code>bPendingRemoval = true</code>) rather than removed immediately. It is flushed when dispatch finishes.</p>
+    <p>If <code>DispatchDepth == 0</code>, the handle is removed immediately via <code>RemoveInterceptorHandleImmediate()</code>, which:</p>
+    <ol>
+        <li>Removes from <code>ActiveRegistrations</code>.</li>
+        <li>Iterates <code>EventToHandlesMap</code> to remove all entries with this handle.</li>
+        <li>Refreshes <code>EventsWithInterceptors</code> cache for affected tags.</li>
+    </ol>
+
+    <h3>9.2 By Event Tag + Scope</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 UnregisterInterceptorsForEvent(const FGameplayTag&amp; EventTag, EInterceptorScope Scope);
+int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</code></pre>
+    </div>
+    <p>Collects all active handles for the event, then removes/marks each one. Returns count removed.</p>
+
+    <h3>9.3 By Source Component</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase* SourceComponent);</code></pre>
+    </div>
+    <p>Iterates both Caster and Target registries; removes all registrations whose <code>Owner</code> matches <code>SourceComponent</code>. Reentrancy-aware per scope.</p>
+
+    <h3>9.4 By Source Status ID</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 UnregisterAllInterceptorsFromStatusID(int64 StatusID);</code></pre>
+    </div>
+    <p>Iterates both Caster and Target registries; removes all registrations whose <code>SourceStatusID</code> matches. Reentrancy-aware per scope.</p>
+
+    <hr>
+
+    <h2 id="broadcast-pipeline">10. Broadcast Pipeline</h2>
+    <p><strong>Entry point:</strong> <code>BroadcastInterceptorEvents()</code> in <code>StatsXHelpers.cpp</code>.</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool BroadcastInterceptorEvents(
+    const FGameplayTagContainer&amp; EventTags,
+    FForgeVMContext&amp; Context,
+    EInterceptorEventPhase Phase,
+    UStatsX_StatsComponentBase* AffectedComponent);</code></pre>
+    </div>
+
+    <h3>10.1 Tag Parsing</h3>
+    <p>For each tag in the container:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Input:  "StatsX.Event.Pre.OnHealthDamaged.Caster"
+                                           ^^^^^^^ scope suffix</code></pre>
+    </div>
+    <ol>
+        <li><strong>Determine scope</strong> from string suffix: <code>.Caster</code>, <code>.Target</code>, <code>.Global</code>.</li>
+        <li><strong>Extract base tag</strong> via <code>EventTag.RequestDirectParent()</code>:
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Structure</span>
+                </div>
+                <pre><code>"StatsX.Event.Pre.OnHealthDamaged.Caster"
+ → RequestDirectParent()
+ → "StatsX.Event.Pre.OnHealthDamaged"       ← matches registration tag</code></pre>
+            </div>
+        </li>
+    </ol>
+
+    <h3>10.2 Routing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Scope::Caster  → Context.CasterComponent-&gt;BroadcastToScope(BaseTag, ...)
+Scope::Target  → AffectedComponent (or Context.TargetComponent)-&gt;BroadcastToScope(BaseTag, ...)
+Scope::Global  → Context.GetSubsystem()-&gt;BroadcastGlobalInterceptorEvent(BaseTag, ...)</code></pre>
+    </div>
+    <p><strong>AffectedComponent override:</strong> For Target scope, an explicit <code>AffectedComponent</code> parameter allows propagation events to reach third-party actors that are neither the status caster nor target.</p>
+
+    <h3>10.3 Short-Circuit</h3>
+    <p>If <strong>any</strong> interceptor's <code>Action()</code> returns <code>false</code>, the entire function returns <code>false</code> immediately &mdash; no further tags are processed. The caller (ForgeVM) interprets this as a <strong>halt</strong>.</p>
+
+    <hr>
+
+    <h2 id="dispatch-loop">11. Dispatch Loop</h2>
+    <p><code>BroadcastToScope()</code> (component) and <code>BroadcastGlobalInterceptorEvent()</code> (subsystem) share identical dispatch logic:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>BroadcastToScope(EventTag, Context, Scope, Phase)
+│
+├─ Early exit: EventsCache-&gt;HasTag(EventTag) == false → return true
+│
+├─ MultiFind handles for EventTag
+│
+├─ ++DispatchDepth
+│
+├─ Sort by Priority (descending: higher = earlier)
+│
+├─ For each (Priority, Handle):
+│   ├─ Re-lookup registration (may have been invalidated)
+│   ├─ Skip if bPendingRemoval or !IsValid(Interceptor)
+│   │
+│   ├─ Interceptor-&gt;SetupTriggeringData(&amp;Context, Phase)
+│   ├─ bShouldHandle = Interceptor-&gt;Condition()
+│   ├─ Interceptor-&gt;ClearTriggeringData()
+│   │
+│   ├─ if (!bShouldHandle) → skip to next
+│   │
+│   ├─ Re-lookup registration (Condition may have caused mutations)
+│   ├─ Skip if bPendingRemoval or !IsValid(Interceptor)
+│   │
+│   ├─ Interceptor-&gt;SetupTriggeringData(&amp;Context, Phase)
+│   ├─ bContinue = Interceptor-&gt;Action()
+│   ├─ Interceptor-&gt;ClearTriggeringData()
+│   │
+│   └─ if (!bContinue) → FinishDispatch(), return false  ← HALT
+│
+├─ FinishDispatch()  (--DispatchDepth, flush if 0)
+│
+└─ return true  ← continue execution</code></pre>
+    </div>
+
+    <h3>Key Safety Checks</h3>
+    <ol>
+        <li><strong>Double re-lookup:</strong> After <code>Condition()</code> and before <code>Action()</code>, the registration is looked up again. Condition may trigger nested casts that modify the registry.</li>
+        <li><strong>IsValid() guard:</strong> Checks UObject validity after each re-lookup &mdash; the interceptor may have been garbage-collected during a nested operation.</li>
+        <li><strong>SetupTriggeringData / ClearTriggeringData</strong> bracket both <code>Condition()</code> and <code>Action()</code> independently &mdash; if Condition skips, Action's context is not leaked.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="reentrancy-safety">12. Reentrancy Safety</h2>
+
+    <h3>Deferred Removal</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>DispatchDepth &gt; 0  →  UnregisterInterceptor marks bPendingRemoval = true
+                      Handle added to PendingRemovalHandles set
+
+DispatchDepth == 0 →  FlushPendingInterceptorRemovals():
+                      - Copies PendingRemovalHandles to temp array
+                      - Calls RemoveInterceptorHandleImmediate for each
+                      - Refreshes EventsWithInterceptors cache per affected tag</code></pre>
+    </div>
+
+    <h3>FinishDispatch Lambda</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>auto FinishDispatch = [&amp;]()
+{
+    --(*DispatchDepth);
+    if (*DispatchDepth == 0)
+    {
+        FlushPendingInterceptorRemovals(...);
+    }
+};</code></pre>
+    </div>
+    <p>Called on <strong>every exit path</strong> &mdash; both normal completion and early halt.</p>
+
+    <h3>Nested Broadcast Example</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Status A fires Pre-event
+  └─ Interceptor X.Condition() returns true
+  └─ Interceptor X.Action() casts Status B
+       └─ Status B fires Pre-event
+            └─ Interceptor Y (same registry) dispatches
+            └─ DispatchDepth = 2
+       └─ Status B finishes → DispatchDepth back to 1
+  └─ Back in Status A dispatch → DispatchDepth = 1
+  └─ Remaining interceptors for Status A execute
+  └─ FinishDispatch → DispatchDepth = 0 → flush pending removals</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="payload-system">13. Payload System</h2>
+    <p>Payload entries expose the <strong>inputs and outputs</strong> of the StatusForge graph node adjacent to the event.</p>
+
+    <h3>13.1 Compiled Payload Entry</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgePayloadEntry
+{
+    FName FieldName;    // Pin name from the adjacent node
+    uint16 Offset;      // Byte offset / pool index / arg index
+    uint8 Source;        // EForgeDataSource (Literal, Context, Instance, CallFrame)
+    uint8 FieldType;    // EForgeFieldType
+};</code></pre>
+    </div>
+    <p>Compiled into the <code>StatusDefinition</code> at editor time. At runtime, the VM sets <code>Context.ActivePayloadEntries</code> and <code>Context.ActivePayloadCount</code> before the broadcast.</p>
+
+    <h3>13.2 Reading Payload Values</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Internal template (anonymous namespace)
+template&lt;typename T&gt;
+T ReadPayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry)
+{
+    switch (static_cast&lt;EForgeDataSource&gt;(Entry.Source))
+    {
+    case Literal:   return Ctx-&gt;ReadLiteral&lt;T&gt;(Entry.Offset);
+    case Context:   return Ctx-&gt;ReadFromMemory&lt;T&gt;(Ctx-&gt;ContextStack, Entry.Offset);
+    case Instance:  return Ctx-&gt;ReadFromInstanceBlob&lt;T&gt;(Entry.Offset);
+    case CallFrame: return Ctx-&gt;ReadCallFrameValue&lt;T&gt;(Entry.Offset);
+    default:        return T();
+    }
+}</code></pre>
+    </div>
+
+    <h3>13.3 Writing Payload Values</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry, const T&amp; Value)
+{
+    switch (static_cast&lt;EForgeDataSource&gt;(Entry.Source))
+    {
+    case Context:   Ctx-&gt;WriteToMemory&lt;T&gt;(Ctx-&gt;ContextStack, Entry.Offset, Value);  return true;
+    case Instance:  Ctx-&gt;WriteToInstanceBlob&lt;T&gt;(Entry.Offset, Value);               return true;
+    default:        return false;  // Literal and CallFrame are read-only
+    }
+}</code></pre>
+    </div>
+
+    <h3>13.4 Write Validation</h3>
+    <p>Every <code>SetPayload*</code> call passes through <code>CanWritePayloadEntry()</code>:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>1. Entry exists?                     → FindPayloadEntry(Ctx, FieldName)
+2. Type matches?                     → Entry-&gt;FieldType == ExpectedFieldType
+3. Source supports writes?           → Context or Instance only
+4. Bounds check passes?              → Offset + sizeof(T) ≤ region size</code></pre>
+    </div>
+    <p>All four checks must pass before the write is committed.</p>
+
+    <h3>13.5 Blueprint API</h3>
+    <p><strong>Getters</strong> (BlueprintPure):</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return Type</th>
+                <th>bFound Output</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetPayloadFloat</code></td><td><code>float</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadInt</code></td><td><code>int32</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadBool</code></td><td><code>bool</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadTag</code></td><td><code>FGameplayTag</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadTagContainer</code></td><td><code>FGameplayTagContainer</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadObject</code></td><td><code>UObject*</code></td><td>✓</td></tr>
+            <tr><td><code>GetPayloadVector</code></td><td><code>FVector</code></td><td>✓</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Setters</strong> (BlueprintCallable, returns <code>bool</code>):</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Value Type</th>
+                <th>Writable Sources</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SetPayloadFloat</code></td><td><code>float</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadInt</code></td><td><code>int32</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadBool</code></td><td><code>bool</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadTag</code></td><td><code>FGameplayTag</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadTagContainer</code></td><td><code>FGameplayTagContainer</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadObject</code></td><td><code>UObject*</code></td><td>Context, Instance</td></tr>
+            <tr><td><code>SetPayloadVector</code></td><td><code>FVector</code></td><td>Context, Instance</td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Introspection:</strong></p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return Type</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>HasPayloadField</code></td><td><code>bool</code></td><td>Check if a field exists by name</td></tr>
+            <tr><td><code>GetPayloadFieldNames</code></td><td><code>TArray&lt;FName&gt;</code></td><td>List all available payload fields</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="variable-access">14. Variable Access</h2>
+    <p>Interceptors can read and write <strong>status variables</strong> of the triggering status via the <code>ForgeVariableAccess</code> helper.</p>
+
+    <h3>14.1 Read Path</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float UForgeInterceptorBase::GetVariableFloat(FGameplayTag VariableTag, bool&amp; bFound) const
+{
+    float Value = 0.f;
+    FForgeVMContext* Context = GetActiveContext();
+    if (!Context || !Context-&gt;Definition) { bFound = false; return Value; }
+    bFound = ForgeVariableAccess::ReadVariable&lt;float&gt;(
+        Context-&gt;Definition,
+        ForgeVariableAccess::GetVariableBlobConst(*Context),
+        VariableTag, ForgeFieldTypes::Float, Value);
+    return Value;
+}</code></pre>
+    </div>
+    <p>The variable blob is resolved from the active context &mdash; either the instance blob (persistent) or the context stack (transient), depending on the status state.</p>
+
+    <h3>14.2 Write Path</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool UForgeInterceptorBase::SetVariableFloat(FGameplayTag VariableTag, float Value)
+{
+    FForgeVMContext* Context = GetActiveContext();
+    if (!Context || !Context-&gt;Definition) return false;
+    return ForgeVariableAccess::WriteVariable&lt;float&gt;(
+        Context-&gt;Definition,
+        ForgeVariableAccess::GetVariableBlob(*Context),
+        VariableTag, ForgeFieldTypes::Float, Value);
+}</code></pre>
+    </div>
+
+    <h3>14.3 Object Variable Indirection</h3>
+    <p>Object variables are stored as <code>uint16</code> pool indices in the variable blob. The interceptor resolves them through the context's object pool:</p>
+    <p><strong>Read:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 ObjectIndex = ...;  // Read from blob
+return Context-&gt;Instance
+    ? Context-&gt;GetInstanceObject(ObjectIndex)
+    : Context-&gt;GetContextObject(ObjectIndex);</code></pre>
+    </div>
+
+    <p><strong>Write:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 ObjectIndex = Context-&gt;Instance
+    ? Context-&gt;AllocInstanceObject(Value)
+    : Context-&gt;AllocContextObject(Value);
+// Write ObjectIndex to blob</code></pre>
+    </div>
+
+    <h3>14.4 Blueprint API</h3>
+    <p><strong>Getters</strong> (BlueprintPure, <code>meta = (Categories = "StatsX.Variable")</code>):</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetVariableFloat</code></td><td><code>float</code></td></tr>
+            <tr><td><code>GetVariableInt</code></td><td><code>int32</code></td></tr>
+            <tr><td><code>GetVariableBool</code></td><td><code>bool</code></td></tr>
+            <tr><td><code>GetVariableTag</code></td><td><code>FGameplayTag</code></td></tr>
+            <tr><td><code>GetVariableVector</code></td><td><code>FVector</code></td></tr>
+            <tr><td><code>GetVariableObject</code></td><td><code>UObject*</code></td></tr>
+        </tbody>
+    </table>
+
+    <p><strong>Setters</strong> (BlueprintCallable, returns <code>bool</code>):</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Value Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>SetVariableFloat</code></td><td><code>float</code></td></tr>
+            <tr><td><code>SetVariableInt</code></td><td><code>int32</code></td></tr>
+            <tr><td><code>SetVariableBool</code></td><td><code>bool</code></td></tr>
+            <tr><td><code>SetVariableTag</code></td><td><code>FGameplayTag</code></td></tr>
+            <tr><td><code>SetVariableVector</code></td><td><code>FVector</code></td></tr>
+            <tr><td><code>SetVariableObject</code></td><td><code>UObject*</code></td></tr>
+        </tbody>
+    </table>
+    <p>All variable accessors use the <code>Categories = "StatsX.Variable"</code> meta specifier, providing a filtered tag picker in the Blueprint editor.</p>
+
+    <hr>
+
+    <h2 id="context-accessors">15. Context Accessors</h2>
+    <p>Two categories of context are available during <code>Condition()</code> / <code>Action()</code>:</p>
+
+    <h3>15.1 Source Context (Valid Always After Registration)</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetSourceActor()</code></td><td><code>AActor*</code></td><td>The actor that <strong>registered</strong> this interceptor (caster of the registering status)</td></tr>
+            <tr><td><code>GetSourceComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>The component that <strong>registered</strong> this interceptor</td></tr>
+        </tbody>
+    </table>
+    <p>Stored as <code>TWeakObjectPtr</code> &mdash; returns <code>nullptr</code> if the source has been destroyed.</p>
+
+    <h3>15.2 Triggering Context (Valid During Condition/Action Only)</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetCasterActor()</code></td><td><code>AActor*</code></td><td>Caster of the status that <strong>triggered</strong> this event</td></tr>
+            <tr><td><code>GetTargetActor()</code></td><td><code>AActor*</code></td><td>Target of the status that <strong>triggered</strong> this event</td></tr>
+            <tr><td><code>GetCasterComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Caster's component</td></tr>
+            <tr><td><code>GetTargetComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Target's component</td></tr>
+            <tr><td><code>GetTriggeringStatusID()</code></td><td><code>int64</code></td><td>StatusID of the triggering status instance</td></tr>
+            <tr><td><code>IsPreEvent()</code></td><td><code>bool</code></td><td><code>true</code> if Pre phase, <code>false</code> if Post phase</td></tr>
+        </tbody>
+    </table>
+    <p>All triggering accessors read from the top of the <code>TriggerFrameStack</code> via <code>GetActiveContext()</code>.</p>
+
+    <hr>
+
+    <h2 id="gc-safety">16. GC Safety</h2>
+
+    <h3>AddReferencedObjects</h3>
+    <p>Both <code>UStatsX_StatsComponentBase</code> and <code>UStatsX_WorldSubsystem</code> override <code>AddReferencedObjects()</code> to walk their interceptor registries:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AddInterceptorRegistryReferences(
+    TMap&lt;int32, FInterceptorRegistration&gt;&amp; Registrations,
+    FReferenceCollector&amp; Collector)
+{
+    for (auto&amp; Pair : Registrations)
+    {
+        Collector.AddReferencedObject(Pair.Value.Interceptor);
+    }
+}</code></pre>
+    </div>
+    <p>This prevents the GC from collecting interceptor UObjects that are only referenced inside the registry maps (which are not <code>UPROPERTY</code> containers for the <code>TWeakObjectPtr&lt;UObject&gt; Owner</code> field).</p>
+
+    <h3>IsValid Checks</h3>
+    <p>The dispatch loop calls <code>IsValid(Interceptor)</code> before <strong>every</strong> use &mdash; both before Condition and before Action. This handles the edge case where a nested operation during Condition causes the interceptor to be garbage-collected.</p>
+
+    <hr>
+
+    <h2 id="performance-instrumentation">17. Performance Instrumentation</h2>
+    <p>Every interceptor operation is wrapped in <code>STATSX_INTERCEPTORS_SCOPE</code> for Unreal Insights profiling:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat Name</th>
+                <th>Scope</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.Interceptors.SetupSourceData</code></td><td>Registration-time source data setup</td></tr>
+            <tr><td><code>StatsX.Interceptors.SetupTriggeringData</code></td><td>Per-trigger context push</td></tr>
+            <tr><td><code>StatsX.Interceptors.ClearTriggeringData</code></td><td>Per-trigger context pop</td></tr>
+            <tr><td><code>StatsX.Interceptors.BroadcastEvents</code></td><td>Top-level broadcast entry point</td></tr>
+            <tr><td><code>StatsX.Interceptors.BroadcastLocal</code></td><td>Component-side BroadcastToScope</td></tr>
+            <tr><td><code>StatsX.Interceptors.Condition</code></td><td>Individual Condition() call</td></tr>
+            <tr><td><code>StatsX.Interceptors.Action</code></td><td>Individual Action() call</td></tr>
+            <tr><td><code>StatsX.Interceptors.RegisterGlobalNode</code></td><td>Global registration from node handler</td></tr>
+            <tr><td><code>StatsX.Interceptors.UnregisterLocalRuntime</code></td><td>Component-side handle unregistration</td></tr>
+            <tr><td><code>StatsX.Interceptors.UnregisterGlobalRuntime</code></td><td>Global handle unregistration</td></tr>
+            <tr><td><code>StatsX.Interceptors.UnregisterForEvent</code></td><td>Bulk unregistration by event tag</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="api-reference">18. API Reference</h2>
+
+    <h3>UForgeInterceptorBase</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Override</strong></td><td><code>Condition</code></td><td><code>bool Condition()</code> &mdash; BlueprintNativeEvent</td></tr>
+            <tr><td><strong>Override</strong></td><td><code>Action</code></td><td><code>bool Action()</code> &mdash; BlueprintNativeEvent</td></tr>
+            <tr><td><strong>Source</strong></td><td><code>GetSourceActor</code></td><td><code>AActor* GetSourceActor() const</code></td></tr>
+            <tr><td><strong>Source</strong></td><td><code>GetSourceComponent</code></td><td><code>UStatsX_StatsComponentBase* GetSourceComponent() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>GetCasterActor</code></td><td><code>AActor* GetCasterActor() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>GetTargetActor</code></td><td><code>AActor* GetTargetActor() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>GetCasterComponent</code></td><td><code>UStatsX_StatsComponentBase* GetCasterComponent() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>GetTargetComponent</code></td><td><code>UStatsX_StatsComponentBase* GetTargetComponent() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>GetTriggeringStatusID</code></td><td><code>int64 GetTriggeringStatusID() const</code></td></tr>
+            <tr><td><strong>Triggering</strong></td><td><code>IsPreEvent</code></td><td><code>bool IsPreEvent() const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>HasPayloadField</code></td><td><code>bool HasPayloadField(FName FieldName) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadFloat</code></td><td><code>float GetPayloadFloat(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadInt</code></td><td><code>int32 GetPayloadInt(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadBool</code></td><td><code>bool GetPayloadBool(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadTag</code></td><td><code>FGameplayTag GetPayloadTag(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadTagContainer</code></td><td><code>FGameplayTagContainer GetPayloadTagContainer(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadObject</code></td><td><code>UObject* GetPayloadObject(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadVector</code></td><td><code>FVector GetPayloadVector(FName, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadFloat</code></td><td><code>bool SetPayloadFloat(FName, float)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadInt</code></td><td><code>bool SetPayloadInt(FName, int32)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadBool</code></td><td><code>bool SetPayloadBool(FName, bool)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadTag</code></td><td><code>bool SetPayloadTag(FName, FGameplayTag)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadTagContainer</code></td><td><code>bool SetPayloadTagContainer(FName, FGameplayTagContainer)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadObject</code></td><td><code>bool SetPayloadObject(FName, UObject*)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>SetPayloadVector</code></td><td><code>bool SetPayloadVector(FName, FVector)</code></td></tr>
+            <tr><td><strong>Payload</strong></td><td><code>GetPayloadFieldNames</code></td><td><code>TArray&lt;FName&gt; GetPayloadFieldNames() const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableFloat</code></td><td><code>float GetVariableFloat(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableInt</code></td><td><code>int32 GetVariableInt(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableBool</code></td><td><code>bool GetVariableBool(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableTag</code></td><td><code>FGameplayTag GetVariableTag(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableVector</code></td><td><code>FVector GetVariableVector(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableObject</code></td><td><code>UObject* GetVariableObject(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableFloat</code></td><td><code>bool SetVariableFloat(FGameplayTag, float)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableInt</code></td><td><code>bool SetVariableInt(FGameplayTag, int32)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableBool</code></td><td><code>bool SetVariableBool(FGameplayTag, bool)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableTag</code></td><td><code>bool SetVariableTag(FGameplayTag, FGameplayTag)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableVector</code></td><td><code>bool SetVariableVector(FGameplayTag, FVector)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableObject</code></td><td><code>bool SetVariableObject(FGameplayTag, UObject*)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>UStatsX_StatsComponentBase (Interceptor Section)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>RegisterInterceptor</code></td><td><code>int32 RegisterInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, EInterceptorScope, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code></td></tr>
+            <tr><td><code>UnregisterInterceptor</code></td><td><code>bool UnregisterInterceptor(int32 Handle)</code></td></tr>
+            <tr><td><code>UnregisterInterceptorsForEvent</code></td><td><code>int32 UnregisterInterceptorsForEvent(FGameplayTag, EInterceptorScope)</code></td></tr>
+            <tr><td><code>UnregisterAllInterceptorsFromSource</code></td><td><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td></tr>
+            <tr><td><code>UnregisterAllInterceptorsFromStatusID</code></td><td><code>int32 UnregisterAllInterceptorsFromStatusID(int64)</code></td></tr>
+            <tr><td><code>HasInterceptorsForEvents</code></td><td><code>bool HasInterceptorsForEvents(FGameplayTagContainer, EInterceptorScope) const</code></td></tr>
+            <tr><td><code>GetInterceptorCountForEvent</code></td><td><code>int32 GetInterceptorCountForEvent(FGameplayTag, EInterceptorScope) const</code></td></tr>
+            <tr><td><code>GetHandlesForEvent</code></td><td><code>TArray&lt;int32&gt; GetHandlesForEvent(FGameplayTag, EInterceptorScope) const</code></td></tr>
+            <tr><td><code>BroadcastToScope</code></td><td><code>bool BroadcastToScope(FGameplayTag, FForgeVMContext&amp;, EInterceptorScope, EInterceptorEventPhase)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>UStatsX_WorldSubsystem (Global Interceptors)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>RegisterGlobalInterceptor</code></td><td><code>int32 RegisterGlobalInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code></td></tr>
+            <tr><td><code>UnregisterGlobalInterceptor</code></td><td><code>bool UnregisterGlobalInterceptor(int32 Handle)</code></td></tr>
+            <tr><td><code>UnregisterGlobalInterceptorsForEvent</code></td><td><code>int32 UnregisterGlobalInterceptorsForEvent(FGameplayTag)</code></td></tr>
+            <tr><td><code>UnregisterGlobalInterceptorsFromSource</code></td><td><code>int32 UnregisterGlobalInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td></tr>
+            <tr><td><code>UnregisterGlobalInterceptorsFromStatusID</code></td><td><code>int32 UnregisterGlobalInterceptorsFromStatusID(int64)</code></td></tr>
+            <tr><td><code>HasGlobalInterceptorsForEvents</code></td><td><code>bool HasGlobalInterceptorsForEvents(FGameplayTagContainer) const</code></td></tr>
+            <tr><td><code>GetGlobalInterceptorCountForEvent</code></td><td><code>int32 GetGlobalInterceptorCountForEvent(FGameplayTag) const</code></td></tr>
+            <tr><td><code>GetGlobalHandlesForEvent</code></td><td><code>TArray&lt;int32&gt; GetGlobalHandlesForEvent(FGameplayTag) const</code></td></tr>
+            <tr><td><code>BroadcastGlobalInterceptorEvent</code></td><td><code>bool BroadcastGlobalInterceptorEvent(FGameplayTag, FForgeVMContext&amp;, EInterceptorEventPhase)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Free Function</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>BroadcastInterceptorEvents</code></td><td><code>bool BroadcastInterceptorEvents(const FGameplayTagContainer&amp;, FForgeVMContext&amp;, EInterceptorEventPhase, UStatsX_StatsComponentBase* AffectedComponent)</code></td></tr>
+        </tbody>
+    </table>
+
+</section>

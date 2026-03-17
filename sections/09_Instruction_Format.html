@@ -1,0 +1,846 @@
+<section id="instruction-format" class="tutorial-section">
+    <h1>Instruction Format</h1>
+    
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; FStatusInstruction<br>
+        128-bit fixed-width bytecode instruction: 4 per cache line, zero-parse decode, bit-packed payload with continuation overflow.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-goals">Design Goals</a></li>
+        <li><a href="#binary-layout">Binary Layout</a></li>
+        <li><a href="#opcode-field">OpCode Field</a></li>
+        <li><a href="#flags-field">Flags Field</a></li>
+        <li><a href="#payload-region">Payload Region</a></li>
+        <li><a href="#bit-manipulation-api">Bit Manipulation API</a></li>
+        <li><a href="#data-type-helpers">Data Type Helpers</a></li>
+        <li><a href="#data-operand-encoding">Data Operand Encoding</a></li>
+        <li><a href="#inline-literal-packing-variants">Inline Literal Packing Variants</a></li>
+        <li><a href="#output-operand-encoding">Output Operand Encoding</a></li>
+        <li><a href="#continuation-instructions">Continuation Instructions</a></li>
+        <li><a href="#packing-examples">Packing Examples &mdash; Real Handlers</a></li>
+        <li><a href="#system-opcode-layouts">System OpCode Layouts</a></li>
+        <li><a href="#cache-line-alignment">Cache Line Alignment</a></li>
+        <li><a href="#serialisation-hashing">Serialisation &amp; Hashing</a></li>
+        <li><a href="#debug-utilities">Debug Utilities</a></li>
+        <li><a href="#compile-time-guarantees">Compile-Time Guarantees</a></li>
+        <li><a href="#struct-reference">Struct Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-goals">1. Design Goals</h2>
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Goal</th>
+                <th>Implementation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Cache efficiency</strong></td><td>16 bytes &rarr; exactly 4 instructions per 64-byte L1 cache line</td></tr>
+            <tr><td><strong>Zero-parse decode</strong></td><td>Bit extraction via shift+mask &mdash; no string parsing, no deserialization</td></tr>
+            <tr><td><strong>Fixed width</strong></td><td>Every instruction is exactly 128 bits &mdash; no variable-length encoding</td></tr>
+            <tr><td><strong>Compile-time verification</strong></td><td><code>static_assert(sizeof(FStatusInstruction) == 16)</code></td></tr>
+            <tr><td><strong>Overflow handling</strong></td><td>Continuation slots for nodes needing &gt; 104 bits of payload</td></tr>
+            <tr><td><strong>Endian-safe packing</strong></td><td>All operations work on native <code>uint64</code> &mdash; no byte swapping needed</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="binary-layout">2. Binary Layout</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>                            128 bits (16 bytes)
+┌──────────────────────────────────────────────────────────────────┐
+│                          FStatusInstruction                      │
+├──────────────────────────────────────────────────────────────────┤
+│  Data0 (uint64)                          │  Data1 (uint64)      │
+│                                          │                      │
+│  ┌────────┬────────┬─────────────────┐   │  ┌────────────────┐  │
+│  │ OpCode │ Flags  │  Payload Part 1 │   │  │ Payload Part 2 │  │
+│  │ [0:15] │[16:23] │   [24:63]       │   │  │   [0:63]       │  │
+│  │ 16 bit │ 8 bit  │   40 bits       │   │  │   64 bits      │  │
+│  └────────┴────────┴─────────────────┘   │  └────────────────┘  │
+│                                          │                      │
+│  Total payload: 40 + 64 = 104 bits       │                      │
+└──────────────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h3>Field Summary</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Data Slot</th>
+                <th>Bits</th>
+                <th>Width</th>
+                <th>Range</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>OpCode</strong></td><td><code>Data0</code></td><td>0&ndash;15</td><td>16 bits</td><td>0&ndash;65 535</td></tr>
+            <tr><td><strong>Flags</strong></td><td><code>Data0</code></td><td>16&ndash;23</td><td>8 bits</td><td>0&ndash;255</td></tr>
+            <tr><td><strong>Payload 1</strong></td><td><code>Data0</code></td><td>24&ndash;63</td><td>40 bits</td><td>Node-specific</td></tr>
+            <tr><td><strong>Payload 2</strong></td><td><code>Data1</code></td><td>0&ndash;63</td><td>64 bits</td><td>Node-specific</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="opcode-field">3. OpCode Field</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[0:15] — 16 bits</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 GetOpCode() const
+{
+    return static_cast&lt;uint16&gt;(Data0 &amp; 0xFFFF);
+}
+
+void SetOpCode(uint16 OpCode)
+{
+    Data0 = (Data0 &amp; ~0xFFFF) | static_cast&lt;uint64&gt;(OpCode);
+}</code></pre>
+    </div>
+
+    <h3>OpCode Ranges</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Range</th>
+                <th>Purpose</th>
+                <th>Dispatch</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0&ndash;31</td><td>System OpCodes (VM control flow)</td><td>Inline <code>switch</code> in <code>ExecuteSystemOp()</code></td></tr>
+            <tr><td>32&ndash;9 999</td><td>Built-in node handlers</td><td><code>Handlers[OpCode]</code> function pointer</td></tr>
+            <tr><td>10 000&ndash;65 535</td><td>User / custom handlers</td><td><code>Handlers[OpCode]</code> function pointer</td></tr>
+        </tbody>
+    </table>
+    <p>The 16-bit width supports 65 536 unique operations &mdash; more than sufficient for the full built-in library plus extensive user extensions.</p>
+
+    <hr>
+
+    <h2 id="flags-field">4. Flags Field</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[16:23] — 8 bits</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint8 GetFlags() const;
+void SetFlags(uint8 Flags);
+bool HasFlag(uint8 FlagBit) const;
+void SetFlag(uint8 FlagBit, bool bValue);</code></pre>
+    </div>
+
+    <h3>Defined Flags</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Bit</th>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0</td><td><code>HasContinuation</code></td><td><code>0x01</code></td><td>Next instruction(s) are pure data &mdash; not to be executed</td></tr>
+            <tr><td>1</td><td><code>DebugBreak</code></td><td><code>0x02</code></td><td>Trigger editor breakpoint before execution</td></tr>
+            <tr><td>2&ndash;4</td><td><em>(reserved)</em></td><td>&mdash;</td><td>Continuation slot count (0&ndash;7)</td></tr>
+            <tr><td>5</td><td><code>NestedAsync</code></td><td><code>0x20</code></td><td>Async node inside another async flow block</td></tr>
+            <tr><td>6&ndash;7</td><td><em>(reserved)</em></td><td>&mdash;</td><td>Available for future use</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Continuation Slot Count</h3>
+    <p>Bits 2&ndash;4 of the Flags field encode the number of <code>OP_ContinueData</code> instructions that follow this instruction (0&ndash;7 slots). Combined with the <code>HasContinuation</code> flag, this tells the handler exactly how many additional instruction-slots to read.</p>
+
+    <h3>NestedAsync Flag</h3>
+    <p>Set when an async node (Delay, WaitForEvent, etc.) is nested inside another async flow block. The VM uses this to correctly handle suspension state when multiple async operations are composed.</p>
+
+    <hr>
+
+    <h2 id="payload-region">5. Payload Region</h2>
+    <p>The 104-bit payload region (<code>Data0[24:63]</code> + <code>Data1[0:63]</code>) is entirely <strong>node-specific</strong>. There is no universal layout &mdash; each node type defines its own bit packing scheme.</p>
+
+    <h3>Typical Payload Patterns</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Pattern</th>
+                <th>Bits Used</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Single operand</strong></td><td>18 bits</td><td><code>[Source:2][Payload:16]</code> &mdash; one data input</td></tr>
+            <tr><td><strong>Dual operand</strong></td><td>36 bits</td><td>Two <code>[Source:2][Payload:16]</code> pairs</td></tr>
+            <tr><td><strong>Inline float + operand</strong></td><td>52 bits</td><td><code>[Source:2][Float32:32]</code> + <code>[Source:2][Payload:16]</code></td></tr>
+            <tr><td><strong>Jump target</strong></td><td>16 bits</td><td>Instruction index for control flow</td></tr>
+            <tr><td><strong>Dual inline float</strong></td><td>68 bits</td><td>Two <code>[Source:2][Float32:32]</code> pairs</td></tr>
+            <tr><td><strong>Inline float + enum + output</strong></td><td>~52 bits</td><td>Float operand + comparison method + output offset</td></tr>
+        </tbody>
+    </table>
+    <p>The compiler is free to pack fields in any arrangement that fits the 104-bit budget. The handler and compiler must agree on the bit layout &mdash; there is no self-describing metadata in the instruction itself.</p>
+
+    <hr>
+
+    <h2 id="bit-manipulation-api">6. Bit Manipulation API</h2>
+
+    <h3>ExtractBits &mdash; Read</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FORCEINLINE uint64 ExtractBits(uint8 DataSlot, uint8 StartBit, uint8 BitCount) const
+{
+    const uint64 Data = (DataSlot == 0) ? Data0 : Data1;
+    const uint64 Mask = (BitCount &gt;= 64) ? ~0ULL : ((1ULL &lt;&lt; BitCount) - 1);
+    return (Data &gt;&gt; StartBit) &amp; Mask;
+}</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>DataSlot</code></td><td>0 = <code>Data0</code>, 1 = <code>Data1</code></td></tr>
+            <tr><td><code>StartBit</code></td><td>Bit position within the 64-bit slot (0&ndash;63)</td></tr>
+            <tr><td><code>BitCount</code></td><td>Number of bits to extract (1&ndash;64)</td></tr>
+            <tr><td><strong>Returns</strong></td><td>Extracted value, zero-extended to <code>uint64</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>InsertBits &mdash; Write</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FORCEINLINE void InsertBits(uint8 DataSlot, uint8 StartBit, uint8 BitCount, uint64 Value)
+{
+    uint64&amp; Data = (DataSlot == 0) ? Data0 : Data1;
+    const uint64 Mask = (BitCount &gt;= 64) ? ~0ULL : ((1ULL &lt;&lt; BitCount) - 1);
+    const uint64 ClearMask = ~(Mask &lt;&lt; StartBit);
+    Data = (Data &amp; ClearMask) | ((Value &amp; Mask) &lt;&lt; StartBit);
+}</code></pre>
+    </div>
+    <p>The clear-then-set pattern ensures previously packed bits are not corrupted when inserting new values.</p>
+
+    <h3>Signed Extraction</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FORCEINLINE int64 ExtractSignedBits(uint8 DataSlot, uint8 StartBit, uint8 BitCount) const;</code></pre>
+    </div>
+    <p>Performs sign extension: if the highest extracted bit is set, the upper bits are filled with 1s. Used for signed jump offsets and signed integer operands.</p>
+
+    <hr>
+
+    <h2 id="data-type-helpers">7. Data Type Helpers</h2>
+    <p>Built on top of <code>ExtractBits</code> / <code>InsertBits</code> for common value types:</p>
+
+    <h3>Float32</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float ExtractFloat(uint8 DataSlot, uint8 StartBit) const;
+void InsertFloat(uint8 DataSlot, uint8 StartBit, float Value);</code></pre>
+    </div>
+    <p>Extracts/inserts IEEE 754 single-precision float from 32 contiguous bits via <code>reinterpret_cast</code> between <code>uint32</code> and <code>float</code>.</p>
+
+    <h3>Half-Precision Float (Float16)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float ExtractHalfFloat(uint8 DataSlot, uint8 StartBit) const;
+void InsertHalfFloat(uint8 DataSlot, uint8 StartBit, float Value);</code></pre>
+    </div>
+    <p>Uses UE5's <code>FFloat16</code> for 16-bit IEEE 754 half-precision. Useful for compact constants where full precision is not needed (multipliers, durations, thresholds).</p>
+
+    <h3>Tag Index (uint16)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 ExtractTagIndex(uint8 DataSlot, uint8 StartBit) const;
+void InsertTagIndex(uint8 DataSlot, uint8 StartBit, uint16 Index);</code></pre>
+    </div>
+    <p>Convenience wrappers for 16-bit pool indices. <code>0xFFFF</code> (<code>INVALID_TAG_INDEX</code>) is the sentinel for "no tag".</p>
+
+    <h3>Sentinel Constants</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>static constexpr uint16 INVALID_TAG_INDEX    = 0xFFFF;
+static constexpr uint16 INVALID_OBJECT_INDEX = 0xFFFF;</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="data-operand-encoding">8. Data Operand Encoding</h2>
+    <p>Every data operand in a ForgeVM instruction follows a standard encoding:</p>
+
+    <h3>Pool-Index Packing (18 bits)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌───────────┬──────────────────┐
+│ Source (2) │  Payload (16)    │ = 18 bits total
+└───────────┴──────────────────┘</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source</th>
+                <th>Payload Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>00</code> (Literal)</td><td>Index into definition literal pool</td></tr>
+            <tr><td><code>01</code> (Context)</td><td>Byte offset into ContextStack</td></tr>
+            <tr><td><code>10</code> (Instance)</td><td>Byte offset into Instance-&gt;InstanceBlob</td></tr>
+            <tr><td><code>11</code> (CallFrame)</td><td>Argument index into current function frame</td></tr>
+        </tbody>
+    </table>
+
+    <p>Read via <code>Context.ReadValue&lt;T&gt;(Instr, DataSlot, StartBit)</code>:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Decode
+EForgeDataSource Source = (EForgeDataSource)Instr.ExtractBits(DataSlot, StartBit, 2);
+uint16 Payload = (uint16)Instr.ExtractBits(DataSlot, StartBit + 2, 16);
+
+// Route
+switch (Source)
+{
+    case Literal:   return ReadLiteral&lt;T&gt;(Payload);
+    case Context:   return ReadFromMemory&lt;T&gt;(ContextStack, Payload);
+    case Instance:  return ReadFromInstanceBlob&lt;T&gt;(Payload);
+    case CallFrame: return ReadCallFrameValue&lt;T&gt;(Payload);
+}</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="inline-literal-packing-variants">9. Inline Literal Packing Variants</h2>
+    <p>For high-frequency numeric types, the compiler can embed the literal value <strong>directly in the instruction bits</strong>, eliminating pool lookups.</p>
+
+    <h3>Float32 Packing (34 bits)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌───────────┬──────────────────────────────────┐
+│ Source (2) │  Payload (32) — IEEE 754 float   │ = 34 bits
+└───────────┴──────────────────────────────────┘</code></pre>
+    </div>
+    <p>When <code>Source == Literal</code>: payload is the raw float bits.<br>
+    When <code>Source != Literal</code>: next 16 bits are a byte offset (remaining 16 bits unused).</p>
+    <p>Read via <code>Context.ReadInlineFloat(Instr, DataSlot, StartBit)</code>.</p>
+
+    <h3>Int32 Packing (34 bits)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌───────────┬──────────────────────────────────┐
+│ Source (2) │  Payload (32) — raw int32        │ = 34 bits
+└───────────┴──────────────────────────────────┘</code></pre>
+    </div>
+    <p>Same pattern. Read via <code>Context.ReadInlineInt32(Instr, DataSlot, StartBit)</code>.</p>
+
+    <h3>Half-Float Packing (18 bits)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌───────────┬──────────────────┐
+│ Source (2) │  Payload (16)    │ = 18 bits
+└───────────┴──────────────────┘</code></pre>
+    </div>
+    <p>When <code>Source == Literal</code>: payload is IEEE 754 half-precision encoded in <code>FFloat16</code>.<br>
+    When <code>Source != Literal</code>: payload is a byte offset.</p>
+    <p>Read via <code>Context.ReadInlineHalfFloat(Instr, DataSlot, StartBit)</code>.</p>
+
+    <h3>Packing Trade-Offs</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Packing</th>
+                <th>Literal Size</th>
+                <th>Pool Lookup</th>
+                <th>Best For</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Pool-Index (18b)</td><td>16-bit index</td><td>Yes (array access)</td><td>Repeated constants, complex types</td></tr>
+            <tr><td>Float32 Inline (34b)</td><td>32-bit full</td><td>No</td><td>Unique float constants</td></tr>
+            <tr><td>Int32 Inline (34b)</td><td>32-bit full</td><td>No</td><td>Unique integer constants</td></tr>
+            <tr><td>HalfFloat Inline (18b)</td><td>16-bit half</td><td>No</td><td>Compact constants (&plusmn;65504 range)</td></tr>
+        </tbody>
+    </table>
+    <p>The compiler chooses the packing strategy based on the value and available bit budget in the instruction.</p>
+
+    <hr>
+
+    <h2 id="output-operand-encoding">10. Output Operand Encoding</h2>
+    <p>Output operands are simpler than inputs &mdash; they store only a <strong>16-bit byte offset</strong> with no source flag:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────────────┐
+│  Offset (16)     │ = 16 bits
+└──────────────────┘</code></pre>
+    </div>
+
+    <p>The destination (ContextStack vs InstanceBlob) is determined by the node's execution mode:</p>
+    <ul>
+        <li><strong>Synchronous nodes</strong> &rarr; <code>WriteOutput&lt;T&gt;(Offset, Value)</code> &rarr; ContextStack</li>
+        <li><strong>Async nodes</strong> &rarr; <code>WriteOutputToInstance&lt;T&gt;(Offset, Value)</code> &rarr; InstanceBlob</li>
+    </ul>
+
+    <p>Read via <code>Context.ReadOutputOffset(Instr, DataSlot, StartBit)</code>.</p>
+
+    <hr>
+
+    <h2 id="continuation-instructions">11. Continuation Instructions</h2>
+    <p>When a node requires more than 104 bits of payload, the compiler emits <strong>continuation instructions</strong> immediately after the primary instruction.</p>
+
+    <h3>Continuation Slot Layout</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Address   Instruction
+───────   ─────────────────────────────────────
+PC        Primary instruction (OpCode + Flags + Payload)
+PC+1      OP_ContinueData  [128 bits of pure data]
+PC+2      OP_ContinueData  [128 bits of pure data]  (if needed)
+...       ...</code></pre>
+    </div>
+
+    <h3>Flag Encoding</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Flag/Bits</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>HasContinuation</code> (bit 0)</td><td>Signals that continuation slots follow</td></tr>
+            <tr><td>Flags bits 2&ndash;4</td><td>Continuation slot count (0&ndash;7)</td></tr>
+        </tbody>
+    </table>
+    <p>Maximum overflow: 7 &times; 128 = <strong>896 additional bits</strong>, for a total of 104 + 896 = <strong>1&nbsp;000 bits</strong> per node.</p>
+
+    <h3>Handler Protocol</h3>
+    <ol>
+        <li>The VM pre-increments <code>PC</code> before calling the handler</li>
+        <li>The handler reads continuations via <code>Context.GetContinuationInstruction(Offset)</code>:
+            <ul>
+                <li>Offset 1 &rarr; <code>Instructions[PC]</code> (first continuation)</li>
+                <li>Offset 2 &rarr; <code>Instructions[PC + 1]</code> (second continuation)</li>
+            </ul>
+        </li>
+        <li>The handler advances <code>PC</code> past the continuation slots after reading</li>
+    </ol>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Handler example with 1 continuation slot
+const FStatusInstruction* Cont1 = Context.GetContinuationInstruction(1);
+float ExtraParam = Cont1-&gt;ExtractFloat(0, 0);
+uint16 ExtraIndex = (uint16)Cont1-&gt;ExtractBits(0, 32, 16);
+Context.PC += 1;  // Skip past the continuation slot</code></pre>
+    </div>
+
+    <h3>OP_ContinueData (OpCode 7)</h3>
+    <p>The <code>OP_ContinueData</code> instruction is <strong>never executed</strong> by the VM's dispatch loop. If the PC ever lands on one (which should not happen in valid bytecode), the system op handler simply increments PC and continues. Its entire 128 bits are available as pure data for the preceding handler.</p>
+
+    <hr>
+
+    <h2 id="packing-examples">12. Packing Examples &mdash; Real Handlers</h2>
+
+    <h3>Example 1: CompareFloats &mdash; Dual Inline Float + Enum</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>CompareFloats(Context, Instr)
+
+Data0 [0:15]   OpCode = CompareFloats
+Data0 [16:23]  Flags
+Data0 [24:25]  Source A (2 bits)
+Data0 [26:57]  Float A  (32 bits — inline IEEE 754)
+
+Data1 [0:1]    Source B (2 bits)
+Data1 [2:33]   Float B  (32 bits — inline IEEE 754)
+Data1 [34:35]  Source Method (2 bits)
+Data1 [36:51]  Comparison Method payload (16 bits)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float A = Context.ReadInlineFloat(Instr, 0, 24);           // Data0[24:57]
+float B = Context.ReadInlineFloat(Instr, 1, 0);            // Data1[0:33]
+auto Method = Context.ReadValue&lt;uint8&gt;(Instr, 1, 34);      // Data1[34:51]</code></pre>
+    </div>
+    <p>Total payload used: 34 + 34 + 18 = <strong>86 bits</strong> out of 104 available.</p>
+
+    <h3>Example 2: UntilDeprecationBehavior &mdash; Single Inline Float</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [0:15]   OpCode
+Data0 [16:23]  Flags
+Data0 [24:63]  (node-specific control data)
+
+Data1 [0:1]    Source Duration (2 bits)
+Data1 [2:33]   Duration float (32 bits — inline IEEE 754)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const float Duration = Context.ReadInlineFloat(Instr, 1, 0);  // Data1[0:33]</code></pre>
+    </div>
+
+    <h3>Example 3: Generic Input Operand &mdash; Pool-Index Packing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [StartBit]     Source (2 bits)
+Data0 [StartBit+2]   Pool index or byte offset (16 bits)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const EForgeDataSource Source = (EForgeDataSource)Instr.ExtractBits(0, StartBit, 2);
+const uint16 Payload = (uint16)Instr.ExtractBits(0, StartBit + 2, 16);</code></pre>
+    </div>
+    <p>18 bits per operand &mdash; up to 5 pool-index operands fit in a single 104-bit payload.</p>
+
+    <hr>
+
+    <h2 id="system-opcode-layouts">13. System OpCode Layouts</h2>
+    <p>System OpCodes (0&ndash;31) have standardised payload layouts defined by the VM:</p>
+
+    <h3>OP_Jump (1)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  TargetPC (16 bits)</code></pre>
+    </div>
+
+    <h3>OP_JumpIfFalse (2)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  TargetPC (16 bits)
+Data0 [40:55]  Condition payload (16 bits)
+Data0 [56:63]  Condition source (8 bits — full EForgeDataSource byte)</code></pre>
+    </div>
+
+    <h3>OP_JumpTable (3)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  Case count (16 bits)
+Data0 [40:55]  Switch value payload (16 bits)
+Data0 [56:63]  Switch value source (8 bits)
+
+Data1 [0:15]   Default jump target (16 bits)
+
+// Followed by N OP_ContinueData instructions:
+ContinueData[i]:
+  Data0 [24:39]  Case value (16 bits, signed)
+  Data0 [40:55]  Jump target (16 bits)</code></pre>
+    </div>
+
+    <h3>OP_BeginBlock (5)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  FlowNodeIdx (16 bits)
+Data0 [40:55]  OnCompletedPC (16 bits)
+
+Data1 [0:15]   LoopCount (16 bits, 0 for non-loop blocks)</code></pre>
+    </div>
+
+    <h3>OP_EndBlock (6)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  FlowNodeIdx (16 bits)</code></pre>
+    </div>
+
+    <h3>OP_EndEventBlock (9)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  ReturnDescIdx (16 bits)</code></pre>
+    </div>
+
+    <h3>OP_CallFunction (10)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0 [24:39]  TargetIndex (16 bits — must point to OP_BeginEventBlock)
+Data0 [40:55]  ArgDescIdx (16 bits, 0xFFFF = no args)
+
+Data1 [0:15]   OutTargetDescIdx (16 bits, 0xFFFF = no outputs)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="cache-line-alignment">14. Cache Line Alignment</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>64-byte L1 Cache Line
+┌──────────────┬──────────────┬──────────────┬──────────────┐
+│  Instr [0]   │  Instr [1]   │  Instr [2]   │  Instr [3]   │
+│  16 bytes    │  16 bytes    │  16 bytes    │  16 bytes    │
+└──────────────┴──────────────┴──────────────┴──────────────┘</code></pre>
+    </div>
+
+    <ul>
+        <li><strong>4 instructions per cache line</strong> &mdash; sequential execution benefits from hardware prefetching</li>
+        <li>Small status definitions (&lt; 16 instructions) fit entirely in 4 cache lines</li>
+        <li>Jump targets within the same cache line have zero cache-miss penalty</li>
+        <li>The <code>TArray&lt;FStatusInstruction&gt;</code> storage in <code>UPDA_StatusDefinition</code> is contiguous &mdash; no pointer chasing</li>
+    </ul>
+
+    <h3>Memory Density</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Instruction size</td><td>16 bytes</td></tr>
+            <tr><td>Instructions per cache line</td><td>4</td></tr>
+            <tr><td>Typical status size</td><td>10&ndash;50 instructions</td></tr>
+            <tr><td>Typical status memory</td><td>160&ndash;800 bytes</td></tr>
+            <tr><td>1000 active definitions loaded</td><td>~0.5&ndash;4 MB instruction memory</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="serialisation-hashing">15. Serialisation &amp; Hashing</h2>
+
+    <h3>Serialisation</h3>
+    <p><code>FStatusInstruction</code> is a <code>USTRUCT(BlueprintType)</code> with two <code>UPROPERTY</code> <code>uint64</code> fields. UE5's default serialisation handles persistence to <code>UPDA_StatusDefinition</code> assets automatically &mdash; no custom serialiser needed.</p>
+
+    <h3>Equality</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool operator==(const FStatusInstruction&amp; Other) const
+{
+    return Data0 == Other.Data0 &amp;&amp; Data1 == Other.Data1;
+}</code></pre>
+    </div>
+    <p>Two 64-bit comparisons &mdash; branch-free on modern CPUs.</p>
+
+    <h3>Hashing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>friend uint32 GetTypeHash(const FStatusInstruction&amp; Instr)
+{
+    return HashCombine(GetTypeHash(Instr.Data0), GetTypeHash(Instr.Data1));
+}</code></pre>
+    </div>
+    <p>Standard UE5 hash combining for use in <code>TMap</code>/<code>TSet</code> if needed.</p>
+
+    <hr>
+
+    <h2 id="debug-utilities">16. Debug Utilities</h2>
+
+    <h3>ToString()</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Output</span>
+        </div>
+        <pre><code>"Op:42 Flags:0x01 Data0:0x00000A2B00010012 Data1:0x0000000000003FFF"</code></pre>
+    </div>
+
+    <h3>ToBinaryString()</h3>
+    <p>Renders both 64-bit slots as binary with separator marks at OpCode/Flags boundaries:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Output</span>
+        </div>
+        <pre><code>Data0: 0000000010100010|10110000|0000000000010000000000010010
+Data1: 0000000000000000000000000000000000000011111111111111</code></pre>
+    </div>
+    <p>Separators are placed at bit 16 (OpCode/Flags boundary) and bit 24 (Flags/Payload boundary) for readability.</p>
+
+    <hr>
+
+    <h2 id="compile-time-guarantees">17. Compile-Time Guarantees</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>static_assert(sizeof(FStatusInstruction) == 16,
+    "FStatusInstruction must be exactly 16 bytes!");</code></pre>
+    </div>
+    <p>This assertion prevents:</p>
+    <ul>
+        <li>Compiler padding from inflating the struct beyond 16 bytes</li>
+        <li>UPROPERTY metadata from affecting the in-memory layout</li>
+        <li>Platform differences from breaking the cache-line alignment assumption</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="struct-reference">18. Struct Reference</h2>
+
+    <h3>FStatusInstruction &mdash; Fields</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Bits</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Data0</code></td><td><code>uint64</code></td><td>64</td><td>OpCode (0&ndash;15) + Flags (16&ndash;23) + Payload Part 1 (24&ndash;63)</td></tr>
+            <tr><td><code>Data1</code></td><td><code>uint64</code></td><td>64</td><td>Payload Part 2 (0&ndash;63)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>FStatusInstruction &mdash; Methods</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetOpCode()</code></td><td><code>&rarr; uint16</code></td><td>Extract OpCode from Data0[0:15]</td></tr>
+            <tr><td><code>SetOpCode()</code></td><td><code>(uint16)</code></td><td>Set OpCode in Data0[0:15]</td></tr>
+            <tr><td><code>GetFlags()</code></td><td><code>&rarr; uint8</code></td><td>Extract Flags from Data0[16:23]</td></tr>
+            <tr><td><code>SetFlags()</code></td><td><code>(uint8)</code></td><td>Set all 8 flag bits</td></tr>
+            <tr><td><code>HasFlag()</code></td><td><code>(uint8) &rarr; bool</code></td><td>Test a specific flag bit</td></tr>
+            <tr><td><code>SetFlag()</code></td><td><code>(uint8, bool)</code></td><td>Set/clear a specific flag bit</td></tr>
+            <tr><td><code>ExtractBits()</code></td><td><code>(DataSlot, StartBit, BitCount) &rarr; uint64</code></td><td>Generic bit extraction</td></tr>
+            <tr><td><code>InsertBits()</code></td><td><code>(DataSlot, StartBit, BitCount, Value)</code></td><td>Generic bit insertion</td></tr>
+            <tr><td><code>ExtractFloat()</code></td><td><code>(DataSlot, StartBit) &rarr; float</code></td><td>Extract IEEE 754 float32</td></tr>
+            <tr><td><code>InsertFloat()</code></td><td><code>(DataSlot, StartBit, float)</code></td><td>Insert IEEE 754 float32</td></tr>
+            <tr><td><code>ExtractHalfFloat()</code></td><td><code>(DataSlot, StartBit) &rarr; float</code></td><td>Extract IEEE 754 float16 &rarr; float</td></tr>
+            <tr><td><code>InsertHalfFloat()</code></td><td><code>(DataSlot, StartBit, float)</code></td><td>Insert float &rarr; IEEE 754 float16</td></tr>
+            <tr><td><code>ExtractSignedBits()</code></td><td><code>(DataSlot, StartBit, BitCount) &rarr; int64</code></td><td>Signed extraction with sign extension</td></tr>
+            <tr><td><code>ExtractTagIndex()</code></td><td><code>(DataSlot, StartBit) &rarr; uint16</code></td><td>Extract 16-bit pool index</td></tr>
+            <tr><td><code>InsertTagIndex()</code></td><td><code>(DataSlot, StartBit, uint16)</code></td><td>Insert 16-bit pool index</td></tr>
+            <tr><td><code>ToString()</code></td><td><code>&rarr; FString</code></td><td>Human-readable hex dump</td></tr>
+            <tr><td><code>ToBinaryString()</code></td><td><code>&rarr; FString</code></td><td>Binary representation with field separators</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EStatusInstructionFlags</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>None</code></td><td><code>0x00</code></td><td>No flags set</td></tr>
+            <tr><td><code>HasContinuation</code></td><td><code>0x01</code></td><td>Next instruction(s) are continuation data</td></tr>
+            <tr><td><code>DebugBreak</code></td><td><code>0x02</code></td><td>Trigger editor breakpoint</td></tr>
+            <tr><td><em>(bits 2&ndash;4)</em></td><td>&mdash;</td><td>Continuation slot count (0&ndash;7)</td></tr>
+            <tr><td><code>NestedAsync</code></td><td><code>0x20</code></td><td>Async node nested in async flow block</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Constants</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>INVALID_TAG_INDEX</code></td><td><code>0xFFFF</code></td><td>Sentinel: no tag</td></tr>
+            <tr><td><code>INVALID_OBJECT_INDEX</code></td><td><code>0xFFFF</code></td><td>Sentinel: no object</td></tr>
+        </tbody>
+    </table>
+
+</section>

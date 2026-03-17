@@ -1,0 +1,843 @@
+<section id="status-definition" class="tutorial-section">
+<h1 id="status-definition">Status Definition</h1>
+<div class="info-box info"><div class="info-title">ℹ️ Version Info</div>
+<p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7</p>
+</div>
+<hr/>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#upda_statusdefinition-class">UPDA_StatusDefinition Class</a></li>
+<li><a href="#identity--metadata">Identity &amp; Metadata</a></li>
+<li><a href="#memory-layout-declarations">Memory Layout Declarations</a></li>
+<li><a href="#stacking-configuration">Stacking Configuration</a></li>
+<li><a href="#instruction-array">Instruction Array</a></li>
+<li><a href="#literal-pools">Literal Pools</a></li>
+<li><a href="#object-pools">Object Pools</a></li>
+<li><a href="#complex-type-pools">Complex Type Pools</a></li>
+<li><a href="#interceptor-payload-system">Interceptor Payload System</a></li>
+<li><a href="#function-call-abi">Function Call ABI</a></li>
+<li><a href="#variable-table">Variable Table</a></li>
+<li><a href="#array-indirection-metadata">Array Indirection Metadata</a></li>
+<li><a href="#struct-descriptors">Struct Descriptors</a></li>
+<li><a href="#native-struct-thunks">Native Struct Thunks</a></li>
+<li><a href="#global-status-registry">Global Status Registry</a></li>
+<li><a href="#asset-lifecycle">Asset Lifecycle</a></li>
+<li><a href="#pool-access-pattern">Pool Access Pattern</a></li>
+<li><a href="#best-practices">Best Practices</a></li>
+</ol>
+<hr/>
+<h2 id="overview">Overview</h2>
+<p><code>UPDA_StatusDefinition</code> is the <strong>compiled output</strong> of the StatusForge visual editor. It is a <code>UPrimaryDataAsset</code> that contains everything the ForgeVM needs to execute a status effect: bytecode instructions, literal constant pools, variable declarations, struct layout descriptors, and interceptor payload metadata.</p>
+<h3 id="design-principles">Design Principles</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Principle</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Immutable at runtime</strong></td>
+<td>Definitions are never modified after compilation. All mutable state lives in <code>FStatusInstance</code> or <code>FForgeVMContext</code></td>
+</tr>
+<tr>
+<td><strong>Flat pool architecture</strong></td>
+<td>All constants are stored in contiguous typed arrays (pools). Instructions reference pools via 16-bit indices, maximizing cache locality</td>
+</tr>
+<tr>
+<td><strong>Zero-allocation execution</strong></td>
+<td>The VM reads directly from pool arrays. No allocations occur during instruction dispatch</td>
+</tr>
+<tr>
+<td><strong>Self-contained</strong></td>
+<td>A single <code>UPDA_StatusDefinition</code> contains the full description of a status — bytecode, constants, variables, struct layouts, function metadata</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2 id="upda_statusdefinition-class">UPDA_StatusDefinition Class</h2>
+<p><strong>Source:</strong> <code>Data/StatusDefinition.h</code>
+<strong>Parent:</strong> <code>UPrimaryDataAsset</code></p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>UCLASS()
+class STATS_X_API UPDA_StatusDefinition : public UPrimaryDataAsset
+{
+    // Identity
+    FGameplayTag StatusTag;
+
+    // Memory layout
+    int32 InstanceBlobSize;
+    int32 GateStateRegionBytes;
+    int32 ContextStackSize;
+
+    // Stacking
+    EStatusStackingPolicy StackingPolicy;
+    int32 MaxStacks;
+    bool bStackPerCaster;
+
+    // Bytecode
+    TArray&amp;lt;FStatusInstruction&amp;gt; Instructions;
+
+    // Literal Pools (14 typed pools)
+    // Object Pools (4 reference pools)
+    // Complex Type Pools (struct data, array/map headers)
+    // Interceptor Payload metadata
+    // Function Call ABI
+    // Variable Table
+    // Struct Descriptors
+    // Native Struct Thunks
+};
+</code></pre></div>
+<hr/>
+<h2 id="identity-metadata">Identity &amp; Metadata</h2>
+<h3 id="statustag">StatusTag</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>UPROPERTY(EditAnywhere, BlueprintReadOnly)
+FGameplayTag StatusTag;
+</code></pre></div>
+<p>The unique identifier for this status definition. Must be under the <code>StatsX.Status.*</code> hierarchy. This tag is used for:</p>
+<ul>
+<li><strong>Casting by tag</strong> — <code>CastStatusSync()</code> / <code>CastStatusAsync()</code> resolve this tag from the global registry</li>
+<li><strong>Stacking resolution</strong> — <code>FindExistingStatus()</code> matches definitions by this tag</li>
+<li><strong>Status tracking</strong> — Components store this tag in their <code>CastedStatusesContainer</code> / <code>ReceivedStatusesContainer</code></li>
+<li><strong>Removal by tag</strong> — <code>RemoveStatusByTag()</code> matches against this tag</li>
+</ul>
+<hr/>
+<h2 id="memory-layout-declarations">Memory Layout Declarations</h2>
+<p>The compiler calculates three memory sizes that the VM uses to pre-allocate execution buffers:</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>InstanceBlobSize</code></td>
+<td><code>int32</code></td>
+<td>Total bytes required for the persistent instance blob (<code>FStatusInstance.InstanceBlob</code>). Includes gate/DoOnce state region + user instance variables</td>
+</tr>
+<tr>
+<td><code>GateStateRegionBytes</code></td>
+<td><code>int32</code></td>
+<td>Prefix bytes in <code>InstanceBlob</code> reserved for internal control state (Gate, DoOnce, FlipFlop nodes). User instance variables start after this offset</td>
+</tr>
+<tr>
+<td><code>ContextStackSize</code></td>
+<td><code>int32</code></td>
+<td>Total bytes required for the transient context stack (<code>FForgeVMContext.ContextStack</code>). Covers all temporary values during a single execution slice</td>
+</tr>
+</tbody>
+</table>
+<h3 id="memory-regions-diagram">Memory Regions Diagram</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>InstanceBlob (InstanceBlobSize bytes):
+┌──────────────────────────┬───────────────────────────────────┐
+│  Gate/DoOnce Region      │  User Instance Variables          │
+│  (GateStateRegionBytes)  │  (InstanceBlobSize - GateState)   │
+└──────────────────────────┴───────────────────────────────────┘
+
+ContextStack (ContextStackSize bytes):
+┌──────────────────────────────────────────────────────────────┐
+│  Transient values (cleared every execution slice)            │
+│  Written by node outputs, read by subsequent node inputs     │
+└──────────────────────────────────────────────────────────────┘
+
+VariableBlob (VariableBlobSize bytes):
+┌──────────────────────────────────────────────────────────────┐
+│  User-declared variables (persist across execution slices)   │
+│  Initialized from defaults, modifiable by OP_SetVariable     │
+└──────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<hr/>
+<h2 id="stacking-configuration">Stacking Configuration</h2>
+<p>Three fields control how the status behaves when applied to a target that already has an active instance of the same definition.</p>
+<h3 id="fields">Fields</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>UPROPERTY(EditAnywhere, BlueprintReadOnly)
+EStatusStackingPolicy StackingPolicy = EStatusStackingPolicy::Aggregate;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "-1"))
+int32 MaxStacks = -1;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly)
+bool bStackPerCaster = false;
+</code></pre></div>
+<h3 id="stacking-policies">Stacking Policies</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Policy</th>
+<th>Behavior</th>
+<th>Existing Instance</th>
+<th>New Application</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Aggregate</code></td>
+<td>Add stack, keep duration</td>
+<td>Stack count incremented</td>
+<td>VM does <strong>not</strong> re-execute</td>
+</tr>
+<tr>
+<td><code>AggregateAndRefresh</code></td>
+<td>Add stack + refresh duration</td>
+<td>Stack count incremented, duration reset</td>
+<td>VM does <strong>not</strong> re-execute</td>
+</tr>
+<tr>
+<td><code>RefreshOnly</code></td>
+<td>No stack, refresh duration</td>
+<td>Duration reset only</td>
+<td>VM does <strong>not</strong> re-execute</td>
+</tr>
+<tr>
+<td><code>Override</code></td>
+<td>Replace entirely</td>
+<td>Old instance terminated (with OnEnd)</td>
+<td>New instance created from scratch</td>
+</tr>
+<tr>
+<td><code>Reject</code></td>
+<td>Block new application</td>
+<td>Unchanged</td>
+<td>Application silently rejected</td>
+</tr>
+<tr>
+<td><code>Independent</code></td>
+<td>Always create new</td>
+<td>Unchanged</td>
+<td>New independent instance created</td>
+</tr>
+</tbody>
+</table>
+<h3 id="maxstacks">MaxStacks</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Value</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-1</code></td>
+<td>Unlimited stacks</td>
+</tr>
+<tr>
+<td><code>0</code></td>
+<td>Unlimited stacks (same as -1)</td>
+</tr>
+<tr>
+<td><code>N &gt; 0</code></td>
+<td>Cap at N stacks. Further Aggregate/AggregateAndRefresh applications above the cap behave according to the policy but won't exceed N</td>
+</tr>
+</tbody>
+</table>
+<h3 id="bstackpercaster">bStackPerCaster</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>false</code></td>
+<td>All casters share one instance on the target. Stacking from different casters affects the same instance</td>
+</tr>
+<tr>
+<td><code>true</code></td>
+<td>Each caster gets their own independent instance on the target. Caster A's poison and Caster B's poison are tracked separately</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2 id="instruction-array">Instruction Array</h2>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>UPROPERTY(EditAnywhere, BlueprintReadOnly)
+TArray&amp;lt;FStatusInstruction&amp;gt; Instructions;
+</code></pre></div>
+<p>The compiled bytecode — a flat array of 128-bit instructions. The VM executes these sequentially via a Program Counter (PC).</p>
+<p>Each <code>FStatusInstruction</code> is 16 bytes:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>┌─────────── Data0 (64 bits) ─────────────┬─── Data1 (64 bits) ───┐
+│ OpCode(16) │ Flags(8) │ Payload1(40)     │ Payload2 (64 bits)    │
+└──────────────────────────────────────────┴───────────────────────┘
+</code></pre></div>
+<p><strong>Cache alignment:</strong> 4 instructions per 64-byte L1 cache line.</p>
+<p><strong>Continuation instructions:</strong> When a node needs more than 104 bits of payload data, additional instructions with <code>OpCode = OP_Continue</code> serve as pure data slots. The <code>HasContinuation</code> flag on the parent instruction signals the VM to read subsequent slots.</p>
+<div class="info-box info"><div class="info-title">ℹ️ Info</div>
+<p>Detailed instruction encoding is covered in <strong><a href="09_Instruction_Format.md">09 — Instruction Format</a></strong>.</p>
+</div>
+<hr/>
+<h2 id="literal-pools">Literal Pools</h2>
+<p>Literal pools store <strong>immutable constant values</strong> referenced by instructions via 16-bit indices. The pool architecture eliminates pointer chasing and maximizes data locality.</p>
+<h3 id="primitive-pools">Primitive Pools</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Pool</th>
+<th>Type</th>
+<th>Index Range</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pool_Floats</code></td>
+<td><code>TArray&lt;float&gt;</code></td>
+<td>0–65535</td>
+<td>Standard float constants</td>
+</tr>
+<tr>
+<td><code>Pool_Ints</code></td>
+<td><code>TArray&lt;int32&gt;</code></td>
+<td>0–65535</td>
+<td>Integer constants</td>
+</tr>
+<tr>
+<td><code>Pool_Bools</code></td>
+<td><code>TArray&lt;bool&gt;</code></td>
+<td>0–65535</td>
+<td>Packed boolean array. Access via <code>Pool_Bools[Index] ? 1 : 0</code> (not pointer arithmetic)</td>
+</tr>
+<tr>
+<td><code>Pool_Bytes</code></td>
+<td><code>TArray&lt;uint8&gt;</code></td>
+<td>0–65535</td>
+<td>Enum values and small integers</td>
+</tr>
+<tr>
+<td><code>Pool_Names</code></td>
+<td><code>TArray&lt;FName&gt;</code></td>
+<td>0–65535</td>
+<td>Unreal FName constants</td>
+</tr>
+<tr>
+<td><code>Pool_Strings</code></td>
+<td><code>TArray&lt;FString&gt;</code></td>
+<td>0–65535</td>
+<td>String constants</td>
+</tr>
+<tr>
+<td><code>Pool_Vectors</code></td>
+<td><code>TArray&lt;FVector&gt;</code></td>
+<td>0–65535</td>
+<td>3D vector constants</td>
+</tr>
+<tr>
+<td><code>Pool_Rotator</code></td>
+<td><code>TArray&lt;FRotator&gt;</code></td>
+<td>0–65535</td>
+<td>Rotation constants</td>
+</tr>
+<tr>
+<td><code>Pool_Transforms</code></td>
+<td><code>TArray&lt;FTransform&gt;</code></td>
+<td>0–65535</td>
+<td>Pre-allocated for alignment</td>
+</tr>
+<tr>
+<td><code>Pool_Tags</code></td>
+<td><code>TArray&lt;FGameplayTag&gt;</code></td>
+<td>0–65535</td>
+<td>Gameplay tag constants</td>
+</tr>
+</tbody>
+</table>
+<h3 id="access-pattern">Access Pattern</h3>
+<p>An instruction referencing a float literal encodes:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>Data Source = Literal (0)
+Pool Index  = 16-bit index into Pool_Floats
+</code></pre></div>
+<p>The VM reads: <code>Definition-&gt;Pool_Floats[Index]</code></p>
+<hr/>
+<h2 id="object-pools">Object Pools</h2>
+<p>Object references are stored in separate pools to support different lifecycle semantics:</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Pool</th>
+<th>Type</th>
+<th>Reference Type</th>
+<th>Loading</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pool_Objects</code></td>
+<td><code>TArray&lt;TObjectPtr&lt;UObject&gt;&gt;</code></td>
+<td>Hard reference</td>
+<td>Loaded with asset</td>
+</tr>
+<tr>
+<td><code>Pool_Classes</code></td>
+<td><code>TArray&lt;TObjectPtr&lt;UClass&gt;&gt;</code></td>
+<td>Hard class reference</td>
+<td>Loaded with asset</td>
+</tr>
+<tr>
+<td><code>Pool_SoftObjects</code></td>
+<td><code>TArray&lt;TSoftObjectPtr&lt;UObject&gt;&gt;</code></td>
+<td>Soft reference</td>
+<td>Async/lazy load</td>
+</tr>
+<tr>
+<td><code>Pool_SoftClasses</code></td>
+<td><code>TArray&lt;TSoftClassPtr&lt;UObject&gt;&gt;</code></td>
+<td>Soft class reference</td>
+<td>Async/lazy load</td>
+</tr>
+</tbody>
+</table>
+<p><strong>16-bit compression:</strong> Instructions store a 16-bit pool index rather than a 64-bit pointer, saving instruction payload space. At runtime, the VM dereferences: <code>Definition-&gt;Pool_Objects[Index]</code>.</p>
+<hr/>
+<h2 id="complex-type-pools">Complex Type Pools</h2>
+<h3 id="struct-data">Struct Data</h3>
+<p>Custom structs (e.g., <code>FHitResult</code>, user-defined structs) are serialized into a contiguous byte blob, with headers providing offset and size:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>TArray&amp;lt;FForgeStructHeader&amp;gt; Pool_StructHeaders;  // Offset + Size + StructType
+TArray&amp;lt;uint8&amp;gt; Pool_StructData;                  // Raw bytes, sequential layout
+</code></pre></div>
+<p><strong>FForgeStructHeader:</strong></p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Offset</code></td>
+<td><code>int32</code></td>
+<td>Byte offset in <code>Pool_StructData</code></td>
+</tr>
+<tr>
+<td><code>Size</code></td>
+<td><code>int32</code></td>
+<td>Byte count of the serialized struct</td>
+</tr>
+<tr>
+<td><code>StructType</code></td>
+<td><code>UScriptStruct*</code></td>
+<td>Type pointer for safety checks</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Access:</strong> <code>Definition-&gt;GetStructLiteral&lt;T&gt;(HeaderIndex)</code> — type-safe with editor/development runtime checks.</p>
+<h3 id="array-set-headers">Array / Set Headers</h3>
+<p>Arrays and sets of primitives are stored as ranges within their respective primitive pools:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>TArray&amp;lt;FForgeArrayHeader&amp;gt; Pool_ArraysHeaders;  // StartIndex + Count
+</code></pre></div>
+<p><strong>FForgeArrayHeader:</strong></p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>StartIndex</code></td>
+<td><code>uint16</code></td>
+<td>First element index in the target pool</td>
+</tr>
+<tr>
+<td><code>Count</code></td>
+<td><code>uint16</code></td>
+<td>Number of elements to read</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong> An array of 3 tags: <code>Header{Start:5, Count:3}</code> → read <code>Pool_Tags[5]</code>, <code>Pool_Tags[6]</code>, <code>Pool_Tags[7]</code>.</p>
+<h3 id="map-headers">Map Headers</h3>
+<p>Maps use parallel key/value pool iteration:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>TArray&amp;lt;FForgeArrayHeader&amp;gt; Pool_MapsHeaders;  // StartIndex + Count
+</code></pre></div>
+<p>Logic: Read <code>StartIndex</code> and <code>Count</code>, then iterate both <code>Pool_MapKeys</code> and <code>Pool_MapValues</code> in parallel from <code>StartIndex</code> to <code>StartIndex + Count - 1</code>.</p>
+<hr/>
+<h2 id="interceptor-payload-system">Interceptor Payload System</h2>
+<p>When a node triggers interceptor events (Pre/Post), it needs to expose its data to interceptor <code>Condition()</code> and <code>Action()</code> methods. The payload system provides a compile-time resolved, zero-allocation data descriptor.</p>
+<h3 id="fforgepayloadentry">FForgePayloadEntry</h3>
+<p>Describes one named field accessible to interceptors:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgePayloadEntry
+{
+    FName FieldName;      // Pin name (e.g., "EffectiveChange", "AttributeTag")
+    uint16 Offset;        // Byte offset / pool index depending on Source
+    uint8 Source;          // EForgeDataSource (Literal, Context, Instance, CallFrame)
+    uint8 FieldType;       // EForgeFieldType (Float, Int32, Bool, Tag, Object, Vector...)
+};
+</code></pre></div>
+<h3 id="fforgepayloaddescriptor">FForgePayloadDescriptor</h3>
+<p>Groups entries for a single <code>CallPropagation</code> node:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgePayloadDescriptor
+{
+    uint16 StartIndex;    // Into Pool_PayloadEntries
+    uint16 Count;         // Number of entries
+};
+</code></pre></div>
+<h3 id="pool-layout">Pool Layout</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>Pool_PayloadDescriptors: [ Desc0, Desc1, Desc2, ... ]
+                            │
+                            ▼
+Pool_PayloadEntries:     [ Entry0, Entry1, Entry2, ... Entry5, Entry6, ... ]
+                           ├──── Desc0 range ────┤  ├── Desc1 range ──┤
+</code></pre></div>
+<p>At runtime, interceptors receive a descriptor index and iterate the entries to read/write payload fields by name.</p>
+<hr/>
+<h2 id="function-call-abi">Function Call ABI</h2>
+<p>StatusForge supports callable functions (event blocks) with typed arguments and return values. The function call ABI is pre-compiled into the definition.</p>
+<h3 id="fforgefunctionioentry">FForgeFunctionIOEntry</h3>
+<p>Single argument or return value descriptor:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeFunctionIOEntry
+{
+    uint8 FieldType;   // EForgeFieldType
+    uint8 Source;       // EForgeDataSource
+    uint16 Payload;    // Pool index / byte offset / arg index (source-dependent)
+};
+</code></pre></div>
+<h3 id="fforgefunctioniodescriptor">FForgeFunctionIODescriptor</h3>
+<p>Groups entries for one function's inputs or outputs:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeFunctionIODescriptor
+{
+    uint16 StartIndex;  // Into Pool_FunctionIOEntries
+    uint16 Count;       // Number of entries
+};
+</code></pre></div>
+<h3 id="fforgefunctioncallframe">FForgeFunctionCallFrame</h3>
+<p>Runtime call frame for the function call stack:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeFunctionCallFrame
+{
+    int32 ReturnPC;                       // Instruction to return to
+    uint16 OutTargetDescriptorIndex;      // Descriptor for output routing (0xFFFF = none)
+    int32 ArgStartIndex;                  // Start in runtime arg slot array
+    int32 ArgCount;                       // Number of captured arguments
+    int32 ArgBlobStartOffset;             // Start in argument blob
+    int32 ObjectStartIndex;              // Start in runtime object pool
+};
+</code></pre></div>
+<h3 id="fforgefunctionargslot">FForgeFunctionArgSlot</h3>
+<p>Metadata for a single captured argument:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeFunctionArgSlot
+{
+    int32 ByteOffset;    // Offset in captured argument blob
+    uint16 ByteSize;     // Size of this value
+    uint8 FieldType;     // EForgeFieldType
+};
+</code></pre></div>
+<hr/>
+<h2 id="variable-table">Variable Table</h2>
+<p>User-declared variables are stored in a dedicated <code>VariableBlob</code> (separate from the context stack and instance blob). The definition declares variable layouts; the runtime manages the actual data.</p>
+<h3 id="fforgevariableheader">FForgeVariableHeader</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeVariableHeader
+{
+    FGameplayTag Tag;                    // Variable identifier
+    uint16 Offset;                       // Byte offset in VariableBlob
+    uint8 FieldType;                     // EForgeFieldType value
+    uint8 ContainerMode;                 // 0=Single, 1=Array, 2=Set
+    uint16 Count;                        // Max capacity (arrays/sets) or max tag count
+    uint16 StructDescriptorIndex;        // Index into StructDescriptors (0xFFFF = N/A)
+    uint16 DefaultValuePoolIndex;        // Pool-backed default for tags (0xFFFF = N/A)
+};
+</code></pre></div>
+<h3 id="variable-storage">Variable Storage</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>TArray&amp;lt;FForgeVariableHeader&amp;gt; VariableHeaders;  // Sorted by Tag for binary search
+int32 VariableBlobSize;                         // Total bytes for the variable blob
+int32 VariableDefaultsHeaderIndex;              // Index into Pool_StructHeaders for defaults
+</code></pre></div>
+<h3 id="defaults-initialization">Defaults Initialization</h3>
+<ol>
+<li>The compiler serializes all variable default values into <code>Pool_StructData</code> at <code>VariableDefaultsHeaderIndex</code></li>
+<li>At execution start, the VM copies this blob into the runtime <code>VariableBlob</code> via <code>memcpy</code></li>
+<li>Pool-backed defaults (Object, Class, GameplayTag, GameplayTagContainer) are then fixed up from their pool indices</li>
+</ol>
+<h3 id="variable-lookup">Variable Lookup</h3>
+<p>The definition provides <code>FindVariable()</code> with dual-mode search:</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Table Size</th>
+<th>Algorithm</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≤ 16 entries</td>
+<td>Linear scan</td>
+<td>Cache-friendly sequential access wins over branch-heavy binary search</td>
+</tr>
+<tr>
+<td>&gt; 16 entries</td>
+<td>Binary search</td>
+<td>Lexical ordering on tag name. O(log N)</td>
+</tr>
+</tbody>
+</table>
+<div class="info-box tip"><div class="info-title">💡 Note</div>
+<p><strong>Note:</strong> <code>FindVariable()</code> is for debug/tool use only. At runtime, all variable offsets are resolved at compile time and encoded directly in instruction payloads.</p>
+</div>
+<hr/>
+<h2 id="array-indirection-metadata">Array Indirection Metadata</h2>
+<p>Runtime dynamic arrays use an indirection layer with pre-declared slot metadata:</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>int32 ArraySlotCount;                     // Total slots needed
+TArray&amp;lt;uint8&amp;gt; ArraySlotElementTypes;      // Per-slot element type (EForgeFieldType)
+TArray&amp;lt;uint16&amp;gt; ArrayDefaultHeaders;       // Per-slot default header index (0xFFFF = empty)
+</code></pre></div>
+<p>At execution start, the VM pre-allocates <code>ArraySlotCount</code> <code>FForgeArraySlot</code> entries. Each slot is initialized with:
+- <code>ElementType</code> from <code>ArraySlotElementTypes</code>
+- Default data from <code>Pool_ArraysHeaders[ArrayDefaultHeaders[i]]</code> (if not 0xFFFF)</p>
+<p>Slots use <code>TArray&lt;uint8&gt;</code> with Unreal's geometric growth for unbounded capacity, eliminating fixed-cap buffer overrun risks.</p>
+<hr/>
+<h2 id="struct-descriptors">Struct Descriptors</h2>
+<p>Pre-computed layout descriptors enable O(k) struct copy operations at runtime (k = number of complex fields) without UScriptStruct reflection.</p>
+<h3 id="fforgestructdescriptor">FForgeStructDescriptor</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeStructDescriptor
+{
+    TObjectPtr&amp;lt;UScriptStruct&amp;gt; StructType;         // Original type
+    uint16 SerializedSize;                         // Blob size (UObject* compressed to uint16)
+    TArray&amp;lt;FForgeStructFieldMeta&amp;gt; ComplexFields;   // Fields needing special handling
+};
+</code></pre></div>
+<h3 id="fforgestructfieldmeta">FForgeStructFieldMeta</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeStructFieldMeta
+{
+    uint16 Offset;                    // Byte offset within struct blob
+    uint8 FieldType;                  // 5=Object, 8=Class, 20=Struct (nested)
+    uint16 NestedDescriptorIndex;     // For nested structs (0xFFFF = N/A)
+};
+</code></pre></div>
+<p><strong>Optimization:</strong> If <code>ComplexFields</code> is empty, the struct is pure POD and can be bulk-<code>memcpy</code>'d without field-by-field processing.</p>
+<h3 id="transient-lookup">Transient Lookup</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>// Built in PostLoad(), not serialized
+TMap&amp;lt;TObjectPtr&amp;lt;UScriptStruct&amp;gt;, int32&amp;gt; TransientStructLayoutMap;
+</code></pre></div>
+<p>Enables O(1) <code>UScriptStruct*</code> → descriptor index lookup at runtime.</p>
+<hr/>
+<h2 id="native-struct-thunks">Native Struct Thunks</h2>
+<p>For native C++ structs (e.g., <code>FHitResult</code>, <code>FTransform</code>), the compiler generates pre-computed serialization thunks that map native memory layout to VM blob format.</p>
+<h3 id="fforgenativestructthunk">FForgeNativeStructThunk</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeNativeStructThunk
+{
+    TObjectPtr&amp;lt;UScriptStruct&amp;gt; StructType;    // Native type
+    uint16 NativeSize;                        // sizeof(NativeStruct)
+    uint16 VMSize;                            // Size in VM blob
+    uint16 StructDescriptorIndex;             // Cross-reference (0xFFFF = none)
+    TArray&amp;lt;FForgeNativeFieldOp&amp;gt; Ops;          // Pre-computed copy operations
+};
+</code></pre></div>
+<h3 id="fforgenativefieldop">FForgeNativeFieldOp</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>USTRUCT()
+struct FForgeNativeFieldOp
+{
+    uint16 NativeOffset;     // Offset in C++ struct
+    uint16 VMOffset;         // Offset in VM blob
+    uint16 Size;             // Bytes to copy (BulkPOD) or native field size
+    uint8 Mode;              // ENativeFieldCopyMode
+    uint16 SubThunkIndex;    // For nested structs (0xFFFF = N/A)
+};
+</code></pre></div>
+<h3 id="copy-modes">Copy Modes</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Mode</th>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BulkPOD</code></td>
+<td>0</td>
+<td><code>memcpy</code> N bytes (adjacent POD fields merged for throughput)</td>
+</tr>
+<tr>
+<td><code>StrongObject</code></td>
+<td>1</td>
+<td><code>UObject*</code> (8B native) → <code>uint16</code> pool index</td>
+</tr>
+<tr>
+<td><code>WeakObject</code></td>
+<td>2</td>
+<td><code>TWeakObjectPtr</code> → resolve → <code>uint16</code> pool index</td>
+</tr>
+<tr>
+<td><code>LazyObject</code></td>
+<td>3</td>
+<td><code>TLazyObjectPtr</code> → resolve → <code>uint16</code> pool index</td>
+</tr>
+<tr>
+<td><code>SoftObject</code></td>
+<td>4</td>
+<td><code>TSoftObjectPtr</code> → resolve → <code>uint16</code> pool index</td>
+</tr>
+<tr>
+<td><code>NestedStruct</code></td>
+<td>5</td>
+<td>Recurse with sub-thunk</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-properties">Key Properties</h3>
+<ul>
+<li>Adjacent POD fields are <strong>merged</strong> into single <code>BulkPOD</code> operations for minimal loop iterations</li>
+<li><code>FName</code> and <code>FGameplayTag</code> are treated as POD (native size, no pool compression)</li>
+<li><code>UObject*</code> is compressed to <code>uint16</code> pool indices via <code>AllocContextObject</code></li>
+<li><code>FString</code>, <code>TArray</code>, <code>TMap</code>, <code>TSet</code>, and delegates are <strong>silently skipped</strong> (not VM-compatible)</li>
+<li>Typical operation count: 5–15 ops per struct</li>
+</ul>
+<hr/>
+<h2 id="global-status-registry">Global Status Registry</h2>
+<p>All compiled status definitions are registered in a global registry for tag-based lookup:</p>
+<h3 id="upda_immutablegamestatuses">UPDA_ImmutableGameStatuses</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">C++</span></div><pre><code>UCLASS()
+class STATS_X_API UPDA_ImmutableGameStatuses : public UPrimaryDataAsset
+{
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    TMap&amp;lt;FGameplayTag, TSoftObjectPtr&amp;lt;UPDA_StatusDefinition&amp;gt;&amp;gt; StatusesMap;
+};
+</code></pre></div>
+<ul>
+<li><strong>Soft references</strong> — definitions are not loaded into memory until needed</li>
+<li><strong>Owned by</strong> <code>UStatsX_GameInstanceSubsystem</code> — auto-loaded from plugin content at startup</li>
+<li><strong>Used by</strong> <code>CastStatusSync()</code> / <code>CastStatusAsync()</code> for tag-based resolution</li>
+</ul>
+<h3 id="resolution-flow">Resolution Flow</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>CastStatusSync(StatsX.Status.Poison, Caster, Target)
+  │
+  ├─ GameInstanceSubsystem-&amp;gt;DA_ImmutableGameStatuses
+  │    └─ StatusesMap.Find(StatsX.Status.Poison)
+  │         → TSoftObjectPtr&amp;lt;UPDA_StatusDefinition&amp;gt;
+  │
+  ├─ SynchronousLoad (if not already in memory)
+  │    ⚠ May cause hitch on first cast
+  │
+  └─ WorldSubsystem-&amp;gt;ExecuteStatus(ID, Definition, Caster, Target)
+</code></pre></div>
+<hr/>
+<h2 id="asset-lifecycle">Asset Lifecycle</h2>
+<h3 id="compilation-editor-time">Compilation (Editor Time)</h3>
+<p>The StatusForge editor compiles a visual graph into <code>UPDA_StatusDefinition</code>:</p>
+<ol>
+<li><strong>Graph traversal</strong> — walk all nodes in execution order</li>
+<li><strong>Instruction generation</strong> — each node emits one or more <code>FStatusInstruction</code></li>
+<li><strong>Pool population</strong> — constants extracted into typed pools with deduplication</li>
+<li><strong>Variable table</strong> — user-declared variables sorted by tag, offsets calculated</li>
+<li><strong>Struct descriptors</strong> — reflection-based layout generation for struct types</li>
+<li><strong>Native thunks</strong> — <code>TFieldIterator&lt;FProperty&gt;</code> walk for native struct serialization</li>
+<li><strong>Size calculation</strong> — <code>ContextStackSize</code>, <code>InstanceBlobSize</code>, <code>VariableBlobSize</code></li>
+</ol>
+<h3 id="loading-runtime">Loading (Runtime)</h3>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>Asset Load (Unreal)
+  │
+  ├─ Deserialize all UPROPERTYs
+  │
+  └─ PostLoad()
+       └─ RebuildTransientLookups()
+            ├─ TransientStructLayoutMap: UScriptStruct* → descriptor index
+            └─ TransientNativeThunkMap: UScriptStruct* → thunk index
+</code></pre></div>
+<h3 id="execution-runtime">Execution (Runtime)</h3>
+<p>The definition is read-only during execution. All mutable state is external:</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Mutable State</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Context stack, object pool</td>
+<td><code>FForgeVMContext</code> (global, reused)</td>
+</tr>
+<tr>
+<td>Instance blob, variable blob</td>
+<td><code>FStatusInstance</code> (pooled, per-instance)</td>
+</tr>
+<tr>
+<td>Stack count, timing</td>
+<td><code>FStatusInstance</code></td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2 id="pool-access-pattern">Pool Access Pattern</h2>
+<p>Instructions access pool data through a consistent two-step pattern:</p>
+<h3 id="step-1-decode-data-source">Step 1: Decode Data Source</h3>
+<p>The instruction's data source field (2 bits) determines where to read:</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>Source</th>
+<th>Code</th>
+<th>Read From</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Literal</code></td>
+<td>0</td>
+<td>Definition pool (immutable)</td>
+</tr>
+<tr>
+<td><code>Context</code></td>
+<td>1</td>
+<td><code>FForgeVMContext.ContextStack</code> (transient)</td>
+</tr>
+<tr>
+<td><code>Instance</code></td>
+<td>2</td>
+<td><code>FStatusInstance.InstanceBlob</code> (persistent)</td>
+</tr>
+<tr>
+<td><code>CallFrame</code></td>
+<td>3</td>
+<td><code>FForgeVMContext.FunctionArgBlob</code> (per-function)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-2-resolve-value">Step 2: Resolve Value</h3>
+<p>For <code>Literal</code> source, the instruction encodes a 16-bit index into the appropriate pool. The pool is selected by the node's expected type (known at compile time).</p>
+<div class="code-block"><div class="code-header"><span class="code-lang">Structure</span></div><pre><code>Instruction: OP_ModifyAttribute
+  Source = Literal (0)
+  TypedIndex = 42
+  →  Value = Definition-&amp;gt;Pool_Floats[42]
+
+Instruction: OP_CheckTags
+  Source = Literal (0)
+  TypedIndex = 7
+  →  Value = Definition-&amp;gt;Pool_Tags[7]
+</code></pre></div>
+<p>For <code>Context</code>/<code>Instance</code>/<code>CallFrame</code> sources, the index is a byte offset into the respective blob.</p>
+<hr/>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-use-soft-references-in-the-global-registry">1. Use Soft References in the Global Registry</h3>
+<p>The <code>UPDA_ImmutableGameStatuses</code> registry holds <code>TSoftObjectPtr</code> references. This prevents loading all status definitions at startup. Use <code>CastStatusAsync()</code> for non-critical statuses to avoid synchronous load hitches.</p>
+<h3 id="2-keep-pool-sizes-manageable">2. Keep Pool Sizes Manageable</h3>
+<p>The 16-bit index limit caps each pool at 65,536 entries per definition. In practice, even the most complex status rarely exceeds a few hundred entries. If approaching the limit, split the status into smaller definitions.</p>
+<h3 id="3-leverage-struct-descriptors-for-custom-data">3. Leverage Struct Descriptors for Custom Data</h3>
+<p>For project-specific struct types used in status logic, the compiler automatically generates <code>FForgeStructDescriptor</code> entries. Pure-POD structs get optimal <code>memcpy</code> paths; structs with object references get safe field-by-field handling.</p>
+<h3 id="4-understand-the-immutability-contract">4. Understand the Immutability Contract</h3>
+<p><code>UPDA_StatusDefinition</code> is <strong>never modified at runtime</strong>. This is critical for thread safety and cache efficiency. All runtime mutation happens in:
+- <code>FForgeVMContext</code> (transient, per-execution)
+- <code>FStatusInstance</code> (persistent, per-instance)
+- <code>FForgeVariableOverride</code> (applied as a copy, not modifying the definition)</p>
+<h3 id="5-variable-defaults-are-copied-not-referenced">5. Variable Defaults Are Copied, Not Referenced</h3>
+<p>When a status is executed, variable defaults are <code>memcpy</code>'d from the definition into the runtime blob. Subsequent <code>OP_SetVariable</code> instructions modify only the runtime copy. This means multiple instances of the same definition each get independent variable state.</p>
+                </section>

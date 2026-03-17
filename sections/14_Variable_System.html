@@ -1,0 +1,1024 @@
+<section id="variable-system" class="tutorial-section">
+    <h1>Variable System</h1>
+    
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVariableHeader, VariableBlob, ForgeVariableAccess, OP_SetVariable / OP_GetVariable<br>
+        Typed, tag-addressed, compiler-laid-out variable storage within status instances &mdash; from blob allocation and defaults initialization to runtime read/write and struct deep-copy.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#architecture-overview">Architecture Overview</a></li>
+        <li><a href="#forgevariableheader">FForgeVariableHeader</a></li>
+        <li><a href="#variableblob-layout">VariableBlob Layout</a></li>
+        <li><a href="#field-type-table">Field Type Table</a></li>
+        <li><a href="#variable-table">Variable Table (StatusDefinition)</a></li>
+        <li><a href="#findvariable">FindVariable &mdash; Tag Lookup</a></li>
+        <li><a href="#three-pass-initialization">Three-Pass Initialization</a></li>
+        <li><a href="#op-setvariable">OP_SetVariable Handler</a></li>
+        <li><a href="#op-getvariable">OP_GetVariable Handler</a></li>
+        <li><a href="#forgevariableaccess">ForgeVariableAccess Helper</a></li>
+        <li><a href="#container-variables">Container Variables (Array / Set)</a></li>
+        <li><a href="#gameplaytagcontainer-encoding">GameplayTagContainer Encoding</a></li>
+        <li><a href="#object-indirection">Object Indirection &amp; Pool Remapping</a></li>
+        <li><a href="#struct-variables">Struct Variables &amp; Deep-Copy</a></li>
+        <li><a href="#variable-overrides">Variable Overrides</a></li>
+        <li><a href="#context-vs-instance-blob">Context vs Instance Blob</a></li>
+        <li><a href="#api-reference">API Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy">1. Design Philosophy</h2>
+    <p>The Variable System provides <strong>typed, tag-addressed, per-instance persistent storage</strong> for status logic. Variables are the primary way for status bytecode to maintain mutable state across ticks, suspensions, and event callbacks.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Flat binary blob</strong></td><td>All variables packed into a single <code>TArray&lt;uint8&gt;</code> &mdash; zero indirection, cache-friendly</td></tr>
+            <tr><td><strong>Compiler-resolved offsets</strong></td><td>Blob offsets are computed at compile time and baked into instructions &mdash; no runtime tag lookups in the hot path</td></tr>
+            <tr><td><strong>Tag-based access for external consumers</strong></td><td>Interceptors and Custom Logics use <code>FindVariable()</code> (binary search) &mdash; correct but slower than handlers</td></tr>
+            <tr><td><strong>Typed field descriptors</strong></td><td>24 supported field types with size validation and pool indirection</td></tr>
+            <tr><td><strong>Container modes</strong></td><td>Single (scalar), Array, Set &mdash; arrays/sets use handle indirection into a separate pool</td></tr>
+            <tr><td><strong>Three-pass initialization</strong></td><td>Allocate &rarr; copy defaults &rarr; remap pool-backed defaults (tags, objects)</td></tr>
+            <tr><td><strong>Object indirection</strong></td><td>UObject* stored as uint16 pool indices &mdash; GC-safe, 8&rarr;2 byte compression</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="architecture-overview">2. Architecture Overview</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>UPDA_StatusDefinition (Compiled Asset)
+│
+├── VariableHeaders[]          Sorted descriptors (tag, offset, type, container)
+├── VariableBlobSize           Total blob allocation in bytes
+├── VariableDefaultsHeaderIndex   Pool_StructHeaders index for defaults
+├── StructDescriptors[]        Pre-computed struct layouts
+├── ArraySlotCount             Number of array/set slots
+└── ArraySlotElementTypes[]    Per-slot element type
+
+                 ┌──────── ForgeVM Init ────────┐
+                 │ 1. Allocate blob              │
+                 │ 2. Copy defaults from pool    │
+                 │ 3. Fix up tags/objects/arrays  │
+                 └──────────────┬────────────────┘
+                                ▼
+              ┌──────────── VariableBlob ───────────────┐
+              │ [Float][Int32][Bool][Tag][uint16]...     │
+              │  ↑offset 0   ↑off 4  ↑off 8  etc.      │
+              └─────────────────────────────────────────┘
+                                │
+           ┌────────────────────┼────────────────────┐
+           │                    │                    │
+    OP_SetVariable       OP_GetVariable      ForgeVariableAccess
+    (compiler offset)    (compiler offset)   (binary search by tag)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="forgevariableheader">3. FForgeVariableHeader</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatusDefinition.h</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct STATS_X_API FForgeVariableHeader
+{
+    GENERATED_BODY()
+
+    FGameplayTag Tag;               // Variable identifier (e.g. StatsX.Variable.DamageAccumulator)
+    uint16 Offset;                  // Byte offset in VariableBlob
+    uint8  FieldType;               // EForgeFieldType (1=Float, 2=Int32, ... see Section 5)
+    uint8  ContainerMode;           // 0=Single, 1=Array, 2=Set
+    uint16 Count;                   // Array/Set: MaxCapacity. TagContainer: max tag count
+    uint16 StructDescriptorIndex;   // Index into StructDescriptors (0xFFFF if not struct)
+    uint16 DefaultValuePoolIndex;   // Pool index for tag/object defaults (0xFFFF if none)
+};</code></pre>
+    </div>
+
+    <h3>Field Breakdown</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Size</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Tag</code></td><td><code>FGameplayTag</code></td><td>Unique identifier under <code>StatsX.Variable.*</code></td></tr>
+            <tr><td><code>Offset</code></td><td><code>uint16</code></td><td>Byte offset in the blob &mdash; compiler-determined, baked into instructions</td></tr>
+            <tr><td><code>FieldType</code></td><td><code>uint8</code></td><td>Type discriminant matching <code>ForgeFieldTypes</code> constants</td></tr>
+            <tr><td><code>ContainerMode</code></td><td><code>uint8</code></td><td><code>0</code> = scalar, <code>1</code> = Array, <code>2</code> = Set</td></tr>
+            <tr><td><code>Count</code></td><td><code>uint16</code></td><td>For containers: max capacity. For GameplayTagContainer in Single mode: max tag count</td></tr>
+            <tr><td><code>StructDescriptorIndex</code></td><td><code>uint16</code></td><td>Index into <code>StructDescriptors[]</code> for struct-typed variables (0xFFFF if not struct)</td></tr>
+            <tr><td><code>DefaultValuePoolIndex</code></td><td><code>uint16</code></td><td>Pool index for tag-based or object defaults (0xFFFF = no pool-backed default)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="variableblob-layout">4. VariableBlob Layout</h2>
+
+    <p>The VariableBlob is a flat <code>TArray&lt;uint8&gt;</code> where each variable occupies a contiguous region at its compile-time <code>Offset</code>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Byte 0                                                    VariableBlobSize
+├──────┬──────┬──────┬──────────┬──────────┬──────────────┤
+│Float │Int32 │uint8 │FGameplay │ uint16   │ uint16+Tags  │
+│(4B)  │(4B)  │(1B)  │Tag       │ (handle) │ (container)  │
+│      │      │Bool  │          │ Array    │ TagContainer │
+└──────┴──────┴──────┴──────────┴──────────┴──────────────┘
+ Off 0   Off 4  Off 8  Off 9     Off 17     Off 19</code></pre>
+    </div>
+
+    <p><strong>Size per type:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Blob Footprint</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Scalar (float, int32, etc.)</td><td><code>sizeof(T)</code></td></tr>
+            <tr><td>Object / Class</td><td><code>sizeof(uint16)</code> = 2 bytes (pool index)</td></tr>
+            <tr><td>String / Text</td><td><code>sizeof(uint16)</code> = 2 bytes (pool index)</td></tr>
+            <tr><td>FName</td><td><code>sizeof(FName)</code></td></tr>
+            <tr><td>FGameplayTag</td><td><code>sizeof(FGameplayTag)</code></td></tr>
+            <tr><td>FVector</td><td><code>sizeof(FVector)</code> = 24 bytes</td></tr>
+            <tr><td>FRotator</td><td><code>sizeof(FRotator)</code> = 24 bytes</td></tr>
+            <tr><td>FTransform</td><td><code>sizeof(FTransform)</code> = 80 bytes</td></tr>
+            <tr><td>FLinearColor</td><td><code>sizeof(FLinearColor)</code> = 16 bytes</td></tr>
+            <tr><td>Array / Set</td><td><code>sizeof(uint16)</code> = 2 bytes (handle into array slot pool)</td></tr>
+            <tr><td>GameplayTagContainer</td><td><code>2 + Count * sizeof(FGameplayTag)</code> (inline count + tags)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="field-type-table">5. Field Type Table</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Helpers/ForgeVariableAccess.h (ForgeFieldTypes namespace)</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>C++ Type</th>
+                <th>Blob Size</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Float</code></td><td>1</td><td><code>float</code></td><td>4</td></tr>
+            <tr><td><code>Int32</code></td><td>2</td><td><code>int32</code></td><td>4</td></tr>
+            <tr><td><code>Bool</code></td><td>3</td><td><code>uint8</code></td><td>1</td></tr>
+            <tr><td><code>GameplayTag</code></td><td>4</td><td><code>FGameplayTag</code></td><td><code>sizeof(FGameplayTag)</code></td></tr>
+            <tr><td><code>Object</code></td><td>5</td><td><code>uint16</code> (pool index)</td><td>2</td></tr>
+            <tr><td><code>Enum</code></td><td>6</td><td><code>uint8</code></td><td>1</td></tr>
+            <tr><td><code>String</code></td><td>7</td><td><code>uint16</code> (pool index)</td><td>2</td></tr>
+            <tr><td><code>Class</code></td><td>8</td><td><code>uint16</code> (pool index)</td><td>2</td></tr>
+            <tr><td><code>Name</code></td><td>9</td><td><code>FName</code></td><td><code>sizeof(FName)</code></td></tr>
+            <tr><td><code>Text</code></td><td>10</td><td><code>uint16</code> (pool index)</td><td>2</td></tr>
+            <tr><td><code>Byte</code></td><td>11</td><td><code>uint8</code></td><td>1</td></tr>
+            <tr><td><code>Int64</code></td><td>12</td><td><code>int64</code></td><td>8</td></tr>
+            <tr><td><code>Double</code></td><td>13</td><td><code>double</code></td><td>8</td></tr>
+            <tr><td><code>Vector</code></td><td>14</td><td><code>FVector</code></td><td>24</td></tr>
+            <tr><td><code>Rotator</code></td><td>15</td><td><code>FRotator</code></td><td>24</td></tr>
+            <tr><td><code>Transform</code></td><td>16</td><td><code>FTransform</code></td><td>80</td></tr>
+            <tr><td><code>LinearColor</code></td><td>17</td><td><code>FLinearColor</code></td><td>16</td></tr>
+            <tr><td><code>SoftObject</code></td><td>18</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td><code>SoftClass</code></td><td>19</td><td>&mdash;</td><td>&mdash;</td></tr>
+            <tr><td><code>Struct</code></td><td>20</td><td>Custom</td><td><code>FForgeStructDescriptor::SerializedSize</code></td></tr>
+            <tr><td><code>GameplayTagContainer</code></td><td>24</td><td>inline</td><td><code>2 + Count × sizeof(FGameplayTag)</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="variable-table">6. Variable Table (StatusDefinition)</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatusDefinition.h (lines 576–607)</code></pre>
+    </div>
+
+    <p>The compiled <code>UPDA_StatusDefinition</code> stores the variable metadata:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Sorted variable headers (binary search by tag)
+TArray&lt;FForgeVariableHeader&gt; VariableHeaders;
+
+// Total size in bytes of the dedicated variable blob
+int32 VariableBlobSize = 0;
+
+// Index into Pool_StructHeaders for the variable defaults blob in Pool_StructData.
+// -1 means no variable defaults.
+int32 VariableDefaultsHeaderIndex = -1;
+
+// Pre-computed struct layouts for struct-typed variables
+TArray&lt;FForgeStructDescriptor&gt; StructDescriptors;
+
+// Total number of unique array slots required (variable arrays + transient)
+int32 ArraySlotCount = 0;
+
+// Per-slot element type (indexed 1:1 by array handle)
+TArray&lt;uint8&gt; ArraySlotElementTypes;</code></pre>
+    </div>
+
+    <p><strong>VariableHeaders</strong> are sorted lexically by tag name at compile time, enabling O(log n) binary search at runtime.</p>
+
+    <hr>
+
+    <h2 id="findvariable">7. FindVariable &mdash; Tag Lookup</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatusDefinition.h (lines 661–700)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const FForgeVariableHeader* FindVariable(const FGameplayTag&amp; Tag) const</code></pre>
+    </div>
+
+    <p><strong>Dual-strategy lookup:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Table Size</th>
+                <th>Strategy</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>≤ 16 entries</td><td>Linear scan</td><td>Cache-friendly contiguous walk, lower branch overhead</td></tr>
+            <tr><td>&gt; 16 entries</td><td>Binary search</td><td>O(log n) with lexical ordering matching compiler sort</td></tr>
+        </tbody>
+    </table>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>constexpr int32 LinearScanThreshold = 16;
+if (NumHeaders &lt;= LinearScanThreshold)
+{
+    // Linear scan — locality-optimized for small tables
+    for (const FForgeVariableHeader&amp; Header : VariableHeaders)
+    {
+        if (Header.Tag.GetTagName() == SearchName)
+            return &amp;Header;
+    }
+    return nullptr;
+}
+
+// Binary search — lexical FName ordering
+int32 Lo = 0, Hi = NumHeaders - 1;
+while (Lo &lt;= Hi)
+{
+    int32 Mid = (Lo + Hi) / 2;
+    const FName MidName = VariableHeaders[Mid].Tag.GetTagName();
+    if (MidName == SearchName)       return &amp;VariableHeaders[Mid];
+    else if (MidName.LexicalLess(SearchName)) Lo = Mid + 1;
+    else                             Hi = Mid - 1;
+}
+return nullptr;</code></pre>
+    </div>
+
+    <div class="info-box note">
+        <div class="info-title">💡 Note</div>
+        <p>Handlers (OP_SetVariable, OP_GetVariable) use <strong>compiler-resolved offsets</strong> and never call <code>FindVariable()</code>. This function is used by <code>ForgeVariableAccess</code> (interceptors, custom logics) for tag-based external access.</p>
+    </div>
+
+    <hr>
+
+    <h2 id="three-pass-initialization">8. Three-Pass Initialization</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/VM/ForgeVM.cpp (ExecuteStatus, lines 691–838)</code></pre>
+    </div>
+
+    <p>When a status begins execution, the ForgeVM initializes the VariableBlob in three passes:</p>
+
+    <h3>Pass 1 &mdash; Allocate &amp; Copy Defaults</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (Definition-&gt;VariableBlobSize &gt; 0)
+{
+    GlobalContext.AllocateVariableBlob(Definition-&gt;VariableBlobSize);
+
+    if (Definition-&gt;VariableDefaultsHeaderIndex &gt;= 0)
+    {
+        // memcpy defaults blob from Pool_StructData into VariableBlob
+        FMemory::Memcpy(GlobalContext.VariableBlob.GetData(),
+                        Definition-&gt;Pool_StructData.GetData() + Header.Offset,
+                        CopySize);
+    }
+}</code></pre>
+    </div>
+
+    <p>The defaults blob is a pre-serialized byte array stored in <code>Pool_StructData</code>. POD values (float, int32, vectors, etc.) are correct after this step.</p>
+
+    <h3>Pass 2 &mdash; Fix Up Pool-Backed Defaults</h3>
+    <p>Certain types can't be stored as raw bytes in the defaults blob and need reconstruction from their respective pools:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Fix-Up Strategy</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>GameplayTag</strong></td><td>Read from <code>Pool_Tags[DefaultValuePoolIndex]</code>, write <code>sizeof(FGameplayTag)</code> to blob</td></tr>
+            <tr><td><strong>GameplayTagContainer</strong></td><td>Reconstruct from <code>Pool_ArraysHeaders</code> + <code>Pool_Tags</code>: write <code>[uint16 Count][FGameplayTag × Count]</code></td></tr>
+            <tr><td><strong>Object / Class</strong></td><td>Read from <code>Pool_Objects[idx]</code> / <code>Pool_Classes[idx]</code>, allocate in <code>ContextObjectStack</code>, write <code>uint16</code> pool index</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Pass 3 &mdash; Array Slot Initialization</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>// Allocate ContextArrayPool with Definition-&gt;ArraySlotCount slots
+// For each slot:
+//   - Set ElementType from ArraySlotElementTypes[i]
+//   - Populate default data from Pool_ArraysHeaders + value pools
+//   - Object elements: remap through ContextObjectStack</code></pre>
+    </div>
+    <p>Array/Set variables store only a <code>uint16</code> handle in the blob. The actual data lives in <code>FForgeArraySlot</code> entries within the <code>ContextArrayPool</code>.</p>
+
+    <hr>
+
+    <h2 id="op-setvariable">9. OP_SetVariable Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (lines 9103–9287)
+OpCode  : 304</code></pre>
+    </div>
+
+    <h3>Instruction Layout</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[0-15]:   OpCode (304)
+Data0[16-23]:  Flags
+Data0[24-39]:  BlobOffset (16 bit, compiler-inlined)
+Data0[40-43]:  FieldType (4 bit, compiler-inlined)
+Data0[44-45]:  ContainerMode (2 bit: 0=Single, 1=Array, 2=Set)
+Data0[46-63]:  Value input (2-bit source + 16-bit payload)</code></pre>
+    </div>
+
+    <h3>Container Path (Array / Set)</h3>
+    <p>When <code>ContainerMode == 1 || 2</code>:</p>
+    <ol>
+        <li>Read destination handle (<code>uint16</code>) from VariableBlob at <code>BlobOffset</code></li>
+        <li>Read source handle from instruction (2-bit source + 16-bit payload at bit 46)</li>
+        <li>Resolve both <code>FForgeArraySlot</code> pointers</li>
+        <li>Deep copy: <code>DstSlot-&gt;Data = SrcSlot-&gt;Data</code>, copy <code>Count</code> and <code>ElementType</code></li>
+        <li><strong>Object remapping:</strong> If source is Context and destination is Instance, remap all <code>uint16</code> element indices through <code>AllocInstanceObject()</code></li>
+    </ol>
+
+    <h3>Scalar Path</h3>
+    <p>Each field type is handled individually:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>FieldType</th>
+                <th>Read</th>
+                <th>Write</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Float (1)</td><td><code>ReadValue&lt;float&gt;(Instr, 0, 46)</code></td><td><code>Memcpy</code> 4 bytes</td></tr>
+            <tr><td>Int32 (2)</td><td><code>ReadValue&lt;int32&gt;</code></td><td><code>Memcpy</code> 4 bytes</td></tr>
+            <tr><td>Bool (3)</td><td><code>ReadValue&lt;bool&gt;</code></td><td><code>Memcpy</code> 1 byte (<code>true → 1</code>, <code>false → 0</code>)</td></tr>
+            <tr><td>GameplayTag (4)</td><td><code>ReadValue&lt;FGameplayTag&gt;</code></td><td><code>Memcpy sizeof(FGameplayTag)</code></td></tr>
+            <tr><td>Object (5) / Class (8)</td><td><code>ReadValue&lt;UObject*&gt;</code></td><td><code>AllocInstanceObject</code> or <code>AllocContextObject</code> &rarr; write <code>uint16</code></td></tr>
+            <tr><td>Byte (11)</td><td><code>ReadValue&lt;uint8&gt;</code></td><td><code>Memcpy</code> 1 byte</td></tr>
+            <tr><td>Int64 (12)</td><td><code>ReadValue&lt;int64&gt;</code></td><td><code>Memcpy</code> 8 bytes</td></tr>
+            <tr><td>Vector (14)</td><td><code>ReadValue&lt;FVector&gt;</code></td><td><code>Memcpy</code> 24 bytes</td></tr>
+            <tr><td>Rotator (15)</td><td><code>ReadValue&lt;FRotator&gt;</code></td><td><code>Memcpy</code> 24 bytes</td></tr>
+            <tr><td>Transform (16)</td><td><code>ReadValue&lt;FTransform&gt;</code></td><td><code>Memcpy</code> 80 bytes</td></tr>
+            <tr><td>TagContainer (24)</td><td><code>ReadValue&lt;FGameplayTagContainer&gt;</code></td><td>Write <code>[uint16 Count][Tag × Count]</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="op-getvariable">10. OP_GetVariable Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (lines 9289–9434)
+OpCode  : 305</code></pre>
+    </div>
+
+    <h3>Instruction Layout</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[0-15]:   OpCode (305)
+Data0[16-23]:  Flags
+Data0[24-39]:  BlobOffset (16 bit, compiler-inlined)
+Data0[40-43]:  FieldType (4 bit, compiler-inlined)
+Data0[44-45]:  ContainerMode (2 bit: 0=Single, 1=Array, 2=Set)
+Data0[46-61]:  Output offset (16 bit — no source flag, always writes to context stack)</code></pre>
+    </div>
+
+    <h3>Container Path</h3>
+    <p>Array/Set: reads the <code>uint16</code> handle from the blob and writes it directly to the context stack via <code>WriteOutput&lt;uint16&gt;()</code>. <strong>Zero-copy</strong> &mdash; only the handle is transferred, not the array data.</p>
+
+    <h3>Scalar Path</h3>
+    <p>Mirrors OP_SetVariable in reverse &mdash; reads from blob, writes to context stack via <code>WriteOutput&lt;T&gt;()</code>.</p>
+
+    <p><strong>Object/Class special handling:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 ObjIdx;
+FMemory::Memcpy(&amp;ObjIdx, Src, sizeof(uint16));
+UObject* Obj = Context.Instance
+    ? Context.GetInstanceObject(ObjIdx)
+    : Context.GetContextObject(ObjIdx);
+Context.WriteOutput&lt;UObject*&gt;(OutputOffset, Obj);</code></pre>
+    </div>
+    <p>Dereferences the pool index to obtain the actual <code>UObject*</code> pointer for downstream consumption.</p>
+
+    <hr>
+
+    <h2 id="forgevariableaccess">11. ForgeVariableAccess Helper</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Helpers/ForgeVariableAccess.h</code></pre>
+    </div>
+    <p>Stateless template functions used by <strong>interceptors</strong> and <strong>custom logics</strong> for tag-based variable access at runtime.</p>
+
+    <h3>ReadVariable</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+bool ReadVariable(const UPDA_StatusDefinition* Definition, const TArray&lt;uint8&gt;&amp; Blob,
+    const FGameplayTag&amp; VariableTag, uint8 ExpectedFieldType, T&amp; OutValue)
+{
+    const FForgeVariableHeader* Header = Definition-&gt;FindVariable(VariableTag);
+    if (!Header || Header-&gt;FieldType != ExpectedFieldType) return false;
+    const int32 Offset = Header-&gt;Offset;
+    if (Offset + sizeof(T) &gt; Blob.Num()) return false;
+    FMemory::Memcpy(&amp;OutValue, Blob.GetData() + Offset, sizeof(T));
+    return true;
+}</code></pre>
+    </div>
+
+    <h3>WriteVariable</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&amp; Blob,
+    const FGameplayTag&amp; VariableTag, uint8 ExpectedFieldType, const T&amp; Value)
+{
+    const FForgeVariableHeader* Header = Definition-&gt;FindVariable(VariableTag);
+    if (!Header || Header-&gt;FieldType != ExpectedFieldType) return false;
+    const int32 Offset = Header-&gt;Offset;
+    if (Offset + sizeof(T) &gt; Blob.Num()) return false;
+    FMemory::Memcpy(Blob.GetData() + Offset, &amp;Value, sizeof(T));
+    return true;
+}</code></pre>
+    </div>
+
+    <h3>GetVariableBlob</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>inline TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp; Context)
+{
+    if (Context.Instance != nullptr)
+        return Context.Instance-&gt;VariableBlob;
+    return Context.VariableBlob;
+}</code></pre>
+    </div>
+    <p>Selects the appropriate blob: <strong>Instance</strong> blob for persistent statuses, <strong>Context</strong> blob for transient/inline execution.</p>
+
+    <h3>ForgeFieldSizeHelpers</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetScalarFieldSize(uint8 FieldType)</code></td><td>Returns byte size for a single scalar element</td></tr>
+            <tr><td><code>GetExpectedVariableSize(const FForgeVariableHeader&amp;)</code></td><td>Full blob footprint including containers and TagContainers</td></tr>
+            <tr><td><code>IsObjectFieldType(uint8 FieldType)</code></td><td>Returns true for Object (5) or Class (8)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="container-variables">12. Container Variables (Array / Set)</h2>
+    <p>Array and Set variables use <strong>handle indirection</strong> rather than storing data directly in the blob.</p>
+
+    <h3>Blob Representation</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>VariableBlob:
+  [... other vars ...][uint16 Handle][... other vars ...]
+                        ↓
+                FForgeArraySlot (in ContextArrayPool)
+                  ├── Count: uint16
+                  ├── ElementType: uint8
+                  └── Data: TArray&lt;uint8&gt;  (packed elements)</code></pre>
+    </div>
+    <p>The blob stores only a <code>uint16</code> handle (2 bytes). The actual array data lives in <code>FForgeArraySlot</code> entries managed by the <code>ContextArrayPool</code>.</p>
+
+    <h3>Container Modes</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Mode</th>
+                <th>Value</th>
+                <th>Blob Size</th>
+                <th>Semantics</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Single</td><td>0</td><td>Type-dependent</td><td>Scalar value</td></tr>
+            <tr><td>Array</td><td>1</td><td>2 (uint16 handle)</td><td>Ordered, dynamic growth</td></tr>
+            <tr><td>Set</td><td>2</td><td>2 (uint16 handle)</td><td>Unordered, dynamic growth</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Array Operations</h3>
+    <p>Related opcodes for array manipulation:</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>OpCode</th>
+                <th>Name</th>
+                <th>Operation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>306</td><td><code>OP_ArrayAdd</code></td><td>Append element to array</td></tr>
+            <tr><td>307</td><td><code>OP_ArrayGetAt</code></td><td>Read element by index</td></tr>
+            <tr><td>308</td><td><code>OP_ArrayLength</code></td><td>Get element count</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="gameplaytagcontainer-encoding">13. GameplayTagContainer Encoding</h2>
+    <p>GameplayTagContainers in Single mode use a compact inline layout in the blob:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────────────┬────────────────┬────────────────┬───┐
+│ uint16 Count     │ FGameplayTag 0 │ FGameplayTag 1 │...│
+│ (2 bytes)        │ (sizeof each)  │                │   │
+└──────────────────┴────────────────┴────────────────┴───┘
+Total size: 2 + Count × sizeof(FGameplayTag)</code></pre>
+    </div>
+    <ul>
+        <li><strong>Count</strong> header: stores the number of tags currently in the container</li>
+        <li><strong>Max capacity:</strong> <code>FForgeVariableHeader::Count</code> defines the maximum number of tags (pre-allocated space)</li>
+        <li><strong>Initialization:</strong> Reconstructed from <code>Pool_ArraysHeaders</code> + <code>Pool_Tags</code> during Pass 2</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="object-indirection">14. Object Indirection &amp; Pool Remapping</h2>
+    <p>UObject references are stored as <strong>uint16 pool indices</strong> in the blob rather than raw pointers:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>VariableBlob: [...][uint16 = 3][...]
+                       │
+                       ▼
+         InstanceObjectPool[3] → UObject* (actual pointer)
+         — or —
+         ContextObjectStack[3] → UObject* (transient)</code></pre>
+    </div>
+
+    <h3>Why Indirection?</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Reason</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>GC safety</strong></td><td>Pool arrays are UPROPERTY &mdash; Unreal tracks references</td></tr>
+            <tr><td><strong>Compression</strong></td><td>8-byte pointer &rarr; 2-byte index</td></tr>
+            <tr><td><strong>Cross-domain remapping</strong></td><td>Context&rarr;Instance migration remaps through callbacks</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Pool Selection</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Context</th>
+                <th>Pool Used</th>
+                <th>Allocation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Instance exists</td><td><code>InstanceObjectPool</code></td><td><code>AllocInstanceObject()</code></td></tr>
+            <tr><td>Transient/inline</td><td><code>ContextObjectStack</code></td><td><code>AllocContextObject()</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Remapping on SetVariable</h3>
+    <p>When writing an array from Context to Instance (e.g., during <code>InitializeFromContext</code>), object elements must be remapped:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// For each element in the array:
+UObject* Obj = Context.GetContextObject(CtxIdx);
+const uint16 InstIdx = Context.AllocInstanceObject(Obj);
+// Write InstIdx to destination slot</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="struct-variables">15. Struct Variables &amp; Deep-Copy</h2>
+    
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Helpers/ForgeVariableAccess.h (ForgeStructCopy namespace)</code></pre>
+    </div>
+    
+    <p>Struct-typed variables (FieldType = 20) use pre-computed layout descriptors for efficient cross-domain copying.</p>
+
+    <h3>FForgeStructDescriptor</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct FForgeStructDescriptor
+{
+    TObjectPtr&lt;UScriptStruct&gt; StructType;   // Original UScriptStruct (resolved by linker)
+    uint16 SerializedSize;                   // Total blob footprint
+    TArray&lt;FForgeStructFieldMeta&gt; ComplexFields;  // Object/Class refs, nested structs
+};</code></pre>
+    </div>
+
+    <h3>FForgeStructFieldMeta</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct FForgeStructFieldMeta
+{
+    uint16 Offset;                // Byte offset within struct region
+    uint8  FieldType;             // 5=Object, 8=Class, 20=Struct (nested)
+    uint16 NestedDescriptorIndex; // For nested structs (0xFFFF if not)
+};</code></pre>
+    </div>
+
+    <h3>CopyStructFast</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void CopyStructFast(
+    const FForgeStructDescriptor&amp; Desc,
+    const TArray&lt;FForgeStructDescriptor&gt;&amp; AllDescs,
+    const TArray&lt;uint8&gt;&amp; SrcBlob, int32 SrcOffset,
+    TArray&lt;uint8&gt;&amp; DstBlob, int32 DstOffset,
+    TFunctionRef&lt;UObject*(uint16)&gt; ResolveObject,
+    TFunctionRef&lt;uint16(UObject*)&gt; AllocObject);</code></pre>
+    </div>
+
+    <p><strong>Algorithm:</strong></p>
+    <ol>
+        <li><strong>Bulk memcpy</strong> &mdash; copies entire struct region (handles all POD fields in one pass)</li>
+        <li><strong>Fix up complex fields</strong> &mdash; iterates only <code>ComplexFields</code>:
+            <ul>
+                <li>Object/Class: read source pool index &rarr; resolve UObject* &rarr; allocate in dest pool &rarr; write dest index</li>
+                <li>Nested struct: recurse <code>CopyStructFast</code> with nested descriptor</li>
+            </ul>
+        </li>
+    </ol>
+    <p><strong>Complexity:</strong> O(k) where k = number of complex fields. POD-only structs (empty <code>ComplexFields</code>) need only the bulk memcpy &mdash; zero fixup overhead.</p>
+
+    <hr>
+
+    <h2 id="variable-overrides">16. Variable Overrides</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Public/Data/StatsXTypes.h (lines 955–1008)
+          Private/VM/ForgeVM.cpp (ApplyVariableOverrides, lines 1382–1473)</code></pre>
+    </div>
+
+    <p>Variable overrides allow callers to customize initial variable values when casting a status.</p>
+
+    <h3>FForgeVariableOverride</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct FForgeVariableOverride
+{
+    FGameplayTag VariableTag;         // Which variable to override
+    TArray&lt;uint8&gt; RawValue;           // Pre-serialized bytes (scalar types)
+    TObjectPtr&lt;UObject&gt; ObjectValue;  // For Object/Class overrides
+    bool bIsObjectOverride;           // True for Object/Class
+};</code></pre>
+    </div>
+
+    <h3>Factory Methods</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>static FForgeVariableOverride MakeFloat(FGameplayTag Tag, float Value);
+static FForgeVariableOverride MakeInt32(FGameplayTag Tag, int32 Value);
+static FForgeVariableOverride MakeBool(FGameplayTag Tag, bool Value);
+static FForgeVariableOverride MakeByte(FGameplayTag Tag, uint8 Value);
+static FForgeVariableOverride MakeInt64(FGameplayTag Tag, int64 Value);
+static FForgeVariableOverride MakeDouble(FGameplayTag Tag, double Value);
+static FForgeVariableOverride MakeVector(FGameplayTag Tag, FVector Value);
+static FForgeVariableOverride MakeRotator(FGameplayTag Tag, FRotator Value);
+static FForgeVariableOverride MakeTransform(FGameplayTag Tag, const FTransform&amp; Value);
+static FForgeVariableOverride MakeLinearColor(FGameplayTag Tag, FLinearColor Value);
+static FForgeVariableOverride MakeGameplayTag(FGameplayTag Tag, FGameplayTag Value);
+static FForgeVariableOverride MakeName(FGameplayTag Tag, FName Value);
+static FForgeVariableOverride MakeObject(FGameplayTag Tag, UObject* Value);
+static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code></pre>
+    </div>
+
+    <p>All scalar factories use a templated internal helper:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template &lt;typename T&gt;
+static FForgeVariableOverride MakeRaw(FGameplayTag Tag, const T&amp; Value)
+{
+    FForgeVariableOverride Override;
+    Override.VariableTag = Tag;
+    Override.RawValue.SetNumUninitialized(sizeof(T));
+    FMemory::Memcpy(Override.RawValue.GetData(), &amp;Value, sizeof(T));
+    return Override;
+}</code></pre>
+    </div>
+
+    <h3>ApplyVariableOverrides</h3>
+    <p>Called by <code>ForgeVM::ExecuteStatus()</code> <strong>after</strong> defaults initialization, <strong>before</strong> execution begins.</p>
+    
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ApplyVariableOverrides(Context, Overrides[])
+│
+├─ For each FForgeVariableOverride:
+│   ├─ FindVariable(Tag) — binary search on VariableHeaders
+│   ├─ Skip Array/Set variables (handle indirection makes override unsafe)
+│   │
+│   ├─ [Object override]:
+│   │   ├─ AllocContextObject(ObjectValue)
+│   │   └─ Write uint16 index to blob
+│   │
+│   └─ [Scalar override]:
+│       ├─ Editor-only size validation (RawValue.Num() vs expected field size)
+│       └─ Memcpy RawValue into blob at Header-&gt;Offset
+│
+└─ Done — blob now contains overridden values</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="context-vs-instance-blob">17. Context vs Instance Blob</h2>
+    <p>The system maintains two potential blob locations:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Blob</th>
+                <th>Owner</th>
+                <th>Lifetime</th>
+                <th>Usage</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FForgeVMContext::VariableBlob</code></td><td>VM context (transient)</td><td>Single execution frame</td><td>Inline/transient execution, before instance migration</td></tr>
+            <tr><td><code>FStatusInstance::VariableBlob</code></td><td>Pool instance (persistent)</td><td>Instance lifetime</td><td>Persistent status variables across ticks and suspensions</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Selection Logic</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp; Context)
+{
+    if (Context.Instance != nullptr)
+        return Context.Instance-&gt;VariableBlob;
+    return Context.VariableBlob;
+}</code></pre>
+    </div>
+
+    <p><strong>Flow:</strong></p>
+    <ol>
+        <li><strong>ExecuteStatus</strong> initializes <code>Context.VariableBlob</code></li>
+        <li>If the status acquires a pool instance, variables are migrated to <code>Instance-&gt;VariableBlob</code></li>
+        <li>All subsequent reads/writes target the instance blob</li>
+        <li>On context reset, the transient blob is zeroed but capacity is preserved</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="api-reference">18. API Reference</h2>
+
+    <h3>Handler Registration</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>OpCode</th>
+                <th>Name</th>
+                <th>Handler</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>304</td><td><code>OP_SetVariable</code></td><td><code>Nodes_Variables::SetVariable</code></td></tr>
+            <tr><td>305</td><td><code>OP_GetVariable</code></td><td><code>Nodes_Variables::GetVariable</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>ForgeVariableAccess</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ReadVariable&lt;T&gt;</code></td><td><code>bool ReadVariable(const UPDA_StatusDefinition*, const TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, T&amp; OutValue)</code></td></tr>
+            <tr><td><code>WriteVariable&lt;T&gt;</code></td><td><code>bool WriteVariable(const UPDA_StatusDefinition*, TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, const T&amp; Value)</code></td></tr>
+            <tr><td><code>GetVariableBlob</code></td><td><code>TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp;)</code></td></tr>
+            <tr><td><code>GetVariableBlobConst</code></td><td><code>const TArray&lt;uint8&gt;&amp; GetVariableBlobConst(const FForgeVMContext&amp;)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>ForgeFieldSizeHelpers</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetScalarFieldSize</code></td><td><code>int32 GetScalarFieldSize(uint8 FieldType)</code></td></tr>
+            <tr><td><code>GetExpectedVariableSize</code></td><td><code>int32 GetExpectedVariableSize(const FForgeVariableHeader&amp;)</code></td></tr>
+            <tr><td><code>IsObjectFieldType</code></td><td><code>bool IsObjectFieldType(uint8 FieldType)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>ForgeStructCopy</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>CopyStructFast</code></td><td><code>void CopyStructFast(const FForgeStructDescriptor&amp;, const TArray&lt;FForgeStructDescriptor&gt;&amp;, const TArray&lt;uint8&gt;&amp;, int32, TArray&lt;uint8&gt;&amp;, int32, TFunctionRef&lt;UObject*(uint16)&gt;, TFunctionRef&lt;uint16(UObject*)&gt;)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>FForgeVariableOverride Factory Methods</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>MakeFloat</code></td><td><code>float</code></td></tr>
+            <tr><td><code>MakeInt32</code></td><td><code>int32</code></td></tr>
+            <tr><td><code>MakeBool</code></td><td><code>bool</code></td></tr>
+            <tr><td><code>MakeByte</code></td><td><code>uint8</code></td></tr>
+            <tr><td><code>MakeInt64</code></td><td><code>int64</code></td></tr>
+            <tr><td><code>MakeDouble</code></td><td><code>double</code></td></tr>
+            <tr><td><code>MakeVector</code></td><td><code>FVector</code></td></tr>
+            <tr><td><code>MakeRotator</code></td><td><code>FRotator</code></td></tr>
+            <tr><td><code>MakeTransform</code></td><td><code>FTransform</code></td></tr>
+            <tr><td><code>MakeLinearColor</code></td><td><code>FLinearColor</code></td></tr>
+            <tr><td><code>MakeGameplayTag</code></td><td><code>FGameplayTag</code></td></tr>
+            <tr><td><code>MakeName</code></td><td><code>FName</code></td></tr>
+            <tr><td><code>MakeObject</code></td><td><code>UObject*</code></td></tr>
+            <tr><td><code>MakeClass</code></td><td><code>UClass*</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>Key Structures</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Struct</th>
+                <th>Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>FForgeVariableHeader</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
+            <tr><td><code>FForgeStructDescriptor</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
+            <tr><td><code>FForgeStructFieldMeta</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
+            <tr><td><code>FForgeVariableOverride</code></td><td><code>Public/Data/StatsXTypes.h</code></td></tr>
+        </tbody>
+    </table>
+
+</section>

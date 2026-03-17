@@ -1,0 +1,1016 @@
+<section id="execution-context" class="tutorial-section">
+    <h1>Execution Context</h1>
+    
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVMContext<br>
+        Transient execution state: the single shared scratchpad through which every handler reads inputs, writes outputs, and accesses the running status.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#struct-overview">Struct Overview</a></li>
+        <li><a href="#lifetime-reset-semantics">Lifetime &amp; Reset Semantics</a></li>
+        <li><a href="#data-sources">Data Sources (EForgeDataSource)</a></li>
+        <li><a href="#memory-regions">Memory Regions</a></li>
+        <li><a href="#object-indirection">Object Indirection &mdash; GC-Safe Pattern</a></li>
+        <li><a href="#array-indirection">Array Indirection</a></li>
+        <li><a href="#data-access-templates">Data Access Templates</a></li>
+        <li><a href="#inline-literal-packing">Inline Literal Packing</a></li>
+        <li><a href="#output-writing">Output Writing</a></li>
+        <li><a href="#function-call-frame-access">Function Call Frame Access</a></li>
+        <li><a href="#flow-control-stack">Flow Control Stack</a></li>
+        <li><a href="#interceptor-payload">Interceptor Payload</a></li>
+        <li><a href="#branching-registers">Branching Registers</a></li>
+        <li><a href="#continuation-instructions">Continuation Instructions</a></li>
+        <li><a href="#subsystem-access">Subsystem Access</a></li>
+        <li><a href="#error-reporting">Error Reporting</a></li>
+        <li><a href="#function-state-persistence">Function State Persistence</a></li>
+        <li><a href="#debug-only-facilities">Debug-Only Facilities</a></li>
+        <li><a href="#literal-pool-specialisations">Literal Pool Specialisations</a></li>
+        <li><a href="#complex-type-specialisations">Complex Type Specialisations</a></li>
+        <li><a href="#struct-reference">Struct Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy">1. Design Philosophy</h2>
+    <p><code>FForgeVMContext</code> exists for one purpose: <strong>eliminate per-execution allocation</strong>.</p>
+    <p>The VM owns a single <code>GlobalContext</code> that is reset and repopulated at the start of every <code>ExecuteStatus()</code> or <code>ResumeInstance()</code> call. All internal arrays use <code>SetNum(0, EAllowShrinking::No)</code> &mdash; capacity survives across executions, only logical size resets to zero. After a few warm-up frames, the context reaches a high-water mark and performs zero heap allocations for the remainder of the session.</p>
+    <p>The context is <strong>transient by contract</strong>: any data that must survive beyond <code>Execute()</code> is migrated to <code>FStatusInstance</code> by the handler that promoted the execution. The context itself never persists.</p>
+
+    <hr>
+
+    <h2 id="struct-overview">2. Struct Overview</h2>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
+struct FForgeVMContext
+{
+    // ── Execution State ──────────────────────────
+    int64                StatusID;
+    int32                PC;
+    UPDA_StatusDefinition* Definition;
+    FStatusInstance*      Instance;          // nullptr for inline execution
+
+    // ── Actor &amp; Component Refs ───────────────────
+    TWeakObjectPtr&lt;AActor&gt;                    CasterActor;
+    TWeakObjectPtr&lt;AActor&gt;                    TargetActor;
+    TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt; CasterComponent;
+    TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt; TargetComponent;
+
+    // ── Stack Memory ─────────────────────────────
+    TArray&lt;uint8&gt;              ContextStack;          // Transient byte blob
+    TArray&lt;UObject*&gt;           ContextObjectStack;    // GC-tracked objects (UPROPERTY)
+    TArray&lt;uint8&gt;              VariableBlob;           // Dedicated variable storage
+    TArray&lt;FForgeArraySlot&gt;    ContextArrayPool;       // Dynamic arrays
+    uint16                     ActiveTransientArrays;
+
+    // ── Flow Control ─────────────────────────────
+    TArray&lt;FForgeFlowBlock&gt;    FlowBlockStack;
+
+    // ── Function Call ABI ────────────────────────
+    TArray&lt;FForgeFunctionCallFrame&gt;  FunctionCallStack;
+    TArray&lt;FForgeFunctionArgSlot&gt;    FunctionArgSlots;
+    TArray&lt;uint8&gt;                    FunctionArgBlob;
+    TArray&lt;UObject*&gt;                 FunctionArgObjectPool;  // (UPROPERTY)
+
+    // ── Interceptor Payload ──────────────────────
+    const FForgePayloadEntry*  ActivePayloadEntries;
+    uint16                     ActivePayloadCount;
+
+    // ── Branching Registers ──────────────────────
+    bool   bLastConditionResult;
+    int32  LastSwitchValue;
+
+    // ── Error State ──────────────────────────────
+    FString LastError;
+
+    // ── Debug Only (WITH_EDITOR) ─────────────────
+    TArray&lt;FString&gt; ContextStringStack;
+};</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="lifetime-reset-semantics">3. Lifetime &amp; Reset Semantics</h2>
+    
+    <h3>Reset()</h3>
+    <p>Called at the start of every <code>ExecuteStatus()</code> and <code>ResumeInstance()</code>:</p>
+    
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void Reset(int64 InStatusID,
+           const UPDA_StatusDefinition* InDefinition,
+           FStatusInstance* InInstance);</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Reset Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code>, <code>Definition</code>, <code>Instance</code></td><td>Assigned from parameters</td></tr>
+            <tr><td><code>PC</code></td><td>Set to 0</td></tr>
+            <tr><td><code>CasterActor</code>, <code>TargetActor</code>, <code>CasterComponent</code>, <code>TargetComponent</code></td><td><code>.Reset()</code> (caller sets after)</td></tr>
+            <tr><td><code>bLastConditionResult</code>, <code>LastSwitchValue</code></td><td>Zeroed</td></tr>
+            <tr><td><code>LastError</code></td><td><code>.Empty()</code></td></tr>
+            <tr><td><code>ContextStack</code></td><td><code>Memzero</code> (preserves allocation)</td></tr>
+            <tr><td><code>VariableBlob</code></td><td><code>Memzero</code> (preserves allocation)</td></tr>
+            <tr><td><code>ContextObjectStack</code></td><td><code>SetNum(0, No)</code> (preserves capacity)</td></tr>
+            <tr><td><code>FlowBlockStack</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>FunctionCallStack</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>FunctionArgSlots</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>FunctionArgBlob</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>FunctionArgObjectPool</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>ContextArrayPool</code></td><td><code>SetNum(0, No)</code></td></tr>
+            <tr><td><code>ActiveTransientArrays</code></td><td>0</td></tr>
+            <tr><td><code>ContextStringStack</code> (editor)</td><td><code>SetNum(0, No)</code></td></tr>
+        </tbody>
+    </table>
+    <p><strong>Key principle:</strong> <code>EAllowShrinking::No</code> on every <code>SetNum(0)</code> call ensures the underlying TArray capacity is never deallocated between executions.</p>
+
+    <h3>AllocateStack / AllocateVariableBlob</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AllocateStack(int32 SizeInBytes);
+void AllocateVariableBlob(int32 SizeInBytes);</code></pre>
+    </div>
+    <p>Both follow the same pattern:</p>
+    <ol>
+        <li>If current size differs from requested &rarr; <code>SetNumUninitialized(SizeInBytes)</code></li>
+        <li>If size &gt; 0 &rarr; <code>Memzero</code> to guarantee clean reads</li>
+    </ol>
+    <p>These are called by the VM after <code>Reset()</code> &mdash; the size comes from the compiled <code>Definition-&gt;ContextStackSize</code> and <code>Definition-&gt;VariableBlobSize</code>.</p>
+
+    <hr>
+
+    <h2 id="data-sources">4. Data Sources (EForgeDataSource)</h2>
+    <p>Every data operand in an instruction encodes a <strong>2-bit source flag</strong> followed by a <strong>16-bit payload</strong>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────┬──────────────────┐
+│ Source(2) │   Payload(16)    │  = 18 bits per operand
+└──────────┴──────────────────┘</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Name</th>
+                <th>Payload Meaning</th>
+                <th>Storage</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0</td><td><strong>Literal</strong></td><td>Pool index into Definition pools</td><td>Immutable, compiled</td></tr>
+            <tr><td>1</td><td><strong>Context</strong></td><td>Byte offset into <code>ContextStack</code></td><td>Transient, per-tick</td></tr>
+            <tr><td>2</td><td><strong>Instance</strong></td><td>Byte offset into <code>Instance-&gt;InstanceBlob</code></td><td>Persistent, cross-tick</td></tr>
+            <tr><td>3</td><td><strong>CallFrame</strong></td><td>Argument index into current <code>FForgeFunctionCallFrame</code></td><td>Per-function-call</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Source Resolution Hierarchy</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ReadValue&lt;T&gt;(Instr, DataSlot, StartBit)
+  │
+  ├─ Literal  → ReadLiteral&lt;T&gt;(PoolIndex)
+  │               └─ Definition-&gt;Pool_Floats/Ints/Bools/Tags/...
+  │
+  ├─ Context  → ReadFromMemory&lt;T&gt;(ContextStack, Offset)
+  │               └─ Memcpy from transient byte blob
+  │
+  ├─ Instance → ReadFromInstanceBlob&lt;T&gt;(Offset)
+  │               └─ Memcpy from Instance-&gt;InstanceBlob
+  │
+  └─ CallFrame → ReadCallFrameValue&lt;T&gt;(ArgIndex)
+                    └─ Slot lookup → Memcpy from FunctionArgBlob</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="memory-regions">5. Memory Regions</h2>
+    
+    <h3>5.1 ContextStack &mdash; Transient Byte Blob</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;uint8&gt; ContextStack;</code></pre>
+    </div>
+    <ul>
+        <li><strong>Lifecycle:</strong> Allocated once per definition, zero-initialised each execution</li>
+        <li><strong>Purpose:</strong> Temporary inter-node data passing (pin connections in the graph)</li>
+        <li><strong>Addressing:</strong> Byte offset, compiler-assigned at compile time</li>
+        <li><strong>Size:</strong> <code>Definition-&gt;ContextStackSize</code> (typically 64&ndash;512 bytes)</li>
+    </ul>
+    <p>Scalars are stored inline (<code>float</code> at offset N = 4 bytes). Object references store a <code>uint16</code> index into <code>ContextObjectStack</code>. (see <a href="#object-indirection">Section 6</a>)</p>
+
+    <h3>5.2 VariableBlob &mdash; Dedicated Variable Storage</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;uint8&gt; VariableBlob;</code></pre>
+    </div>
+    <ul>
+        <li><strong>Lifecycle:</strong> Allocated per execution, initialised from pool defaults, overridden, then used</li>
+        <li><strong>Purpose:</strong> Variable values during inline (no-instance) execution</li>
+        <li><strong>Addressing:</strong> Byte offset from <code>FForgeVariableHeader::Offset</code></li>
+        <li><strong>Size:</strong> <code>Definition-&gt;VariableBlobSize</code></li>
+        <li><strong>Instance promotion:</strong> When a handler creates an instance, variable data migrates to <code>Instance-&gt;VariableBlob</code>. After promotion, handlers read/write directly from <code>Instance-&gt;VariableBlob</code> via the Instance data source.</li>
+    </ul>
+
+    <h3>5.3 ContextArrayPool &mdash; Dynamic Arrays</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;FForgeArraySlot&gt; ContextArrayPool;
+uint16 ActiveTransientArrays;</code></pre>
+    </div>
+    <ul>
+        <li><strong>Layout:</strong> <code>[0..ArraySlotCount)</code> = variable arrays, <code>[ArraySlotCount..)</code> = transient (MakeArray, etc.)</li>
+        <li><strong>Handle:</strong> <code>uint16</code> index into the pool</li>
+        <li><strong>Instance redirection:</strong> When <code>Instance</code> exists, variable handles (<code>&lt; ArraySlotCount</code>) resolve to <code>Instance-&gt;ArrayPool</code> via <code>ResolveArraySlot()</code></li>
+    </ul>
+
+    <h3>5.4 Function Call ABI Storage</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;FForgeFunctionCallFrame&gt; FunctionCallStack;
+TArray&lt;FForgeFunctionArgSlot&gt;   FunctionArgSlots;
+TArray&lt;uint8&gt;                   FunctionArgBlob;
+TArray&lt;UObject*&gt;                FunctionArgObjectPool;</code></pre>
+    </div>
+    <p>Flattened storage shared across all active call frames. Each frame records snapshot indices into the arg arrays; cleanup truncates back to those snapshots.</p>
+
+    <hr>
+
+    <h2 id="object-indirection">6. Object Indirection &mdash; GC-Safe Pattern</h2>
+    <p>Raw <code>UObject*</code> pointers cannot be stored in byte blobs &mdash; the garbage collector would not trace them. ForgeVM solves this with a <strong>uint16 index indirection</strong>:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌─────────────────────────────────┐
+│  ContextStack / VariableBlob    │
+│                                 │
+│  Offset 24: [uint16 = 3]  ─────┼──┐
+│                                 │  │
+└─────────────────────────────────┘  │
+                                     │
+┌─────────────────────────────────┐  │
+│  ContextObjectStack (UPROPERTY) │  │  ← GC traces this array
+│                                 │  │
+│  [0] UObject* = ...             │  │
+│  [1] UObject* = ...             │  │
+│  [2] UObject* = ...             │  │
+│  [3] UObject* = AMyActor* ◄────┼──┘
+│  [4] UObject* = ...             │
+└─────────────────────────────────┘</code></pre>
+    </div>
+
+    <h3>Write Path</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Specialisation: WriteToMemory&lt;UObject*&gt;
+uint16 ObjectIndex = AllocContextObject(Value);  // dedup + add
+Memcpy(Memory + Offset, &amp;ObjectIndex, sizeof(uint16));</code></pre>
+    </div>
+
+    <h3>Read Path</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Specialisation: ReadFromMemory&lt;UObject*&gt;
+uint16 ObjectIndex;
+Memcpy(&amp;ObjectIndex, Memory + Offset, sizeof(uint16));
+return GetContextObject(ObjectIndex);  // bounds-checked lookup</code></pre>
+    </div>
+
+    <h3>Deduplication</h3>
+    <p><code>AllocContextObject()</code> performs a linear scan for duplicates (<code>IndexOfByKey</code>). This is O(n) but optimal for the typical pool size (&lt; 20 entries per execution).</p>
+
+    <h3>Object Pool Variants</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Pool</th>
+                <th>UPROPERTY</th>
+                <th>Used By</th>
+                <th>Allocation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ContextObjectStack</code></td><td>Yes</td><td>Context data source</td><td><code>AllocContextObject()</code></td></tr>
+            <tr><td><code>Instance-&gt;InstanceObjectPool</code></td><td>Yes</td><td>Instance data source</td><td><code>AllocInstanceObject()</code> &rarr; <code>Instance-&gt;AllocObject()</code></td></tr>
+            <tr><td><code>FunctionArgObjectPool</code></td><td>Yes</td><td>CallFrame data source</td><td><code>AllocCallArgObject()</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>UClass* Specialisations</h3>
+    <p><code>UClass*</code> is a <code>UObject</code> subtype but requires separate template specialisations because C++ treats <code>UClass*</code> and <code>UObject*</code> as distinct types. Both use the same indirection pools, with <code>Cast&lt;UClass&gt;()</code> on read.</p>
+
+    <h3>Overflow Guard</h3>
+    <p>All three pools guard against exceeding <code>uint16</code> capacity (65&nbsp;535 = <code>FORGE_INVALID_INDEX</code> sentinel):</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (ContextObjectStack.Num() &gt;= FORGE_INVALID_INDEX)
+    return FORGE_INVALID_INDEX;  // 0xFFFF</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="array-indirection">7. Array Indirection</h2>
+    
+    <h3>FForgeArraySlot</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeArraySlot
+{
+    uint8         ElementType;  // EForgeFieldType
+    uint16        Count;        // Valid element count
+    TArray&lt;uint8&gt; Data;         // Raw contiguous storage
+};</code></pre>
+    </div>
+
+    <h3>Handle Resolution</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FForgeArraySlot* ResolveArraySlot(uint16 Handle);</code></pre>
+    </div>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Handle &lt; ArraySlotCount AND Instance exists?
+  ├─ YES → Instance-&gt;GetArraySlot(Handle)    // Persistent variable array
+  └─ NO  → ContextArrayPool[Handle]           // Inline variable or transient</code></pre>
+    </div>
+    <p>This dual-path resolution means the same handler code works identically for both inline (fire-and-forget) and instanced (persistent) execution &mdash; the slot indirection is transparent.</p>
+
+    <h3>Transient Array Lifecycle</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>AllocContextArraySlot(FieldType)
+  └─ Appends beyond variable region, increments ActiveTransientArrays
+
+ResetTransientArrays()
+  └─ Truncates ContextArrayPool to ArraySlotCount (no shrinking)
+     └─ Called at start of each execution to reclaim transient handles</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="data-access-templates">8. Data Access Templates</h2>
+
+    <h3>ReadValue&lt;T&gt; &mdash; Generic Pool-Index Packing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+T ReadValue(const FStatusInstruction&amp; Instr, uint8 DataSlot, uint8 StartBit);</code></pre>
+    </div>
+    
+    <p>Bit layout: <code>[Source:2][Payload:16]</code> = 18 bits total</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>1. Source = Instr.ExtractBits(DataSlot, StartBit, 2)
+2. Payload = Instr.ExtractBits(DataSlot, StartBit + 2, 16)
+3. Dispatch on Source:
+   - Literal  → ReadLiteral&lt;T&gt;(Payload)
+   - Context  → ReadFromMemory&lt;T&gt;(ContextStack, Payload)
+   - Instance → ReadFromInstanceBlob&lt;T&gt;(Payload)
+   - CallFrame → ReadCallFrameValue&lt;T&gt;(Payload)</code></pre>
+    </div>
+
+    <h3>WriteValue&lt;T&gt;</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+void WriteValue(EForgeDataSource Target, int32 Offset, const T&amp; Value);</code></pre>
+    </div>
+    <p>Only supports <code>Context</code> and <code>Instance</code> targets (Literal is read-only, CallFrame is read-only).</p>
+
+    <h3>ReadFromMemory / WriteToMemory</h3>
+    <p>Generic implementation uses <code>FMemory::Memcpy</code> for platform-safe unaligned access:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+T ReadFromMemory(const TArray&lt;uint8&gt;&amp; Memory, int32 Offset) const
+{
+    T Result;
+    FMemory::Memcpy(&amp;Result, Memory.GetData() + Offset, sizeof(T));
+    return Result;
+}</code></pre>
+    </div>
+    <p>Both are bounds-checked: offset validity and <code>Offset + sizeof(T) &lt;= Memory.Num()</code>.</p>
+
+    <hr>
+
+    <h2 id="inline-literal-packing">9. Inline Literal Packing</h2>
+    <p>For high-frequency types, ForgeVM provides specialised read methods that embed literal values <strong>directly in the instruction bits</strong>, eliminating pool lookups entirely.</p>
+
+    <h3>ReadInlineFloat &mdash; Float32 Packing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float ReadInlineFloat(const FStatusInstruction&amp; Instr, uint8 DataSlot, uint8 StartBit);</code></pre>
+    </div>
+    <p>Bit layout: <code>[Source:2][Payload:32]</code> = 34 bits</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Source == Literal?
+  ├─ YES → Instr.ExtractFloat(DataSlot, StartBit + 2)  // IEEE 754 from bits
+  └─ NO  → next 16 bits = offset → ReadFromMemory/InstanceBlob/CallFrame</code></pre>
+    </div>
+
+    <h3>ReadInlineInt32 &mdash; Signed Int32 Packing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 ReadInlineInt32(const FStatusInstruction&amp; Instr, uint8 DataSlot, uint8 StartBit);</code></pre>
+    </div>
+    <p>Same pattern &mdash; 32-bit literal value or 16-bit offset for non-literal sources.</p>
+
+    <h3>ReadInlineHalfFloat &mdash; Float16 Packing</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float ReadInlineHalfFloat(const FStatusInstruction&amp; Instr, uint8 DataSlot, uint8 StartBit);</code></pre>
+    </div>
+    <p>Bit layout: <code>[Source:2][Payload:16]</code> = 18 bits<br>
+    Uses <code>Instr.ExtractHalfFloat()</code> for half-precision IEEE 754. Most useful for compact constants where full precision is not needed (e.g., damage multipliers, cooldown factors).</p>
+
+    <h3>Packing Comparison</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Literal Bits</th>
+                <th>Pool Lookup</th>
+                <th>Best For</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ReadValue&lt;float&gt;</code></td><td>16 (pool index)</td><td>Yes</td><td>Large literal pools</td></tr>
+            <tr><td><code>ReadInlineFloat</code></td><td>32 (full IEEE 754)</td><td>No</td><td>Unique constants</td></tr>
+            <tr><td><code>ReadInlineHalfFloat</code></td><td>16 (half float)</td><td>No</td><td>Compact constants</td></tr>
+            <tr><td><code>ReadInlineInt32</code></td><td>32 (full int)</td><td>No</td><td>Integer constants</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="output-writing">10. Output Writing</h2>
+    <p>Outputs use a simpler encoding than inputs &mdash; they store only a <strong>16-bit byte offset</strong> with no source flag. The destination (Context vs Instance) is determined by the node's async flag.</p>
+
+    <h3>ReadOutputOffset</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>uint16 ReadOutputOffset(const FStatusInstruction&amp; Instr, uint8 DataSlot, uint8 StartBit) const;</code></pre>
+    </div>
+    <p>Returns the raw 16-bit offset from the instruction.</p>
+
+    <h3>WriteOutput&lt;T&gt; &mdash; Context Target</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+void WriteOutput(uint16 Offset, const T&amp; Value);
+// → WriteToMemory&lt;T&gt;(ContextStack, Offset, Value)</code></pre>
+    </div>
+    <p>Standard path for synchronous nodes &mdash; writes to the transient <code>ContextStack</code>.</p>
+
+    <h3>WriteOutputToInstance&lt;T&gt; &mdash; Instance Target</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+void WriteOutputToInstance(uint16 Offset, const T&amp; Value);
+// → WriteToInstanceBlob&lt;T&gt;(Offset, Value)</code></pre>
+    </div>
+    <p>Used by async nodes whose outputs must persist across suspension/resumption. The <code>InstanceBlob</code> auto-expands if the offset exceeds current size.</p>
+
+    <h3>Handler Usage Pattern</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Typical handler output
+uint16 OutOffset = Context.ReadOutputOffset(Instr, 1, 0);
+Context.WriteOutput&lt;float&gt;(OutOffset, ComputedResult);
+
+// Async handler output (persists across suspend/resume)
+uint16 OutOffset = Context.ReadOutputOffset(Instr, 1, 0);
+Context.WriteOutputToInstance&lt;float&gt;(OutOffset, ComputedResult);</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="function-call-frame-access">11. Function Call Frame Access</h2>
+
+    <h3>ReadCallFrameValue&lt;T&gt;</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>template&lt;typename T&gt;
+T ReadCallFrameValue(uint16 ArgIndex) const;</code></pre>
+    </div>
+    <p>Resolution chain:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>1. Get current frame: FunctionCallStack.Last()
+2. Validate: ArgIndex &lt; Frame.ArgCount
+3. Slot = FunctionArgSlots[Frame.ArgStartIndex + ArgIndex]
+4. Validate: Slot.ByteOffset &gt;= 0, Slot.ByteSize &gt;= sizeof(T)
+5. ReadFromMemory&lt;T&gt;(FunctionArgBlob, Slot.ByteOffset)</code></pre>
+    </div>
+
+    <h3>Object/Class Specialisations</h3>
+    <p><code>ReadCallFrameValue&lt;UObject*&gt;</code> and <code>ReadCallFrameValue&lt;UClass*&gt;</code> follow the same indirection pattern:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>1. Read uint16 from FunctionArgBlob at Slot.ByteOffset
+2. Validate FieldType matches (Object=5 or Class=8)
+3. return GetCallArgObject(ObjectIndex)   // → FunctionArgObjectPool lookup</code></pre>
+    </div>
+
+    <h3>FForgeFunctionArgSlot</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeFunctionArgSlot
+{
+    int32  ByteOffset;   // Offset in FunctionArgBlob
+    uint16 ByteSize;     // Byte size of value
+    uint8  FieldType;    // EForgeFieldType
+};</code></pre>
+    </div>
+
+    <h3>FForgeFunctionCallFrame</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeFunctionCallFrame
+{
+    int32  ReturnPC;
+    uint16 OutTargetDescriptorIndex;  // 0xFFFF = none
+    int32  ArgStartIndex;
+    int32  ArgCount;
+    int32  ArgBlobStartOffset;
+    int32  ObjectStartIndex;
+};</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="flow-control-stack">12. Flow Control Stack</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;FForgeFlowBlock&gt; FlowBlockStack;</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>struct FForgeFlowBlock
+{
+    int32 BeginPC;          // Where the block starts
+    int32 OnCompletedPC;    // Jump target when block finishes
+    int32 BlockIndex;       // Current iteration (for loops)
+    int32 LoopCount;        // Total iterations (0 for non-loop blocks)
+};</code></pre>
+    </div>
+
+    <ul>
+        <li><code>OP_BeginBlock</code> pushes a new frame</li>
+        <li>Flow nodes read/modify <code>BlockIndex</code> and <code>LoopCount</code></li>
+        <li><code>OP_EndBlock</code> signals block completion &mdash; the flow node decides whether to loop or exit</li>
+        <li><code>Break</code> / <code>Continue</code> operations manipulate <code>PC</code> and <code>FlowBlockStack</code> directly</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="interceptor-payload">13. Interceptor Payload</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const FForgePayloadEntry* ActivePayloadEntries = nullptr;
+uint16 ActivePayloadCount = 0;</code></pre>
+    </div>
+    
+    <p>Set by <code>CallPropagation</code> handlers before broadcasting interceptor events. These are <strong>non-owning pointers</strong> into the compiled <code>UPDA_StatusDefinition::Pool_PayloadEntries</code> &mdash; valid only during the synchronous interceptor dispatch. Reset to null after the broadcast completes.</p>
+
+    <hr>
+
+    <h2 id="branching-registers">14. Branching Registers</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool  bLastConditionResult = false;
+int32 LastSwitchValue = 0;</code></pre>
+    </div>
+
+    <p>Used by condition and switch nodes to communicate results to subsequent <code>OP_JumpIfFalse</code> and <code>OP_JumpTable</code> system ops. These are single-value registers &mdash; not a stack &mdash; because branching is never nested within a single instruction step.</p>
+
+    <hr>
+
+    <h2 id="continuation-instructions">15. Continuation Instructions</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>FORCEINLINE const FStatusInstruction* GetContinuationInstruction(int32 Offset) const;</code></pre>
+    </div>
+
+    <p>Handlers that need more than 104 payload bits use <strong>continuation slots</strong> &mdash; <code>OP_ContinueData</code> instructions that follow the primary instruction in the bytecode stream.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>PC was pre-incremented before handler call, so:
+
+  Offset 1 → Instructions[PC]       (first continuation)
+  Offset 2 → Instructions[PC + 1]   (second continuation)
+  ...</code></pre>
+    </div>
+
+    <p>The handler reads continuation data, then advances <code>PC</code> past the continuation slots:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// In handler:
+const FStatusInstruction* Cont = Context.GetContinuationInstruction(1);
+// ... read extra data from Cont ...
+Context.PC += 1;  // Skip the continuation slot</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="subsystem-access">16. Subsystem Access</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UStatsX_WorldSubsystem* GetSubsystem() const;</code></pre>
+    </div>
+
+    <p>Resolves the <code>WorldSubsystem</code> from the first available actor world:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>1. Try TargetActor-&gt;GetWorld()-&gt;GetSubsystem&lt;UStatsX_WorldSubsystem&gt;()
+2. Fallback: CasterActor-&gt;GetWorld()-&gt;GetSubsystem&lt;UStatsX_WorldSubsystem&gt;()
+3. Fallback: nullptr</code></pre>
+    </div>
+    <p>Primarily used by handlers that need to promote the execution to an active instance (<code>RegisterAsActiveInstance</code>).</p>
+
+    <hr>
+
+    <h2 id="error-reporting">17. Error Reporting</h2>
+
+    <h3>Editor Builds (WITH_EDITOR)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool ReportError(const FString&amp; ErrorMsg);</code></pre>
+    </div>
+    <ul>
+        <li>Sets <code>LastError = ErrorMsg</code></li>
+        <li>Logs via <code>FORGEVM_LOG(Error, ...)</code> with PC and StatusTag context</li>
+        <li>Returns <code>false</code> (convenience for guard clauses)</li>
+    </ul>
+
+    <h3>Shipping Builds</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool ReportErrorShipped(const FString&amp; ErrorMsg = TEXT("Unknown"));</code></pre>
+    </div>
+    <ul>
+        <li>Logs via <code>UE_LOG(LogForgeVM, Error, ...)</code> with PC and StatusTag</li>
+        <li>Returns <code>false</code></li>
+        <li>Does <strong>not</strong> store in <code>LastError</code> (shipping builds minimise string allocations)</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="function-state-persistence">18. Function State Persistence</h2>
+    <p>When execution suspends inside a function call, the entire call ABI state must survive to the next <code>ResumeInstance()</code> call.</p>
+
+    <h3>PersistFunctionStateToInstance()</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Context.FunctionCallStack    → Instance-&gt;FunctionCallStack
+Context.FunctionArgSlots     → Instance-&gt;FunctionArgSlots
+Context.FunctionArgBlob      → Instance-&gt;FunctionArgBlob
+Context.FunctionArgObjectPool → Instance-&gt;FunctionCallObjectPool (TObjectPtr copy)</code></pre>
+    </div>
+    <p>The object pool is converted from raw <code>UObject*</code> to <code>TObjectPtr&lt;UObject&gt;</code> for GC safety during the instance's persistent lifetime.</p>
+
+    <h3>LoadFunctionStateFromInstance()</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Instance-&gt;FunctionCallStack  → Context.FunctionCallStack
+Instance-&gt;FunctionArgSlots   → Context.FunctionArgSlots
+Instance-&gt;FunctionArgBlob    → Context.FunctionArgBlob
+Instance-&gt;FunctionCallObjectPool → Context.FunctionArgObjectPool (TObjectPtr→raw)</code></pre>
+    </div>
+    <p>Reverse conversion: <code>TObjectPtr::Get()</code> back to raw pointers for the transient context.<br>
+    Both operations use array assignment (not swap) to preserve Instance storage for the next suspension.</p>
+
+    <hr>
+
+    <h2 id="debug-only-facilities">19. Debug-Only Facilities</h2>
+
+    <h3>ContextStringStack (WITH_EDITOR)</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TArray&lt;FString&gt; ContextStringStack;
+uint16 AllocContextString(const FString&amp; Str);
+FString GetContextString(uint16 Index) const;</code></pre>
+    </div>
+    <p>Stores transient <code>FString</code> values for debug nodes (<code>PrintString</code>, <code>FloatToString</code>, etc.). The <code>ContextStack</code> stores <code>uint16</code> indices, same pattern as the object indirection.</p>
+    <p><strong>Not available in shipping builds</strong> &mdash; string operations are stripped in production bytecode.</p>
+
+    <hr>
+
+    <h2 id="literal-pool-specialisations">20. Literal Pool Specialisations</h2>
+    <p>Each type has a <code>ReadLiteral&lt;T&gt;</code> specialisation that maps a <code>uint16</code> pool index to the correct compiled pool:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Pool</th>
+                <th>Default</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>float</code></td><td><code>Pool_Floats[idx]</code></td><td><code>0.0f</code></td></tr>
+            <tr><td><code>int32</code></td><td><code>Pool_Ints[idx]</code></td><td><code>0</code></td></tr>
+            <tr><td><code>bool</code></td><td><code>Pool_Bools[idx]</code></td><td><code>false</code></td></tr>
+            <tr><td><code>uint8</code></td><td><code>Pool_Bytes[idx]</code></td><td><code>0</code></td></tr>
+            <tr><td><code>uint16</code></td><td><code>Pool_Bytes[idx]</code></td><td><code>0</code></td></tr>
+            <tr><td><code>FVector</code></td><td><code>Pool_Vectors[idx]</code></td><td><code>ZeroVector</code></td></tr>
+            <tr><td><code>FRotator</code></td><td><code>Pool_Rotator[idx]</code></td><td><code>ZeroRotator</code></td></tr>
+            <tr><td><code>FTransform</code></td><td><code>Pool_Transforms[idx]</code></td><td><code>Identity</code></td></tr>
+            <tr><td><code>FName</code></td><td><code>Pool_Names[idx]</code></td><td><code>NAME_None</code></td></tr>
+            <tr><td><code>FGameplayTag</code></td><td><code>Pool_Tags[idx]</code></td><td><code>FGameplayTag()</code></td></tr>
+            <tr><td><code>FString</code></td><td><code>Pool_Strings[idx]</code></td><td><code>FString()</code></td></tr>
+            <tr><td><code>UObject*</code></td><td><code>Pool_Objects[idx]</code></td><td><code>nullptr</code></td></tr>
+            <tr><td><code>UClass*</code></td><td><code>Pool_Classes[idx]</code></td><td><code>nullptr</code></td></tr>
+            <tr><td><code>FForgeArrayHeader</code></td><td><code>Pool_ArraysHeaders[idx]</code></td><td>default</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Wide Literal Packing</h3>
+    <p>Some types occupy multiple consecutive pool entries:</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Pool Entries</th>
+                <th>Layout</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>int64</code></td><td><code>Pool_Ints[idx]</code> + <code>Pool_Ints[idx+1]</code></td><td>Low 32 bits + High 32 bits</td></tr>
+            <tr><td><code>double</code></td><td><code>Pool_Ints[idx]</code> + <code>Pool_Ints[idx+1]</code></td><td>Reinterpreted 64-bit pattern</td></tr>
+            <tr><td><code>FLinearColor</code></td><td><code>Pool_Floats[idx..idx+3]</code></td><td>R, G, B, A</td></tr>
+        </tbody>
+    </table>
+
+    <h3>FGameplayTagContainer</h3>
+    <p>Uses a two-level lookup:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>PoolIndex → Pool_ArraysHeaders[PoolIndex]
+  └─ { StartIndex, Count }
+     └─ Pool_Tags[StartIndex .. StartIndex+Count)</code></pre>
+    </div>
+
+    <hr>
+
+    <h2 id="complex-type-specialisations">21. Complex Type Specialisations</h2>
+
+    <h3>UObject* / UClass* &mdash; Full Indirection</h3>
+    <p>Both read and write paths use the index indirection pattern described in <a href="#object-indirection">Section 6</a>. Four storage targets &times; two pointer types = 8 explicit specialisations:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Operation</th>
+                <th>UObject*</th>
+                <th>UClass*</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ReadFromMemory</code></td><td><code>ContextObjectStack[idx]</code></td><td><code>Cast&lt;UClass&gt;(ContextObjectStack[idx])</code></td></tr>
+            <tr><td><code>WriteToMemory</code></td><td><code>AllocContextObject</code> &rarr; write idx</td><td><code>AllocContextObject</code> &rarr; write idx</td></tr>
+            <tr><td><code>ReadFromInstanceBlob</code></td><td><code>InstanceObjectPool[idx]</code></td><td><code>Cast&lt;UClass&gt;(InstanceObjectPool[idx])</code></td></tr>
+            <tr><td><code>WriteToInstanceBlob</code></td><td><code>AllocInstanceObject</code> &rarr; write idx</td><td><code>AllocInstanceObject</code> &rarr; write idx</td></tr>
+        </tbody>
+    </table>
+
+    <h3>FGameplayTagContainer &mdash; Inline Blob Layout</h3>
+    <p>Stored in both Context and Instance blobs as:</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────────┬─────────────────┬─────────────────┬───┐
+│ Count(uint16)│ Tag0(GameplayTag)│ Tag1(GameplayTag)│...│
+└──────────────┴─────────────────┴─────────────────┴───┘</code></pre>
+    </div>
+    <ul>
+        <li><strong>Read:</strong> Extract count, then <code>Memcpy</code> each <code>FGameplayTag</code> from blob &rarr; <code>AddTag()</code> to container</li>
+        <li><strong>Write:</strong> Write count prefix, then <code>Memcpy</code> each tag inline</li>
+        <li>Auto-expands blob if needed (for writes that exceed current size)</li>
+    </ul>
+
+    <h3>FString &mdash; Literal-Only</h3>
+    <p><code>FString</code> is supported only as a <code>Literal</code> source (read from <code>Pool_Strings</code>). Runtime string variables in blob storage are not supported &mdash; strings are complex heap-allocated types that cannot be safely <code>Memcpy</code>'d. The editor <code>ContextStringStack</code> provides debug-time string handling.</p>
+
+    <hr>
+
+    <h2 id="struct-reference">22. Struct Reference</h2>
+
+    <h3>FForgeVMContext &mdash; Fields</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Pre-generated ID, used if execution becomes an instance</td></tr>
+            <tr><td><code>PC</code></td><td><code>int32</code></td><td>Instruction pointer (index into <code>Definition-&gt;Instructions</code>)</td></tr>
+            <tr><td><code>Definition</code></td><td><code>const UPDA_StatusDefinition*</code></td><td>Compiled status being executed</td></tr>
+            <tr><td><code>Instance</code></td><td><code>FStatusInstance*</code></td><td>Active instance (nullptr for inline execution)</td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>Casting actor</td></tr>
+            <tr><td><code>TargetActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>Receiving actor</td></tr>
+            <tr><td><code>CasterComponent</code></td><td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td><td>Cached caster component</td></tr>
+            <tr><td><code>TargetComponent</code></td><td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td><td>Cached target component</td></tr>
+            <tr><td><code>ContextStack</code></td><td><code>TArray&lt;uint8&gt;</code></td><td>Transient inter-node byte blob</td></tr>
+            <tr><td><code>ContextObjectStack</code></td><td><code>TArray&lt;UObject*&gt;</code></td><td>GC-tracked object pool (UPROPERTY)</td></tr>
+            <tr><td><code>VariableBlob</code></td><td><code>TArray&lt;uint8&gt;</code></td><td>Dedicated variable storage</td></tr>
+            <tr><td><code>ContextArrayPool</code></td><td><code>TArray&lt;FForgeArraySlot&gt;</code></td><td>Dynamic array pool</td></tr>
+            <tr><td><code>ActiveTransientArrays</code></td><td><code>uint16</code></td><td>Transient slot count for efficient reset</td></tr>
+            <tr><td><code>FlowBlockStack</code></td><td><code>TArray&lt;FForgeFlowBlock&gt;</code></td><td>Nested loop/block stack</td></tr>
+            <tr><td><code>FunctionCallStack</code></td><td><code>TArray&lt;FForgeFunctionCallFrame&gt;</code></td><td>Function call return stack</td></tr>
+            <tr><td><code>FunctionArgSlots</code></td><td><code>TArray&lt;FForgeFunctionArgSlot&gt;</code></td><td>Captured argument metadata</td></tr>
+            <tr><td><code>FunctionArgBlob</code></td><td><code>TArray&lt;uint8&gt;</code></td><td>Captured argument raw bytes</td></tr>
+            <tr><td><code>FunctionArgObjectPool</code></td><td><code>TArray&lt;UObject*&gt;</code></td><td>Captured argument objects (UPROPERTY)</td></tr>
+            <tr><td><code>ActivePayloadEntries</code></td><td><code>const FForgePayloadEntry*</code></td><td>Interceptor payload (non-owning)</td></tr>
+            <tr><td><code>ActivePayloadCount</code></td><td><code>uint16</code></td><td>Interceptor payload entry count</td></tr>
+            <tr><td><code>bLastConditionResult</code></td><td><code>bool</code></td><td>Last condition evaluation result</td></tr>
+            <tr><td><code>LastSwitchValue</code></td><td><code>int32</code></td><td>Last switch node value</td></tr>
+            <tr><td><code>LastError</code></td><td><code>FString</code></td><td>Most recent error message</td></tr>
+        </tbody>
+    </table>
+
+    <h3>FForgeVMContext &mdash; Methods</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Reset()</code></td><td><code>(int64, UPDA_StatusDefinition*, FStatusInstance*)</code></td><td>Prepare for new execution</td></tr>
+            <tr><td><code>AllocateStack()</code></td><td><code>(int32 SizeInBytes)</code></td><td>Allocate/resize ContextStack</td></tr>
+            <tr><td><code>AllocateVariableBlob()</code></td><td><code>(int32 SizeInBytes)</code></td><td>Allocate/resize VariableBlob</td></tr>
+            <tr><td><code>GetSubsystem()</code></td><td><code>&rarr; UStatsX_WorldSubsystem*</code></td><td>Resolve world subsystem from actors</td></tr>
+            <tr><td><code>GetContinuationInstruction()</code></td><td><code>(int32 Offset) &rarr; const FStatusInstruction*</code></td><td>Read continuation slot</td></tr>
+            <tr><td><code>ReadValue&lt;T&gt;()</code></td><td><code>(Instr, DataSlot, StartBit) &rarr; T</code></td><td>Generic data read (pool-index packing)</td></tr>
+            <tr><td><code>ReadInlineFloat()</code></td><td><code>(Instr, DataSlot, StartBit) &rarr; float</code></td><td>Float32 inline literal read</td></tr>
+            <tr><td><code>ReadInlineInt32()</code></td><td><code>(Instr, DataSlot, StartBit) &rarr; int32</code></td><td>Int32 inline literal read</td></tr>
+            <tr><td><code>ReadInlineHalfFloat()</code></td><td><code>(Instr, DataSlot, StartBit) &rarr; float</code></td><td>Half-float inline literal read</td></tr>
+            <tr><td><code>WriteValue&lt;T&gt;()</code></td><td><code>(Target, Offset, Value)</code></td><td>Generic data write</td></tr>
+            <tr><td><code>ReadOutputOffset()</code></td><td><code>(Instr, DataSlot, StartBit) &rarr; uint16</code></td><td>Read output byte offset</td></tr>
+            <tr><td><code>WriteOutput&lt;T&gt;()</code></td><td><code>(Offset, Value)</code></td><td>Write to ContextStack</td></tr>
+            <tr><td><code>WriteOutputToInstance&lt;T&gt;()</code></td><td><code>(Offset, Value)</code></td><td>Write to InstanceBlob</td></tr>
+            <tr><td><code>ReadCallFrameValue&lt;T&gt;()</code></td><td><code>(ArgIndex) &rarr; T</code></td><td>Read from current function frame</td></tr>
+            <tr><td><code>AllocContextObject()</code></td><td><code>(UObject*) &rarr; uint16</code></td><td>Allocate GC-safe context object</td></tr>
+            <tr><td><code>GetContextObject()</code></td><td><code>(uint16) &rarr; UObject*</code></td><td>Retrieve context object by index</td></tr>
+            <tr><td><code>AllocInstanceObject()</code></td><td><code>(UObject*) &rarr; uint16</code></td><td>Allocate GC-safe instance object</td></tr>
+            <tr><td><code>GetInstanceObject()</code></td><td><code>(uint16) &rarr; UObject*</code></td><td>Retrieve instance object by index</td></tr>
+            <tr><td><code>AllocContextArraySlot()</code></td><td><code>(uint8 FieldType) &rarr; uint16</code></td><td>Allocate transient array slot</td></tr>
+            <tr><td><code>ResetTransientArrays()</code></td><td><code>()</code></td><td>Truncate transient array region</td></tr>
+            <tr><td><code>ResolveArraySlot()</code></td><td><code>(uint16 Handle) &rarr; FForgeArraySlot*</code></td><td>Handle &rarr; slot with instance redirection</td></tr>
+            <tr><td><code>AllocCallArgObject()</code></td><td><code>(UObject*) &rarr; uint16</code></td><td>Allocate function arg object</td></tr>
+            <tr><td><code>GetCallArgObject()</code></td><td><code>(uint16) &rarr; UObject*</code></td><td>Retrieve function arg object</td></tr>
+            <tr><td><code>GetCurrentFunctionFrame()</code></td><td><code>&rarr; const FForgeFunctionCallFrame*</code></td><td>Current call frame (or nullptr)</td></tr>
+            <tr><td><code>LoadFunctionStateFromInstance()</code></td><td><code>()</code></td><td>Restore persisted call ABI from Instance</td></tr>
+            <tr><td><code>PersistFunctionStateToInstance()</code></td><td><code>()</code></td><td>Save call ABI state to Instance</td></tr>
+            <tr><td><code>ReportError()</code></td><td><code>(FString) &rarr; bool</code></td><td>Editor-only error report</td></tr>
+            <tr><td><code>ReportErrorShipped()</code></td><td><code>(FString) &rarr; bool</code></td><td>Shipping build error report</td></tr>
+        </tbody>
+    </table>
+
+    <h3>EForgeDataSource</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Name</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0</td><td><code>Literal</code></td><td>Compiled constant in definition pool</td></tr>
+            <tr><td>1</td><td><code>Context</code></td><td>Transient per-tick byte blob</td></tr>
+            <tr><td>2</td><td><code>Instance</code></td><td>Persistent cross-tick instance blob</td></tr>
+            <tr><td>3</td><td><code>CallFrame</code></td><td>Captured function argument</td></tr>
+        </tbody>
+    </table>
+
+</section>

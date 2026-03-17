@@ -1,0 +1,900 @@
+<section id="custom-logic-check" class="tutorial-section">
+    <h1>Custom Logic &mdash; Check</h1>
+    
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; UForgeCustomCheck, UForgeCustomLogicBase, Built-in Check Handlers<br>
+        Synchronous condition evaluation within the ForgeVM &mdash; from user-defined Blueprint/C++ checks to built-in attribute, tag, chance, and comparison nodes.</p>
+    </div>
+
+    <hr>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#class-hierarchy">Class Hierarchy</a></li>
+        <li><a href="#uforgecustomlogicbase">UForgeCustomLogicBase</a></li>
+        <li><a href="#uforgecustomcheck">UForgeCustomCheck</a></li>
+        <li><a href="#op_customcheck-handler">OP_CustomCheck Handler</a></li>
+        <li><a href="#forgeparam-injection">ForgeParam Injection</a></li>
+        <li><a href="#variable-accessors">Variable Accessors</a></li>
+        <li><a href="#built-in-check-nodes">Built-in Check Nodes</a></li>
+        <li><a href="#condition-register">Condition Register</a></li>
+        <li><a href="#supported-enumerations">Supported Enumerations</a></li>
+        <li><a href="#performance-instrumentation">Performance Instrumentation</a></li>
+        <li><a href="#api-reference">API Reference</a></li>
+    </ol>
+
+    <hr>
+
+    <h2 id="design-philosophy">1. Design Philosophy</h2>
+    <p>Check nodes are the <strong>branching primitives</strong> of the ForgeVM. Every check writes a boolean result into <code>Context.bLastConditionResult</code>, which downstream flow-control instructions (<code>OP_Branch</code>, <code>OP_WhileLoop</code>, system conditional jumps) consume to decide execution paths.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Synchronous only</strong></td><td>Checks are condition evaluations &mdash; they must return immediately so the VM never suspends on a branch</td></tr>
+            <tr><td><strong>Read-only context</strong></td><td>Checks observe state but do not mutate it (actions handle mutations)</td></tr>
+            <tr><td><strong>Single result register</strong></td><td><code>bLastConditionResult</code> &mdash; one bool, consumed by the next flow instruction</td></tr>
+            <tr><td><strong>ForgeParam injection</strong></td><td>User-defined UPROPERTY fields on custom check subclasses are auto-populated from compiled instruction data</td></tr>
+            <tr><td><strong>Built-in + extensible</strong></td><td>9 built-in check opcodes + unlimited user-defined checks via <code>UForgeCustomCheck</code> subclassing</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="class-hierarchy">2. Class Hierarchy</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>UObject
+  └── UForgeCustomLogicBase         (Abstract — shared base for Checks and Actions)
+        │
+        ├── UForgeCustomCheck       (Abstract — synchronous condition check)
+        │     └── User subclasses   (Blueprint or C++)
+        │
+        └── UForgeCustomAction      (Abstract — async action, documented separately)</code></pre>
+    </div>
+
+    <p>Both Checks and Actions inherit the same context setup, variable access, ForgeParam injection, and lifecycle hooks from <code>UForgeCustomLogicBase</code>. The key difference: Checks are <strong>synchronous</strong> and <strong>read-only</strong>; Actions may be <strong>asynchronous</strong> and <strong>mutable</strong>.</p>
+
+    <hr>
+
+    <h2 id="uforgecustomlogicbase">3. UForgeCustomLogicBase</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Header  : Public/CustomLogics/ForgeCustomLogicBase.h
+Source  : Private/CustomLogics/ForgeCustomLogicBase.cpp</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UCLASS(Abstract, BlueprintType, Blueprintable)
+class STATS_X_API UForgeCustomLogicBase : public UObject</code></pre>
+    </div>
+
+    <h3>3.1 Context Data</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>StatusID of current execution (0 for inline)</td></tr>
+            <tr><td><code>StatusInstance</code></td><td><code>FStatusInstance*</code></td><td>Active instance pointer (nullptr for inline)</td></tr>
+            <tr><td><code>Definition</code></td><td><code>const UPDA_StatusDefinition*</code></td><td>The status definition being executed (<code>UPROPERTY(Transient)</code>)</td></tr>
+            <tr><td><code>CasterActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>Actor that casted the status</td></tr>
+            <tr><td><code>TargetActor</code></td><td><code>TWeakObjectPtr&lt;AActor&gt;</code></td><td>Actor that receives the status</td></tr>
+            <tr><td><code>CasterComponent</code></td><td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td><td>Caster's StatsComponent</td></tr>
+            <tr><td><code>TargetComponent</code></td><td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td><td>Target's StatsComponent</td></tr>
+            <tr><td><code>bIsActive</code></td><td><code>uint8 : 1</code></td><td>True while execution is in progress</td></tr>
+            <tr><td><code>bIsCancelled</code></td><td><code>uint8 : 1</code></td><td>True if Cancel() was called</td></tr>
+        </tbody>
+    </table>
+
+    <h3>3.2 Context Setup (System-Called)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void SetupContext(FForgeVMContext&amp; Context);</code></pre>
+    </div>
+    <p>Copies all relevant pointers from the VM context into the logic object's cached fields. Called by the handler <strong>before</strong> <code>Execute()</code>.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void ClearContext();</code></pre>
+    </div>
+    <p>Resets all context fields to null/zero. Called by the handler <strong>after</strong> <code>Cleanup()</code>.</p>
+
+    <h3>3.3 Lifecycle Hooks</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Default</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Cancel()</code></td><td>Sets <code>bIsCancelled = true</code></td><td>Called when the status is terminated externally while logic is active</td></tr>
+            <tr><td><code>Cleanup()</code></td><td>No-op</td><td>Called after execution completes; override to release resources</td></tr>
+        </tbody>
+    </table>
+    <p>Both are <code>BlueprintNativeEvent</code> &mdash; overridable in Blueprint or C++.</p>
+
+    <h3>3.4 Context Accessors (BlueprintPure)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Return</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetCasterActor()</code></td><td><code>AActor*</code></td><td>Actor that casted the status</td></tr>
+            <tr><td><code>GetTargetActor()</code></td><td><code>AActor*</code></td><td>Target actor</td></tr>
+            <tr><td><code>GetCasterComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Caster's component</td></tr>
+            <tr><td><code>GetTargetComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Target's component</td></tr>
+            <tr><td><code>GetDefinition()</code></td><td><code>const UPDA_StatusDefinition*</code></td><td>The status definition</td></tr>
+            <tr><td><code>GetStatusID()</code></td><td><code>int64</code></td><td>StatusID (0 if inline)</td></tr>
+            <tr><td><code>GetStatusInstance()</code></td><td><code>FStatusInstance*</code></td><td>Raw instance pointer (not exposed to BP)</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="uforgecustomcheck">4. UForgeCustomCheck</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Header  : Public/CustomLogics/ForgeCustomCheck.h
+Source  : Private/CustomLogics/ForgeCustomCheck.cpp</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UCLASS(Abstract, BlueprintType, Blueprintable, meta = (DisplayName = "Custom Check"))
+class STATS_X_API UForgeCustomCheck : public UForgeCustomLogicBase</code></pre>
+    </div>
+
+    <h3>4.1 Override Point</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintNativeEvent, Category = "ForgeCustomLogic|Execution")
+bool Execute();
+virtual bool Execute_Implementation();  // Default: return true</code></pre>
+    </div>
+    <p>Override <code>Execute()</code> to implement custom condition logic. Return <code>true</code> if the condition passes, <code>false</code> otherwise.</p>
+
+    <h3>4.2 Design Constraints</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Constraint</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Synchronous</strong></td><td>Blocks the VM until <code>Execute()</code> returns &mdash; no suspend/resume</td></tr>
+            <tr><td><strong>Read-only</strong></td><td>Should not modify execution state (attribute changes, status casts, etc.)</td></tr>
+            <tr><td><strong>No loop support</strong></td><td>Single execution per node invocation</td></tr>
+            <tr><td><strong>Short-lived</strong></td><td>Created via <code>NewObject</code>, used once, then cleaned up &mdash; GC reclaims</td></tr>
+        </tbody>
+    </table>
+
+    <h3>4.3 Usage Example (C++)</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UCLASS()
+class UCheck_HasTag : public UForgeCustomCheck
+{
+    GENERATED_BODY()
+public:
+    virtual bool Execute_Implementation() override
+    {
+        return GetTargetComponent()-&gt;HasReceivedStatus(TagToCheck);
+    }
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FGameplayTag TagToCheck;
+};</code></pre>
+    </div>
+    <p>The <code>TagToCheck</code> property is automatically injected from the compiled instruction data via ForgeParam injection (see Section 6).</p>
+
+    <hr>
+
+    <h2 id="op_customcheck-handler">5. OP_CustomCheck Handler</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Location</span>
+        </div>
+        <pre><code>Source  : Private/Nodes/Nodes_Core.cpp (Nodes_CustomLogic namespace)
+OpCode  : 257</code></pre>
+    </div>
+
+    <h3>5.1 Instruction Layout</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-39]:  Pool_Classes index (16 bits) — UForgeCustomCheck subclass
+Data0[42+]:    ForgeParam fields (18 bits each, sequentially packed)
+               Continuation instructions used when params overflow Data0/Data1</code></pre>
+    </div>
+
+    <h3>5.2 Execution Sequence</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>ExecuteCustomCheck(Context, Instr)
+│
+├─ 1. Save FallthroughPC = Context.PC
+│
+├─ 2. Extract ClassIndex from Instr.Data0[24..39]
+│
+├─ 3. Validate: Definition exists, Pool_Classes[ClassIndex] is valid
+│     └─ Error if index out of bounds
+│
+├─ 4. Get UClass* from Pool_Classes, verify IsChildOf(UForgeCustomCheck)
+│     └─ Error if wrong class hierarchy
+│
+├─ 5. NewObject&lt;UForgeCustomCheck&gt;(GetTransientPackage(), CheckClass)
+│     └─ Error if instantiation fails
+│
+├─ 6. Check-&gt;SetupContext(Context)
+│     └─ Copies caster, target, definition, statusID into check
+│
+├─ 7. Check-&gt;InjectForgeParams(Context, Instr, 42)
+│     └─ Populates UPROPERTY fields from instruction data starting at bit 42
+│
+├─ 8. bResult = Check-&gt;Execute()
+│     └─ Calls the user-overridden condition logic
+│
+├─ 9. Context.bLastConditionResult = bResult
+│     └─ Stores in VM condition register
+│
+├─ 10. Check-&gt;Cleanup(), Check-&gt;ClearContext()
+│      └─ Release context references, GC handles the UObject
+│
+├─ 11. SkipInstructionContinuationSlotsIfFallthrough(Context, Instr, FallthroughPC)
+│      └─ Advance PC past continuation instructions if not branched
+│
+└─ return EForgeExecutionResult::Continue</code></pre>
+    </div>
+
+    <h3>5.3 Key Implementation Details</h3>
+    <ul>
+        <li><strong>Transient outer:</strong> <code>NewObject</code> is outed to <code>GetTransientPackage()</code> &mdash; the check object has no persistent owner and will be GC'd.</li>
+        <li><strong>ForgeParam start bit = 42:</strong> The first 42 bits of Data0 are reserved (16 OpCode + 2 reserved + 24 for ClassIndex). ForgeParams begin at bit 42.</li>
+        <li><strong>Continuation skip:</strong> If the instruction has continuation slots (for checks with many ForgeParams), the PC is advanced past them after execution.</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="forgeparam-injection">6. ForgeParam Injection</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void InjectForgeParams(FForgeVMContext&amp; Context, const FStatusInstruction&amp; Instr, uint8 FirstParamBit);</code></pre>
+    </div>
+
+    <h3>6.1 Property Discovery</h3>
+    <p>At runtime, <code>InjectForgeParams</code> iterates the <strong>concrete class only</strong> (<code>EFieldIteratorFlags::ExcludeSuper</code>) to find eligible properties:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Requirement</th>
+                <th>Flag Check</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Editable</td><td><code>CPF_Edit</code></td></tr>
+            <tr><td>Blueprint-visible</td><td><code>CPF_BlueprintVisible</code></td></tr>
+            <tr><td>Instance-editable</td><td>NOT <code>CPF_DisableEditOnInstance</code></td></tr>
+            <tr><td>Not transient/deprecated</td><td>NOT <code>CPF_Transient</code>, NOT <code>CPF_Deprecated</code></td></tr>
+            <tr><td>Supported type</td><td><code>IsSupportedCustomLogicParamProperty()</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.2 Supported Property Types</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Types</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Numeric</strong></td><td><code>float</code>, <code>double</code> (promoted from float), <code>int32</code>, <code>int64</code>, <code>uint8</code>, <code>bool</code></td></tr>
+            <tr><td><strong>Enum</strong></td><td><code>FEnumProperty</code> (stored as <code>uint8</code> underneath)</td></tr>
+            <tr><td><strong>String</strong></td><td><code>FName</code>, <code>FString</code>, <code>FText</code> (from FString)</td></tr>
+            <tr><td><strong>Object</strong></td><td><code>UObject*</code>, <code>UClass*</code></td></tr>
+            <tr><td><strong>Struct</strong></td><td><code>FVector</code>, <code>FRotator</code>, <code>FTransform</code>, <code>FLinearColor</code> (from FVector RGB), <code>FGameplayTag</code>, <code>FGameplayTagContainer</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.3 Bit Packing</h3>
+    <p>Each ForgeParam occupies <strong>18 bits</strong>: 2-bit source + 16-bit payload, matching the standard data operand encoding:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>┌──────────────────────── 18 bits per ForgeParam ─────────────────────────┐
+│  Source (2 bits)  │  Payload (16 bits: pool index / inline value)       │
+└───────────────────┴─────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <p>Parameters are packed sequentially starting from <code>FirstParamBit</code>. When the current 64-bit data slot runs out of space (<code>CurrentBit + 18 &gt; 64</code>), the system advances to the next slot:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>DataSlot</th>
+                <th>Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>0</td><td><code>Instr.Data0</code></td></tr>
+            <tr><td>1</td><td><code>Instr.Data1</code></td></tr>
+            <tr><td>2, 3</td><td>Continuation instruction 1 (Data0, Data1)</td></tr>
+            <tr><td>4, 5</td><td>Continuation instruction 2 (Data0, Data1)</td></tr>
+            <tr><td>...</td><td>Up to 7 continuation instructions</td></tr>
+        </tbody>
+    </table>
+
+    <h3>6.4 Value Reading</h3>
+    <p>Each property type is read via <code>Context.ReadValue&lt;T&gt;(Instr, DataSlot, BitOffset)</code>, which resolves the 2-bit source tag and reads from the appropriate pool:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Example for a float property
+if (FFloatProperty* FloatProp = CastField&lt;FFloatProperty&gt;(Prop))
+{
+    float Value = Context.ReadValue&lt;float&gt;(*ReadInstr, LocalDataSlot, CurrentBit);
+    FloatProp-&gt;SetPropertyValue_InContainer(this, Value);
+}</code></pre>
+    </div>
+
+    <h3>6.5 Special Cases</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Handling</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>double</code></td><td>Read as <code>float</code>, promoted via <code>static_cast&lt;double&gt;</code></td></tr>
+            <tr><td><code>FText</code></td><td>Read as <code>FString</code>, wrapped via <code>FText::FromString()</code></td></tr>
+            <tr><td><code>FLinearColor</code></td><td>Read as <code>FVector</code> (RGB), alpha set to 1.0f</td></tr>
+            <tr><td>Enum</td><td>Underlying numeric property receives <code>static_cast&lt;int64&gt;(uint8_value)</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="variable-accessors">7. Variable Accessors</h2>
+    <p>Custom logic nodes can read and write <strong>status variables</strong> via the <code>ForgeVariableAccess</code> helper. The variable blob is resolved from <code>StatusInstance-&gt;VariableBlob</code>.</p>
+
+    <h3>7.1 Read Path</h3>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float UForgeCustomLogicBase::GetVariableFloat(FGameplayTag VariableTag, bool&amp; bFound) const
+{
+    float Value = 0.f;
+    if (!Definition) { bFound = false; return Value; }
+    const TArray&lt;uint8&gt;&amp; Blob = StatusInstance ? StatusInstance-&gt;VariableBlob : TArray&lt;uint8&gt;();
+    if (Blob.Num() == 0) { bFound = false; return Value; }
+    bFound = ForgeVariableAccess::ReadVariable&lt;float&gt;(
+        Definition, Blob, VariableTag, ForgeFieldTypes::Float, Value);
+    return Value;
+}</code></pre>
+    </div>
+
+    <h3>7.2 Write Path</h3>
+    <p>Write operations require a valid <code>StatusInstance</code> (no inline execution):</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool UForgeCustomLogicBase::SetVariableFloat(FGameplayTag VariableTag, float Value)
+{
+    if (!Definition || !StatusInstance) return false;
+    return ForgeVariableAccess::WriteVariable&lt;float&gt;(
+        Definition, StatusInstance-&gt;VariableBlob, VariableTag, ForgeFieldTypes::Float, Value);
+}</code></pre>
+    </div>
+
+    <h3>7.3 Object Variable Indirection</h3>
+    <p>Objects are stored as <code>uint16</code> pool indices in the variable blob:</p>
+    <ul>
+        <li><strong>Read:</strong> Resolves from <code>StatusInstance-&gt;InstanceObjectPool[ObjectIndex]</code></li>
+        <li><strong>Write:</strong> Allocates via <code>StatusInstance-&gt;AllocObject(Value)</code> (with dedup + overflow guard), then writes the index</li>
+    </ul>
+
+    <h3>7.4 Blueprint API</h3>
+    <p>All variable accessors use <code>meta = (Categories = "StatsX.Variable")</code> for filtered tag picker.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Getters (BlueprintPure)</th>
+                <th>Setters (BlueprintCallable)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>GetVariableFloat</code> &rarr; <code>float</code></td><td><code>SetVariableFloat(float)</code> &rarr; <code>bool</code></td></tr>
+            <tr><td><code>GetVariableInt</code> &rarr; <code>int32</code></td><td><code>SetVariableInt(int32)</code> &rarr; <code>bool</code></td></tr>
+            <tr><td><code>GetVariableBool</code> &rarr; <code>bool</code></td><td><code>SetVariableBool(bool)</code> &rarr; <code>bool</code></td></tr>
+            <tr><td><code>GetVariableTag</code> &rarr; <code>FGameplayTag</code></td><td><code>SetVariableTag(FGameplayTag)</code> &rarr; <code>bool</code></td></tr>
+            <tr><td><code>GetVariableVector</code> &rarr; <code>FVector</code></td><td><code>SetVariableVector(FVector)</code> &rarr; <code>bool</code></td></tr>
+            <tr><td><code>GetVariableObject</code> &rarr; <code>UObject*</code></td><td><code>SetVariableObject(UObject*)</code> &rarr; <code>bool</code></td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="built-in-check-nodes">8. Built-in Check Nodes</h2>
+    <p>All built-in checks are registered in <code>RegisterCoreNodes()</code> and follow the same pattern: read inputs from instruction data, evaluate condition, write result to <code>Context.bLastConditionResult</code>.</p>
+
+    <h3>8.1 OP_CheckChance (267)</h3>
+    <p><strong>Purpose:</strong> Random probability check.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24]: Chance (inline float, 0.0–1.0)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>const float RandomRoll = FMath::FRandRange(0.0f, 1.0f);
+Context.bLastConditionResult = (RandomRoll &lt;= Chance);</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Input</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Chance</td><td><code>float</code> (inline)</td><td>Probability threshold (0.0 = never, 1.0 = always)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.2 OP_CompareFloats (268)</h3>
+    <p><strong>Purpose:</strong> Compare two float values.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24]: Float A (inline float)
+Data1[0]:  Float B (inline float)
+Data1[34]: Comparison method (uint8 → EComparationMethod)</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Input</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>A</td><td><code>float</code> (inline)</td><td>Left operand</td></tr>
+            <tr><td>B</td><td><code>float</code> (inline)</td><td>Right operand</td></tr>
+            <tr><td>Method</td><td><code>EComparationMethod</code></td><td><code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>, <code>==</code>, <code>!=</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.3 OP_CompareIntegers (273)</h3>
+    <p><strong>Purpose:</strong> Compare two integer values.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24]: Int A (inline int32)
+Data1[0]:  Int B (inline int32)
+Data1[34]: Comparison method (uint8 → EComparationMethod)</code></pre>
+    </div>
+    <p>Identical logic to CompareFloats but with <code>int32</code> operands.</p>
+
+    <h3>8.4 OP_CheckCost (258)</h3>
+    <p><strong>Purpose:</strong> Check if an attribute has sufficient value for a cost operation.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]: Stats Component (18-bit data operand → UObject*)
+Data0[42-59]: Attribute Tag (18-bit → FGameplayTag)
+Data1[0-17]:  Sub-Attribute Tag (18-bit → FGameplayTag: Current/Max/Base)
+Data1[18]:    Cost Value (inline float)</code></pre>
+    </div>
+
+    <p><strong>Logic:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>if (!Attribute.bOverflows)
+    result = (AttributeValue + CostValue) &gt;= 0 AND
+             (AttributeValue + CostValue) &lt;= Attribute.Max
+else
+    result = true   // Overflow-allowed attributes always pass</code></pre>
+    </div>
+    <p>The cost value is typically negative (e.g., -50 mana). The check verifies the result stays within <code>[0, Max]</code>.</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Input</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Component</td><td><code>UObject*</code> (data operand)</td><td>Target StatsComponent (or IStatsXComponentProvider)</td></tr>
+            <tr><td>AttributeTag</td><td><code>FGameplayTag</code></td><td>Which attribute to check</td></tr>
+            <tr><td>SubAttributeTag</td><td><code>FGameplayTag</code></td><td>Which sub-attribute (Current, Max, Base)</td></tr>
+            <tr><td>CostValue</td><td><code>float</code> (inline)</td><td>Delta to apply (typically negative)</td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.5 OP_CheckTags (266)</h3>
+    <p><strong>Purpose:</strong> Query gameplay tags on a component's status tracking containers.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]: Stats Component (18-bit → UObject*)
+Data0[42-59]: Container To Check (18-bit → FGameplayTag: CastedStatuses/ReceivedStatuses)
+Data1[0-17]:  Query Method (18-bit → EQueryMethod)
+Data1[18-35]: Literal Tag Container (18-bit → FGameplayTagContainer via ArrayHeader)
+Data1[36-53]: Literal Tag (18-bit → FGameplayTag)</code></pre>
+    </div>
+
+    <p><strong>Supported containers:</strong> <code>StatsX_ContainerType_CastedStatuses</code>, <code>StatsX_ContainerType_ReceivedStatuses</code></p>
+    <p><strong>Query methods and their resolution:</strong></p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Single Tag</th>
+                <th>Container</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>HasTag</code></td><td><code>HasCastedStatus(Tag)</code> / <code>HasReceivedStatus(Tag)</code></td><td>&mdash;</td></tr>
+            <tr><td><code>HasTagExact</code></td><td><code>HasExactCastedStatus(Tag)</code> / <code>HasExactReceivedStatus(Tag)</code></td><td>&mdash;</td></tr>
+            <tr><td><code>HasAny</code></td><td>&mdash;</td><td><code>HasAnyCastedStatus(Container)</code> / <code>HasAnyReceivedStatus(Container)</code></td></tr>
+            <tr><td><code>HasAnyExact</code></td><td>&mdash;</td><td><code>CastedStatusesContainer.HasAnyExact(Container)</code></td></tr>
+            <tr><td><code>HasAll</code></td><td>&mdash;</td><td><code>HasAllCastedStatus(Container)</code> / <code>HasAllReceivedStatus(Container)</code></td></tr>
+            <tr><td><code>HasAllExact</code></td><td>&mdash;</td><td><code>CastedStatusesContainer.HasAllExact(Container)</code></td></tr>
+            <tr><td><code>HasNone</code></td><td>&mdash;</td><td><code>!HasAllCastedStatus(Container)</code></td></tr>
+            <tr><td><code>HasNoneExact</code></td><td>&mdash;</td><td><code>!CastedStatusesContainer.HasAllExact(Container)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.6 OP_CheckAttributeRequirement (265)</h3>
+    <p><strong>Purpose:</strong> Compare an attribute's sub-value against a threshold.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]: Stats Component (18-bit → UObject*)
+Data0[42-59]: Attribute Tag (18-bit → FGameplayTag)
+Data1[0-17]:  Sub-Attribute Tag (18-bit → FGameplayTag: Current/Max/Base)
+Data1[18-35]: Comparison Method (18-bit → EComparationMethod)
+Data1[36-53]: Compare Value (18-bit → float)</code></pre>
+    </div>
+
+    <p><strong>Logic:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>float AttributeValue = StatsComponent-&gt;GetSubAttributeValue(AttributeTag, SubAttributeTag);
+// Then apply comparison: AttributeValue &lt;method&gt; CompareValue</code></pre>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Input</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Component</td><td><code>UObject*</code></td><td>Target StatsComponent</td></tr>
+            <tr><td>AttributeTag</td><td><code>FGameplayTag</code></td><td>Which attribute</td></tr>
+            <tr><td>SubAttributeTag</td><td><code>FGameplayTag</code></td><td>Current, Max, or Base</td></tr>
+            <tr><td>Method</td><td><code>EComparationMethod</code></td><td>Comparison operator</td></tr>
+            <tr><td>CompareValue</td><td><code>float</code></td><td>Threshold value</td></tr>
+        </tbody>
+    </table>
+
+    <h3>8.7 OP_Branch (311)</h3>
+    <p><strong>Purpose:</strong> Route execution based on an input boolean value.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]: Condition (18-bit data operand → bool)</code></pre>
+    </div>
+    <p>Reads a boolean from any data source and stores it directly in <code>bLastConditionResult</code>. Used as a generic "value-to-condition" bridge.</p>
+
+    <h3>8.8 OP_IsValid (317)</h3>
+    <p><strong>Purpose:</strong> Check if an object reference is valid.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Data0[24-41]: Object (18-bit data operand → UObject*)</code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>Context.bLastConditionResult = (Obj != nullptr &amp;&amp; ::IsValid(Obj));</code></pre>
+    </div>
+    <p>Performs both null check and UObject validity check (not pending kill).</p>
+
+    <h3>8.9 Component Resolution Pattern</h3>
+    <p>All component-accepting checks (<code>CheckCost</code>, <code>CheckTags</code>, <code>CheckAttributeRequirement</code>) share a common resolution pattern:</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Read UObject* from data operand
+│
+├─ nullptr → Error
+├─ == Context.CasterComponent → use directly
+├─ == Context.TargetComponent → use directly
+└─ else → Cast&lt;IStatsXComponentProvider&gt; → GetStatsComponent()
+          └─ fails → Error</code></pre>
+    </div>
+    <p>This enables checks to operate on any object that implements <code>IStatsXComponentProvider</code>, not just direct component references.</p>
+
+    <hr>
+
+    <h2 id="condition-register">9. Condition Register</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// In FForgeVMContext:
+bool bLastConditionResult;</code></pre>
+    </div>
+
+    <p><strong>Every</strong> check node writes to this single boolean register. The flow control system reads it to decide branching:</p>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Consumer</th>
+                <th>Behavior</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>System conditional jump</td><td>If <code>bLastConditionResult == true</code>, follow True branch PC; else follow False branch PC</td></tr>
+            <tr><td><code>OP_WhileLoop</code></td><td>Continue looping while <code>bLastConditionResult == true</code></td></tr>
+            <tr><td><code>OP_Gate</code></td><td>May check condition to decide open/close state</td></tr>
+            <tr><td>Subsequent checks</td><td>Overwrite &mdash; only the last check before a branch matters</td></tr>
+        </tbody>
+    </table>
+
+    <div class="info-box warning">
+        <div class="info-title">⚠️ Important</div>
+        <p>The condition register is <strong>global</strong> within the execution context. There is no stack of conditions &mdash; each check overwrites the previous result.</p>
+    </div>
+
+    <hr>
+
+    <h2 id="supported-enumerations">10. Supported Enumerations</h2>
+
+    <h3>EComparationMethod</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UENUM(BlueprintType)
+enum class EComparationMethod : uint8
+{
+    LessThan        UMETA(DisplayName = "&lt;"),
+    GreaterThan     UMETA(DisplayName = "&gt;"),
+    LessOrEqual     UMETA(DisplayName = "&lt;="),
+    GreaterOrEqual  UMETA(DisplayName = "&gt;="),
+    Equal           UMETA(DisplayName = "=="),
+    Different       UMETA(DisplayName = "!=")
+};</code></pre>
+    </div>
+    <p>Used by: <code>OP_CompareFloats</code>, <code>OP_CompareIntegers</code>, <code>OP_CheckAttributeRequirement</code>.</p>
+
+    <h3>EQueryMethod</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UENUM(BlueprintType)
+enum class EQueryMethod : uint8
+{
+    HasTag,
+    HasAny,
+    HasAll,
+    HasNone,
+    HasTagExact,
+    HasAnyExact,
+    HasAllExact,
+    HasNoneExact
+};</code></pre>
+    </div>
+    <p>Used by: <code>OP_CheckTags</code>.</p>
+
+    <hr>
+
+    <h2 id="performance-instrumentation">11. Performance Instrumentation</h2>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Stat Name</th>
+                <th>Scope</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>StatsX.CustomLogic.SetupContext</code></td><td>Context injection into logic object</td></tr>
+            <tr><td><code>StatsX.CustomLogic.ClearContext</code></td><td>Context cleanup</td></tr>
+            <tr><td><code>StatsX.CustomLogic.InjectForgeParams</code></td><td>Property discovery and value injection</td></tr>
+            <tr><td><code>StatsX.CustomLogic.ExecuteCheck</code></td><td>Full OP_CustomCheck handler</td></tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="api-reference">12. API Reference</h2>
+
+    <h3>UForgeCustomLogicBase (Base)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><strong>Context</strong></td><td><code>GetCasterActor</code></td><td><code>AActor* GetCasterActor() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetTargetActor</code></td><td><code>AActor* GetTargetActor() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetCasterComponent</code></td><td><code>UStatsX_StatsComponentBase* GetCasterComponent() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetTargetComponent</code></td><td><code>UStatsX_StatsComponentBase* GetTargetComponent() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetDefinition</code></td><td><code>const UPDA_StatusDefinition* GetDefinition() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetStatusID</code></td><td><code>int64 GetStatusID() const</code></td></tr>
+            <tr><td><strong>Context</strong></td><td><code>GetStatusInstance</code></td><td><code>FStatusInstance* GetStatusInstance() const</code></td></tr>
+            <tr><td><strong>Lifecycle</strong></td><td><code>Cancel</code></td><td><code>void Cancel()</code> &mdash; BlueprintNativeEvent</td></tr>
+            <tr><td><strong>Lifecycle</strong></td><td><code>Cleanup</code></td><td><code>void Cleanup()</code> &mdash; BlueprintNativeEvent</td></tr>
+            <tr><td><strong>System</strong></td><td><code>SetupContext</code></td><td><code>void SetupContext(FForgeVMContext&amp;)</code></td></tr>
+            <tr><td><strong>System</strong></td><td><code>InjectForgeParams</code></td><td><code>void InjectForgeParams(FForgeVMContext&amp;, const FStatusInstruction&amp;, uint8 FirstParamBit)</code></td></tr>
+            <tr><td><strong>System</strong></td><td><code>ClearContext</code></td><td><code>void ClearContext()</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableFloat</code></td><td><code>float GetVariableFloat(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableInt</code></td><td><code>int32 GetVariableInt(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableBool</code></td><td><code>bool GetVariableBool(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableTag</code></td><td><code>FGameplayTag GetVariableTag(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableVector</code></td><td><code>FVector GetVariableVector(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>GetVariableObject</code></td><td><code>UObject* GetVariableObject(FGameplayTag, bool&amp; bFound) const</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableFloat</code></td><td><code>bool SetVariableFloat(FGameplayTag, float)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableInt</code></td><td><code>bool SetVariableInt(FGameplayTag, int32)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableBool</code></td><td><code>bool SetVariableBool(FGameplayTag, bool)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableTag</code></td><td><code>bool SetVariableTag(FGameplayTag, FGameplayTag)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableVector</code></td><td><code>bool SetVariableVector(FGameplayTag, FVector)</code></td></tr>
+            <tr><td><strong>Variables</strong></td><td><code>SetVariableObject</code></td><td><code>bool SetVariableObject(FGameplayTag, UObject*)</code></td></tr>
+        </tbody>
+    </table>
+
+    <h3>UForgeCustomCheck</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Signature</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><code>Execute</code></td><td><code>bool Execute()</code> &mdash; BlueprintNativeEvent, return <code>true</code> if condition passes</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Built-in Check Handlers (registered in ForgeVM)</h3>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>OpCode</th>
+                <th>Name</th>
+                <th>Handler Namespace</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>257</td><td><code>OP_CustomCheck</code></td><td><code>Nodes_CustomLogic::ExecuteCustomCheck</code></td></tr>
+            <tr><td>258</td><td><code>OP_CheckCost</code></td><td><code>Nodes_Check::CheckCost</code></td></tr>
+            <tr><td>265</td><td><code>OP_CheckAttributeRequirement</code></td><td><code>Nodes_Check::CheckAttributeRequirement</code></td></tr>
+            <tr><td>266</td><td><code>OP_CheckTags</code></td><td><code>Nodes_Check::CheckTags</code></td></tr>
+            <tr><td>267</td><td><code>OP_CheckChance</code></td><td><code>Nodes_Check::CheckChance</code></td></tr>
+            <tr><td>268</td><td><code>OP_CompareFloats</code></td><td><code>Nodes_Check::CompareFloats</code></td></tr>
+            <tr><td>273</td><td><code>OP_CompareIntegers</code></td><td><code>Nodes_Check::CompareIntegers</code></td></tr>
+            <tr><td>311</td><td><code>OP_Branch</code></td><td><code>Nodes_Check::Branch</code></td></tr>
+            <tr><td>317</td><td><code>OP_IsValid</code></td><td><code>Nodes_Check::IsValid</code></td></tr>
+        </tbody>
+    </table>
+
+</section>
