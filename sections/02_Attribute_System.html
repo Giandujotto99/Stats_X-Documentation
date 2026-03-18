@@ -297,11 +297,8 @@ struct STATS_X_API FStatAttribute
                         <div class="code-header">
                             <span class="code-lang">C++</span>
                         </div>
-                        <pre><code>void SetOverflows(bool InOverflows)
-{
-    bOverflows = InOverflows;
-    if (!bOverflows) { ClampAll(); }  // Base → Max → Current
-}</code></pre>
+                        <pre><code>void SetOverflows(bool InOverflows);
+// When switching to standard mode (false), all values are immediately re-clamped.</code></pre>
                     </div>
 
                     <hr>
@@ -330,17 +327,14 @@ struct STATS_X_API FStatAttribute
                         </div>
                         <pre><code>AddModifier() / RemoveModifier*()
   │
-  ├─ MarkAttributeDirty(AttributeTag)
-  │    └─ Adds tag to DirtyAttributes set
+  ├─ Mark affected attributes as dirty
   │
-  └─ RecalculateAllDirtyAttributes()    [called automatically]
-       └─ For each dirty attribute:
-            ├─ Compute ΣAdditive, ΠMultiplicative from all modifiers
-            ├─ Max = (Base + ΣAdditive) × ΠMultiplicative
-            ├─ ClampMax() → ClampCurrent()
-            ├─ UpdateReplicatedAttribute()
-            ├─ BroadcastAttributeChange()
-            └─ CheckAttributeThresholds()</code></pre>
+  └─ Recalculate dirty attributes automatically:
+       ├─ Recompute Max from Base + modifiers
+       ├─ Apply clamping
+       ├─ Update replication
+       ├─ Broadcast OnAttributeChanged
+       └─ Evaluate thresholds</code></pre>
                     </div>
 
                     <div class="info-box warning">
@@ -608,14 +602,11 @@ bool HasActiveThresholds() const;</code></pre>
                         </div>
                         <pre><code>ModifyAttribute() or SetAttribute()
   │
-  └─ CheckAttributeThresholds(AttributeTag, SubAttributeTag, OldValue, NewValue, Causer)
-       │
-       └─ For each threshold matching AttributeTag:
-            ├─ Evaluate comparison against (OldValue, NewValue)
-            ├─ If triggered:
-            │    ├─ Broadcast OnAttributeThresholdReached
-            │    └─ If bRemoveAfterTrigger → auto-remove threshold
-            └─ Continue to next</code></pre>
+  └─ Check thresholds for the affected attribute
+       └─ For each matching threshold:
+            ├─ Evaluate comparison against old and new values
+            ├─ If triggered → broadcast OnAttributeThresholdReached
+            └─ If bRemoveAfterTrigger → auto-remove threshold</code></pre>
                     </div>
 
                     <h3>Delegate Signature</h3>

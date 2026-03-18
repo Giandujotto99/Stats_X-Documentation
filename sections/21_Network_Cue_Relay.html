@@ -14,15 +14,11 @@
         <li><a href="#ncr-purpose">Purpose</a></li>
         <li><a href="#ncr-relay-actor-class-card">Relay Actor Class Card</a></li>
         <li><a href="#ncr-configuration-modes">Configuration Modes</a></li>
-        <li><a href="#ncr-replicated-properties">Replicated Properties</a></li>
-        <li><a href="#ncr-state-cue-pipeline">State Cue Pipeline (Server)</a></li>
+        <li><a href="#ncr-state-cue-delivery">State and Burst Cue Delivery</a></li>
         <li><a href="#ncr-client-reception">Client Reception</a></li>
         <li><a href="#ncr-montage-lifecycle">Montage Lifecycle Integration</a></li>
         <li><a href="#ncr-custom-cue-extension">Custom Cue Extension Point</a></li>
         <li><a href="#ncr-relay-lifecycle">Relay Lifecycle Management</a></li>
-        <li><a href="#ncr-capacity-safety">Capacity and Safety Limits</a></li>
-        <li><a href="#ncr-performance">Performance Instrumentation</a></li>
-        <li><a href="#ncr-wire-format">Wire Format Quick Reference</a></li>
         <li><a href="#ncr-builtin-cue-execution">Built-In Cue Execution Summary</a></li>
         <li><a href="#ncr-design-decisions">Design Decisions</a></li>
         <li><a href="#ncr-see-also">See Also</a></li>
@@ -35,24 +31,15 @@
     <p>This document is the <strong>actor-level reference</strong> for <code>AStatsX_NetCueRelay</code> &mdash; the lightweight <code>AInfo</code> subclass that transports cosmetic cues from the server to clients. While <a href="#cosmetic-cue-routing">18 &mdash; Cosmetic Cue Routing</a> covers the routing pipeline end-to-end, this document focuses on:</p>
 
     <ul>
-        <li>The relay actor&rsquo;s internal state machine and configuration knobs.</li>
-        <li>Montage lifecycle integration via <code>UForge_MontageCallbackHelper</code>.</li>
+        <li>The relay actor&rsquo;s configuration and modes.</li>
+        <li>Montage lifecycle integration.</li>
         <li>The <code>EStatsXCosmeticCueType::Custom</code> extension point.</li>
-        <li>Complete profiling stat reference.</li>
-        <li>Capacity and safety limits.</li>
+        <li>Built-in cue execution summary.</li>
     </ul>
 
     <hr>
 
     <h2 id="ncr-relay-actor-class-card">2. Relay Actor Class Card</h2>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:138-197
-        Private/Net/StatsX_NetCueRelay.cpp:178-838</code></pre>
-    </div>
 
     <div class="code-block">
         <div class="code-header">
@@ -74,13 +61,8 @@ class AStatsX_NetCueRelay : public AInfo</code></pre>
             <tr><td>Base class</td><td><code>AInfo</code></td><td>No visual, no collision, no movement</td></tr>
             <tr><td><code>bReplicates</code></td><td><code>true</code></td><td>Network-replicated actor</td></tr>
             <tr><td><code>bAlwaysRelevant</code></td><td><code>false</code> (route) / <code>true</code> (global)</td><td>See &sect;3</td></tr>
-            <tr><td><code>bOnlyRelevantToOwner</code></td><td><code>false</code></td><td>Visible to all clients in relevancy range</td></tr>
-            <tr><td><code>bNetUseOwnerRelevancy</code></td><td><code>true</code> (route) / <code>false</code> (global)</td><td>See &sect;3</td></tr>
-            <tr><td><code>SetReplicateMovement</code></td><td><code>false</code></td><td>No movement replication</td></tr>
             <tr><td><code>NetUpdateFrequency</code></td><td><code>30.f</code></td><td>Target updates/second</td></tr>
             <tr><td><code>MinNetUpdateFrequency</code></td><td><code>10.f</code></td><td>Floor under adaptive frequency</td></tr>
-            <tr><td><code>SetActorHiddenInGame</code></td><td><code>true</code></td><td>Invisible in game</td></tr>
-            <tr><td><code>SetCanBeDamaged</code></td><td><code>false</code></td><td>No damage processing</td></tr>
         </tbody>
     </table>
 
@@ -90,208 +72,42 @@ class AStatsX_NetCueRelay : public AInfo</code></pre>
 
     <h3>3.1 Route-Actor Relay</h3>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:215-228</code></pre>
-    </div>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>void ConfigureForRouteActor(AActor* InRouteActor)
-{
-    RouteActor = InRouteActor;
-    bGlobalRelay = false;
-    bAlwaysRelevant = false;
-    bNetUseOwnerRelevancy = true;
-    SetOwner(InRouteActor);
-    ForceNetUpdate();
-}</code></pre>
-    </div>
-
-    <p>The relay <strong>inherits relevancy from its owner</strong>. Clients that can see the route actor automatically receive the relay and its cues. Clients outside relevancy range receive nothing &mdash; zero wasted bandwidth.</p>
+    <p>The relay <strong>inherits relevancy from a designated route actor</strong>. Clients that can see the route actor automatically receive the relay and its cues. Clients outside relevancy range receive nothing &mdash; zero wasted bandwidth. The relay is configured by setting the route actor as its owner and using owner-based relevancy.</p>
 
     <h3>3.2 Global Relay</h3>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:230-243</code></pre>
-    </div>
+    <p>Always relevant to all connected clients. Used for cues with no actor affinity or as a fallback when the route-actor relay cap is exceeded. The global relay has no owner and is marked as always relevant.</p>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>void ConfigureAsGlobalRelay()
-{
-    RouteActor = nullptr;
-    bGlobalRelay = true;
-    bAlwaysRelevant = true;
-    bNetUseOwnerRelevancy = false;
-    SetOwner(nullptr);
-    ForceNetUpdate();
-}</code></pre>
-    </div>
-
-    <p>Always relevant to all connected clients. Used for cues with no actor affinity or as a fallback when the route-actor relay cap is exceeded.</p>
+    <p>The conceptual difference: <strong>route-actor relays</strong> are bandwidth-efficient because they only replicate to clients that can see the associated actor, while <strong>global relays</strong> broadcast to everyone regardless of distance or relevancy.</p>
 
     <hr>
 
-    <h2 id="ncr-replicated-properties">4. Replicated Properties</h2>
+    <h2 id="ncr-state-cue-delivery">4. State and Burst Cue Delivery</h2>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:206-213</code></pre>
-    </div>
+    <p>The relay supports two delivery channels:</p>
 
     <table class="data-table">
         <thead>
             <tr>
-                <th>Property</th>
-                <th>Type</th>
-                <th>Purpose</th>
+                <th>Channel</th>
+                <th>Reliability</th>
+                <th>Join-in-Progress</th>
+                <th>Use Case</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>ReplicatedStateCues</code></td><td><code>FStatsXReplicatedStateCueArray</code></td><td>FFastArraySerializer for state-reliable cues</td></tr>
-            <tr><td><code>RouteActor</code></td><td><code>TObjectPtr&lt;AActor&gt;</code></td><td>Actor whose relevancy this relay tracks</td></tr>
-            <tr><td><code>bGlobalRelay</code></td><td><code>uint8 : 1</code></td><td>True when configured as global fallback</td></tr>
+            <tr><td><strong>State Reliable</strong></td><td>Reliable, delta-compressed</td><td>Safe (new clients get full state)</td><td>Persistent effects, montages</td></tr>
+            <tr><td><strong>Burst Unreliable</strong></td><td>Unreliable multicast RPC</td><td>Not safe (fire-and-forget)</td><td>One-shot VFX/SFX</td></tr>
         </tbody>
     </table>
 
-    <p>All three use unconditional <code>DOREPLIFETIME</code>.</p>
+    <p>State cues are replicated with latest-value-wins semantics &mdash; if the same effect is updated multiple times before replication occurs, only the latest value is sent. New clients joining mid-session receive the full state array, making the system join-in-progress safe for state cues.</p>
 
     <hr>
 
-    <h2 id="ncr-state-cue-pipeline">5. State Cue Pipeline (Server)</h2>
+    <h2 id="ncr-client-reception">5. Client Reception</h2>
 
-    <h3>5.1 PushCueFromServer</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:245-291</code></pre>
-    </div>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>Authority check
-  &darr;
-BuildWireCue(Cue) &rarr; FStatsXNetCueWireData
-  &darr;
-&boxdr;&mdash; StateReliable &mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&boxur;
-&boxv;  Build FStatsXCosmeticCueStreamKey                &boxv;
-&boxv;  &darr;                                                &boxv;
-&boxv;  StateCueIndexByStream.Find(StreamKey)?           &boxv;
-&boxv;  &boxdr;&mdash; Found &rarr; overwrite item in-place, MarkDirty   &boxv;
-&boxv;  &boxur;&mdash; Not found &rarr; AddDefaulted, MarkDirty, index   &boxv;
-&boxv;  &darr;                                                &boxv;
-&boxv;  Overflow check: Items.Num() &gt; MaxStateCueEntries &boxv;
-&boxv;  &boxur;&mdash; Remove oldest, MarkArrayDirty, RebuildIndex  &boxv;
-&boxv;  &darr;                                                &boxv;
-&boxv;  ForceNetUpdate()                                  &boxv;
-&boxdl;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&boxdk;
-&boxdr;&mdash; BurstUnreliable &mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&boxur;
-&boxv;  MulticastBurstCue(WireCue)   [NetMulticast RPC] &boxv;
-&boxdl;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&boxdk;</code></pre>
-    </div>
-
-    <h3>5.2 StateCueIndexByStream</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TMap&lt;FStatsXCosmeticCueStreamKey, int32&gt; StateCueIndexByStream;</code></pre>
-    </div>
-
-    <p>Server-side O(1) lookup for <strong>latest-value-wins</strong> deduplication. Rebuilt from scratch via <code>RebuildStateCueIndex()</code> only after overflow eviction (which shifts array indices).</p>
-
-    <h3>5.3 Overflow Eviction</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:277-283</code></pre>
-    </div>
-
-    <p>When <code>Items.Num() &gt; MaxStateCueEntries</code> (default <strong>96</strong>):</p>
-
-    <ol>
-        <li>Compute <code>RemoveCount = Items.Num() - MaxStateCueEntries</code>.</li>
-        <li><code>RemoveAt(0, RemoveCount, EAllowShrinking::No)</code> &mdash; evict oldest.</li>
-        <li><code>MarkArrayDirty()</code> &mdash; full resync to all clients.</li>
-        <li><code>RebuildStateCueIndex()</code> &mdash; O(N) index reconstruction.</li>
-    </ol>
-
-    <hr>
-
-    <h2 id="ncr-client-reception">6. Client Reception</h2>
-
-    <h3>6.1 State Cues</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:162-176, 305-315</code></pre>
-    </div>
-
-    <p><code>FFastArraySerializer</code> drives <code>PostReplicatedAdd</code> / <code>PostReplicatedChange</code> on each <code>FStatsXReplicatedStateCueItem</code>. Both delegate to:</p>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>void HandleReplicatedStateCue(const FStatsXReplicatedStateCueItem&amp; Item)
-{
-    if (HasAuthority()) return;
-    DispatchCueOnClient(BuildRuntimeCue(Item.Cue, StateReliable));
-}</code></pre>
-    </div>
-
-    <p>New clients joining mid-session receive the full state array (join-in-progress safe).</p>
-
-    <h3>6.2 Burst Cues</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:293-303</code></pre>
-    </div>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>UFUNCTION(NetMulticast, Unreliable)
-void MulticastBurstCue(const FStatsXNetCueWireData&amp; WireCue);</code></pre>
-    </div>
-
-    <p>Client implementation skips authority, then calls <code>DispatchCueOnClient</code> with <code>BurstUnreliable</code> channel. No join-in-progress guarantee &mdash; burst cues are for one-shot effects.</p>
-
-    <h3>6.3 DispatchCueOnClient</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:317-337</code></pre>
-    </div>
-
-    <p>Three-stage client dispatch:</p>
+    <p>When cues arrive on the client, they pass through a three-stage dispatch pipeline:</p>
 
     <table class="data-table">
         <thead>
@@ -301,107 +117,31 @@ void MulticastBurstCue(const FStatsXNetCueWireData&amp; WireCue);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td>1. <code>ExecuteBuiltInCue(Cue)</code></td><td>Immediate local playback (montage, VFX, SFX)</td></tr>
-            <tr><td>2. <code>OnClientCueReceivedNative.Broadcast(Cue)</code></td><td>Native C++ delegate for custom consumers</td></tr>
-            <tr><td>3. <code>Subsystem-&gt;EnqueueCosmeticCue(Cue)</code></td><td>Re-inject into local bus for Blueprint/sink consumers</td></tr>
+            <tr><td>1. Built-in execution</td><td>Immediate local playback (montage, VFX, SFX)</td></tr>
+            <tr><td>2. Native delegate</td><td>C++ delegate for custom consumers</td></tr>
+            <tr><td>3. Bus re-injection</td><td>Re-inject into local cue bus for Blueprint/sink consumers</td></tr>
         </tbody>
     </table>
 
     <hr>
 
-    <h2 id="ncr-montage-lifecycle">7. Montage Lifecycle Integration</h2>
+    <h2 id="ncr-montage-lifecycle">6. Montage Lifecycle Integration</h2>
 
-    <h3>7.1 UForge_MontageCallbackHelper</h3>
+    <p>Montage playback integrates with the status lifecycle for blend and completion callbacks. When a montage is played via <code>OP_PlayMontage</code>, a helper object is created to bridge montage animation delegates with the ForgeVM execution context.</p>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Nodes/Nodes_Core.h:24-81
-        Private/Nodes/Nodes_Core.cpp:201-340</code></pre>
-    </div>
+    <p>Each montage signal (<code>BlendIn</code>, <code>BlendOut</code>, <code>Interrupted</code>, <code>Cancelled</code>, <code>Completed</code>) maps to a distinct continuation point in the status definition&rsquo;s instruction stream, allowing designers to branch logic per montage event.</p>
 
-    <p>A <code>UObject</code> helper created per <code>OP_PlayMontage</code> invocation to bridge montage animation delegates with the ForgeVM execution context.</p>
+    <h3>6.1 Status Termination</h3>
 
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Field</th>
-                <th>Type</th>
-                <th>Purpose</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Owning status instance</td></tr>
-            <tr><td><code>NodePC</code></td><td><code>int32</code></td><td>Instruction that spawned this montage</td></tr>
-            <tr><td><code>ImmediatePC</code></td><td><code>int32</code></td><td>PC for immediate return after play</td></tr>
-            <tr><td><code>OnBlendInPC</code></td><td><code>int32</code></td><td>PC to resume on blend-in</td></tr>
-            <tr><td><code>OnBlendOutPC</code></td><td><code>int32</code></td><td>PC to resume on blend-out</td></tr>
-            <tr><td><code>OnInterruptedPC</code></td><td><code>int32</code></td><td>PC to resume on interruption</td></tr>
-            <tr><td><code>OnCancelledPC</code></td><td><code>int32</code></td><td>PC to resume on cancel</td></tr>
-            <tr><td><code>OnCompletedPC</code></td><td><code>int32</code></td><td>PC to resume on completion</td></tr>
-            <tr><td><code>bStopOnStatusEnds</code></td><td><code>bool</code></td><td>Auto-stop montage when owning status terminates</td></tr>
-            <tr><td><code>PendingSignals</code></td><td><code>TArray&lt;uint8&gt;</code></td><td>Queue for deferred signal dispatch</td></tr>
-        </tbody>
-    </table>
-
-    <p><strong>Static registry:</strong></p>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>static TMap&lt;int64, TWeakObjectPtr&lt;UForge_MontageCallbackHelper&gt;&gt; ActiveHelpers;</code></pre>
-    </div>
-
-    <h3>7.2 Status Termination &rarr; StopMontage Cue</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Nodes/Nodes_Core.cpp:328-340 (OnStatusSet callback)
-        Private/Nodes/Nodes_Core.cpp:201-260 (Cleanup)</code></pre>
-    </div>
-
-    <p>The helper binds to <code>Subsystem-&gt;OnStatusSet</code> at creation. When the owning status is removed (<code>EStatusSetAction::Removed</code>):</p>
-
-    <ol>
-        <li><code>OnStatusSet(Data)</code> fires &rarr; calls <code>Cleanup(bStopOnStatusEnds)</code>.</li>
-        <li><strong>Cleanup</strong> unregisters from the static map, unbinds delegates.</li>
-        <li>If <code>bStopOnStatusEnds == true</code>:
-            <ul>
-                <li>Constructs <code>FStatsXCosmeticCue</code>:</li>
-            </ul>
-        </li>
-    </ol>
-
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Field</th>
-                <th>Value</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td><code>CueType</code></td><td><code>StopMontage</code></td></tr>
-            <tr><td><code>Channel</code></td><td><code>StateReliable</code></td></tr>
-            <tr><td><code>RoutePolicy</code></td><td><code>TargetActor</code></td></tr>
-            <tr><td><code>Asset</code></td><td>The playing <code>UAnimMontage</code></td></tr>
-            <tr><td><code>Float0</code></td><td><code>0.15</code> (blend-out time)</td></tr>
-            <tr><td><code>Key.StatusID</code></td><td>Original StatusID</td></tr>
-            <tr><td><code>Key.NodePC</code></td><td>Original NodePC</td></tr>
-        </tbody>
-    </table>
+    <p>When a status that owns a playing montage is removed, the system can optionally auto-stop the montage (controlled by the <code>bStopOnStatusEnds</code> flag). If enabled:</p>
 
     <ul>
-        <li>Calls <code>Subsystem-&gt;EnqueueCosmeticCue(Cue)</code>.</li>
-        <li>Also calls <code>Montage_Stop(0.15f)</code> locally for immediate feedback.</li>
+        <li>A <code>StopMontage</code> cosmetic cue is emitted so clients stop the montage as well.</li>
+        <li>The montage is stopped locally with a brief blend-out.</li>
+        <li>The <code>StopMontage</code> cue overwrites the <code>PlayMontage</code> state in the replicated state array, keeping the system join-in-progress consistent.</li>
     </ul>
 
-    <p>4. The StopMontage cue enters the bus, gets routed to the relay, and <strong>overwrites the PlayMontage state</strong> in the <code>ReplicatedStateCues</code> array (same <code>StreamKey</code>: StatusID + NodePC + StopMontage CueType).</p>
-
-    <h3>7.3 Montage Signal Flow</h3>
+    <h3>6.2 Montage Signal Flow</h3>
 
     <div class="code-block">
         <div class="code-header">
@@ -409,80 +149,45 @@ void MulticastBurstCue(const FStatsXNetCueWireData&amp; WireCue);</code></pre>
         </div>
         <pre><code>OP_PlayMontage &rarr; create Helper &rarr; bind anim delegates
                                      &darr;
-                         OnMontageBlendedIn  &rarr; EnqueueSignal(BlendIn)
-                         OnMontageBlendingOut &rarr; EnqueueSignal(BlendOut/Interrupted)
-                         OnMontageEnded       &rarr; EnqueueSignal(Completed/Cancelled)
+                         OnMontageBlendedIn  &rarr; signal BlendIn
+                         OnMontageBlendingOut &rarr; signal BlendOut/Interrupted
+                         OnMontageEnded       &rarr; signal Completed/Cancelled
                                      &darr;
-                         RequestResumeNode() &rarr; VM resumes at signal-specific PC</code></pre>
+                         VM resumes at signal-specific continuation point</code></pre>
     </div>
-
-    <p>Each signal (<code>BlendIn</code>, <code>BlendOut</code>, <code>Interrupted</code>, <code>Cancelled</code>, <code>Completed</code>) maps to a distinct continuation PC in the status definition&rsquo;s instruction stream, allowing designers to branch logic per montage event.</p>
 
     <hr>
 
-    <h2 id="ncr-custom-cue-extension">8. Custom Cue Extension Point</h2>
+    <h2 id="ncr-custom-cue-extension">7. Custom Cue Extension Point</h2>
 
-    <h3>8.1 EStatsXCosmeticCueType::Custom</h3>
+    <h3>7.1 EStatsXCosmeticCueType::Custom</h3>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Data/StatsXCosmeticCueTypes.h:20</code></pre>
-    </div>
+    <p>The <code>Custom</code> cue type is <strong>not handled</strong> by the built-in cue executor (falls through as a no-op). It exists as an extension point for game-specific cues.</p>
 
-    <p>The <code>Custom</code> cue type is <strong>not handled</strong> by <code>ExecuteBuiltInCue</code> (falls through the default case). It exists as an extension point for game-specific cues.</p>
-
-    <h3>8.2 OnClientCueReceived Delegate</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:136, 162</code></pre>
-    </div>
+    <h3>7.2 OnClientCueReceived Delegate</h3>
 
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
         </div>
-        <pre><code>DECLARE_MULTICAST_DELEGATE_OneParam(
-    FOnStatsXNetRelayCueReceivedNative,
-    const FStatsXCosmeticCue&amp; /*Cue*/);
-
-FOnStatsXNetRelayCueReceivedNative&amp; OnClientCueReceived()
-{
-    return OnClientCueReceivedNative;
-}</code></pre>
+        <pre><code>FOnStatsXNetRelayCueReceivedNative&amp; OnClientCueReceived();</code></pre>
     </div>
 
-    <p>Broadcast <strong>after</strong> <code>ExecuteBuiltInCue</code> for every cue (not just Custom type). Custom cues pass through <code>ExecuteBuiltInCue</code> as a no-op, then hit this delegate where game code can interpret the payload.</p>
+    <p>Broadcast <strong>after</strong> built-in cue execution for every cue (not just Custom type). Custom cues pass through built-in execution as a no-op, then hit this delegate where game code can interpret the payload.</p>
 
-    <h3>8.3 Bus Sink Delegate</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Core/StatsX_WorldSubsystem.h:28, 296</code></pre>
-    </div>
+    <h3>7.3 Bus Sink Delegate</h3>
 
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
         </div>
-        <pre><code>DECLARE_MULTICAST_DELEGATE_TwoParams(
-    FOnStatsXCosmeticCueRoutedNative,
-    const FStatsXCosmeticCue&amp; /*Cue*/,
-    AActor* /*RouteActor*/);
-
-FDelegateHandle RegisterCosmeticCueSink(
+        <pre><code>FDelegateHandle RegisterCosmeticCueSink(
     const FOnStatsXCosmeticCueRoutedNative::FDelegate&amp; Delegate);</code></pre>
     </div>
 
-    <p>Server-side sink registration for custom routing logic. The network transport is itself registered as a sink during <code>Initialize()</code>.</p>
+    <p>Server-side sink registration for custom routing logic.</p>
 
-    <h3>8.4 Extension Pattern</h3>
+    <h3>7.4 Extension Pattern</h3>
 
     <div class="code-block">
         <div class="code-header">
@@ -500,263 +205,53 @@ Relay-&gt;OnClientCueReceived().AddUObject(
 
     <hr>
 
-    <h2 id="ncr-relay-lifecycle">9. Relay Lifecycle Management</h2>
+    <h2 id="ncr-relay-lifecycle">8. Relay Lifecycle Management</h2>
 
-    <h3>9.1 Creation</h3>
+    <h3>8.1 Creation</h3>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:810-900</code></pre>
-    </div>
+    <p>Relays are created on demand via <code>GetOrCreateNetCueRelay(AActor* RouteActor)</code> on the world subsystem:</p>
 
-    <p><code>GetOrCreateNetCueRelay(AActor* RouteActor)</code>:</p>
+    <ul>
+        <li>If <code>RouteActor</code> is null or not replicated, a <strong>global relay</strong> is created or reused.</li>
+        <li>If <code>RouteActor</code> is valid and replicated, a <strong>route-actor relay</strong> is created or reused from a per-actor cache.</li>
+        <li>If the route-actor relay cap is exceeded, the system falls back to the global relay.</li>
+    </ul>
 
-    <ol>
-        <li><strong>Stale cleanup</strong> &mdash; iterate <code>RouteActorNetCueRelays</code>, destroy relays whose weak pointers are invalid.</li>
-        <li><strong>Route actor null / not replicated</strong> &rarr; global relay path:
-            <ul>
-                <li>Return existing <code>GlobalNetCueRelay</code> if valid.</li>
-                <li>Spawn new <code>AStatsX_NetCueRelay</code> at identity transform, <code>RF_Transient</code>.</li>
-                <li><code>ConfigureAsGlobalRelay()</code>.</li>
-            </ul>
-        </li>
-        <li><strong>Valid replicated route actor</strong> &rarr; per-actor path:
-            <ul>
-                <li>Return existing from <code>RouteActorNetCueRelays</code> cache.</li>
-                <li>If cache full (<code>&ge; MaxRouteNetCueRelays</code>) &rarr; fallback to global relay.</li>
-                <li>Spawn new relay at route actor&rsquo;s transform, <code>RF_Transient</code>.</li>
-                <li><code>ConfigureForRouteActor(RouteActor)</code>.</li>
-                <li>Cache in <code>RouteActorNetCueRelays</code>.</li>
-            </ul>
-        </li>
-    </ol>
-
-    <h3>9.2 Fallback Chain</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:798-802</code></pre>
-    </div>
-
-    <p><code>HandleCosmeticCueRoutedForNetwork</code>:</p>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>AStatsX_NetCueRelay* Relay = GetOrCreateNetCueRelay(RouteActor);
-if (!Relay &amp;&amp; IsValid(RouteActor))
-{
-    Relay = GetOrCreateNetCueRelay(nullptr);  // global fallback
-}</code></pre>
-    </div>
+    <h3>8.2 Fallback Chain</h3>
 
     <p>Two-level fallback: route-specific &rarr; global. A cue always finds a relay unless the world is shutting down.</p>
 
-    <h3>9.3 Destruction</h3>
+    <h3>8.3 Destruction</h3>
 
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Core/StatsX_WorldSubsystem.cpp:902-918</code></pre>
-    </div>
-
-    <p><code>DestroyNetCueRelays()</code> &mdash; called during subsystem <code>Deinitialize</code>:</p>
-
-    <ol>
-        <li><code>GlobalNetCueRelay-&gt;Destroy()</code>, reset.</li>
-        <li>Iterate <code>RouteActorNetCueRelays</code>, destroy each relay.</li>
-        <li>Reset map.</li>
-    </ol>
-
-    <h3>9.4 EndPlay</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:199-204</code></pre>
-    </div>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>void AStatsX_NetCueRelay::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-    StateCueIndexByStream.Reset();
-    OnClientCueReceivedNative.Clear();
-    Super::EndPlay(EndPlayReason);
-}</code></pre>
-    </div>
+    <p>All relays are destroyed during world subsystem teardown. Both the global relay and all per-route-actor relays are cleaned up.</p>
 
     <hr>
 
-    <h2 id="ncr-capacity-safety">10. Capacity and Safety Limits</h2>
-
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Limit</th>
-                <th>Default</th>
-                <th>Scope</th>
-                <th>Purpose</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td><code>MaxStateCueEntries</code></td><td>96</td><td>Per relay</td><td>Cap on state cue items; oldest evicted on overflow</td></tr>
-            <tr><td><code>MaxRouteNetCueRelays</code></td><td>4096</td><td>World</td><td>Hard cap on route-actor relays; excess fall back to global</td></tr>
-            <tr><td><code>NetUpdateFrequency</code></td><td>30 Hz</td><td>Per relay</td><td>Target replication rate</td></tr>
-            <tr><td><code>MinNetUpdateFrequency</code></td><td>10 Hz</td><td>Per relay</td><td>Minimum replication rate under load</td></tr>
-            <tr><td><code>PendingCosmeticCues.Reserve</code></td><td>128</td><td>World</td><td>Pre-allocated bus queue capacity</td></tr>
-            <tr><td><code>PendingStateCueIndices.Reserve</code></td><td>64</td><td>World</td><td>Pre-allocated state dedup capacity</td></tr>
-            <tr><td><code>LocalVFXByHandle.Reserve</code></td><td>128</td><td>World</td><td>Pre-allocated VFX registry capacity</td></tr>
-            <tr><td><code>LocalSFXByHandle.Reserve</code></td><td>128</td><td>World</td><td>Pre-allocated SFX registry capacity</td></tr>
-            <tr><td>VFX registry stale cleanup</td><td>2048</td><td>World</td><td>Trigger threshold for stale-entry sweep</td></tr>
-        </tbody>
-    </table>
-
-    <hr>
-
-    <h2 id="ncr-performance">11. Performance Instrumentation</h2>
-
-    <p>All relay and bus operations are profiled under <strong>STATGROUP_StatsXNet</strong>.</p>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Helpers/StatsXPerf.h:51-63</code></pre>
-    </div>
-
-    <h3>11.1 Cycle Stats</h3>
-
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Stat Name</th>
-                <th>Scope</th>
-                <th>Location</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td><code>STAT_StatsXNetCueEnqueue</code></td><td><code>EnqueueCosmeticCue</code></td><td>WorldSubsystem</td></tr>
-            <tr><td><code>STAT_StatsXNetCueFlushBus</code></td><td><code>FlushCosmeticCueBus</code></td><td>WorldSubsystem</td></tr>
-            <tr><td><code>STAT_StatsXNetCueRouteToNetwork</code></td><td><code>HandleCosmeticCueRoutedForNetwork</code></td><td>WorldSubsystem</td></tr>
-            <tr><td><code>STAT_StatsXNetCueGetOrCreateRelay</code></td><td><code>GetOrCreateNetCueRelay</code></td><td>WorldSubsystem</td></tr>
-            <tr><td><code>STAT_StatsXNetCuePushFromServer</code></td><td><code>PushCueFromServer</code></td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueBurstReceive</code></td><td><code>MulticastBurstCue_Impl</code></td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueStateReceive</code></td><td><code>HandleReplicatedStateCue</code></td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueDispatchClient</code></td><td><code>DispatchCueOnClient</code></td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueExecuteBuiltIn</code></td><td><code>ExecuteBuiltInCue</code> (outer)</td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueExecuteMontage</code></td><td><code>ExecuteBuiltInCue</code> (montage branch)</td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueExecuteVFX</code></td><td><code>ExecuteBuiltInCue</code> (VFX branches)</td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueExecuteSFX</code></td><td><code>ExecuteBuiltInCue</code> (SFX branches)</td><td>NetCueRelay</td></tr>
-            <tr><td><code>STAT_StatsXNetCueRebuildStateIndex</code></td><td><code>RebuildStateCueIndex</code></td><td>NetCueRelay</td></tr>
-        </tbody>
-    </table>
-
-    <h3>11.2 Macro</h3>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Helpers/StatsXPerf.h:242-247</code></pre>
-    </div>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>#define STATSX_NETCUE_SCOPE(NameLiteral, CsvStatName, CycleStatName) \
-    do { \
-        STATSX_NETCUE_TRACE_SCOPE(NameLiteral); \
-        STATSX_NETCUE_CSV_SCOPE(CsvStatName); \
-        STATSX_NETCUE_CYCLE_SCOPE(CycleStatName); \
-    } while (0)</code></pre>
-    </div>
-
-    <p>Three-layer instrumentation per scope:</p>
-    <ol>
-        <li><strong>Trace</strong> &mdash; Unreal Insights trace event.</li>
-        <li><strong>CSV</strong> &mdash; CSV profiler column.</li>
-        <li><strong>Cycle</strong> &mdash; <code>DECLARE_CYCLE_STAT</code> for <code>stat net</code> display.</li>
-    </ol>
-
-    <hr>
-
-    <h2 id="ncr-wire-format">12. Wire Format Quick Reference</h2>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Public/Net/StatsX_NetCueRelay.h:16-91</code></pre>
-    </div>
-
-    <p><code>FStatsXNetCueWireData</code> &mdash; 21 <code>UPROPERTY</code> fields:</p>
-
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Category</th>
-                <th>Fields</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td>Identity</td><td><code>CueType</code> (uint8), <code>RoutePolicy</code> (uint8), <code>StatusID</code> (int64), <code>NodePC</code> (int32), <code>Sequence</code> (uint16)</td></tr>
-            <tr><td>Actors</td><td><code>CasterActor</code>, <code>TargetActor</code>, <code>ExplicitRouteActor</code> (TObjectPtr)</td></tr>
-            <tr><td>Metadata</td><td><code>ServerWorldTimeSeconds</code> (float), <code>CueName</code> (FName)</td></tr>
-            <tr><td>Assets</td><td><code>Asset</code>, <code>SecondaryAsset</code> (TObjectPtr)</td></tr>
-            <tr><td>Transform</td><td><code>Location</code> (FVector_NetQuantize10), <code>Rotation</code> (FRotator), <code>Scale</code> (FVector_NetQuantize10)</td></tr>
-            <tr><td>Montage</td><td><code>SectionName</code> (FName)</td></tr>
-            <tr><td>Payload</td><td><code>Float0</code>&ndash;<code>Float3</code>, <code>Int0</code>, <code>Int1</code>, <code>Int64_0</code>, <code>Flags</code></td></tr>
-        </tbody>
-    </table>
-
-    <p>Vectors use <code>FVector_NetQuantize10</code> &mdash; 1-decimal-place quantization for network-efficient transport.</p>
-
-    <hr>
-
-    <h2 id="ncr-builtin-cue-execution">13. Built-In Cue Execution Summary</h2>
-
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Location</span>
-        </div>
-        <pre><code>Source  Private/Net/StatsX_NetCueRelay.cpp:339-826</code></pre>
-    </div>
+    <h2 id="ncr-builtin-cue-execution">9. Built-In Cue Execution Summary</h2>
 
     <table class="data-table">
         <thead>
             <tr>
                 <th>CueType</th>
-                <th>Key payload</th>
-                <th>UE5 API called</th>
+                <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>PlayMontage</code></td><td>Asset=UAnimMontage, Float0=PlayRate, SectionName</td><td><code>Montage_Play</code>, <code>Montage_JumpToSection</code></td></tr>
-            <tr><td><code>StopMontage</code></td><td>Asset=UAnimMontage (optional), Float0=BlendOut</td><td><code>Montage_Stop</code> or <code>StopAllMontages</code></td></tr>
-            <tr><td><code>SpawnVFX</code></td><td>Asset=UNiagaraSystem, Int0=Space, Int1=Pool, Int64_0=Handle</td><td><code>SpawnSystemAtLocation</code></td></tr>
-            <tr><td><code>SpawnVFXAttached</code></td><td>Asset=UNiagaraSystem, SectionName=Socket, Int0=AttachRule</td><td><code>SpawnSystemAttached</code></td></tr>
-            <tr><td><code>StopVFX</code></td><td>Int64_0=Handle, Float0=BlendOut</td><td><code>DeactivateImmediate</code> / <code>Deactivate</code></td></tr>
-            <tr><td><code>UpdateVFX</code></td><td>Int64_0=Handle, Int0=Space</td><td><code>SetWorldLocationAndRotation</code></td></tr>
-            <tr><td><code>SpawnSFX</code></td><td>Asset=USoundBase, Float0=Vol, Float1=Pitch, Int1=Policy</td><td><code>SpawnSoundAtLocation</code> / <code>PlaySoundAtLocation</code></td></tr>
-            <tr><td><code>StopSFX</code></td><td>Int64_0=Handle, Float0=FadeOut</td><td><code>Stop</code> / <code>FadeOut</code></td></tr>
-            <tr><td><code>Custom</code></td><td>&mdash;</td><td>No-op (delegate-only)</td></tr>
+            <tr><td><code>PlayMontage</code></td><td>Plays an animation montage on the target actor, optionally jumping to a section.</td></tr>
+            <tr><td><code>StopMontage</code></td><td>Stops a playing montage with a blend-out time, or stops all montages.</td></tr>
+            <tr><td><code>SpawnVFX</code></td><td>Spawns a Niagara system at a world location, registers handle.</td></tr>
+            <tr><td><code>SpawnVFXAttached</code></td><td>Spawns a Niagara system attached to an actor socket.</td></tr>
+            <tr><td><code>StopVFX</code></td><td>Stops a previously spawned Niagara system by handle.</td></tr>
+            <tr><td><code>UpdateVFX</code></td><td>Updates the transform of a live Niagara system by handle.</td></tr>
+            <tr><td><code>SpawnSFX</code></td><td>Spawns an audio source at a world location (fire-and-forget or persistent).</td></tr>
+            <tr><td><code>StopSFX</code></td><td>Stops a persistent audio component by handle.</td></tr>
+            <tr><td><code>Custom</code></td><td>No-op in built-in executor &mdash; handled via delegate.</td></tr>
         </tbody>
     </table>
 
     <hr>
 
-    <h2 id="ncr-design-decisions">14. Design Decisions</h2>
+    <h2 id="ncr-design-decisions">10. Design Decisions</h2>
 
     <table class="data-table">
         <thead>
@@ -768,19 +263,15 @@ if (!Relay &amp;&amp; IsValid(RouteActor))
         <tbody>
             <tr><td><strong>Single actor class, two modes</strong></td><td>Route-actor and global relays share code; mode is runtime configuration, not inheritance</td></tr>
             <tr><td><strong>Owner relevancy for route relays</strong></td><td>Leverages UE5&rsquo;s built-in relevancy without custom <code>IsNetRelevantFor</code></td></tr>
-            <tr><td><strong>RF_Transient + unique naming</strong></td><td>Relays are session-scoped, not saved, and traceable in actor lists</td></tr>
-            <tr><td><strong>96-entry state cap</strong></td><td>Bounds worst-case memory; oldest cues (likely stale) evicted first</td></tr>
-            <tr><td><strong>4096 relay cap</strong></td><td>Prevents relay explosion in massive open-world scenarios</td></tr>
             <tr><td><strong>Custom cue type as no-op</strong></td><td>Zero overhead for built-in dispatch; game code opts in via delegate</td></tr>
             <tr><td><strong>Three-stage client dispatch</strong></td><td>Built-in execution &rarr; native delegate &rarr; bus re-inject covers all consumer patterns</td></tr>
-            <tr><td><strong>Montage helper as UObject</strong></td><td>GC-safe; weak pointers prevent dangling references after actor destruction</td></tr>
             <tr><td><strong>bStopOnStatusEnds</strong></td><td>Designer-controlled: automatic cleanup vs manual lifecycle management</td></tr>
         </tbody>
     </table>
 
     <hr>
 
-    <h2 id="ncr-see-also">15. See Also</h2>
+    <h2 id="ncr-see-also">11. See Also</h2>
 
     <table class="data-table">
         <thead>

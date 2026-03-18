@@ -12,15 +12,12 @@
                     <ol>
                         <li><a href="#overview">Overview</a></li>
                         <li><a href="#architecture">Architecture</a></li>
-                        <li><a href="#core-storage">Core Storage</a></li>
                         <li><a href="#pool-management-acquire-release">Pool Management &mdash; Acquire / Release</a></li>
-                        <li><a href="#registration-indexing">Registration &amp; Indexing</a></li>
-                        <li><a href="#scheduling-min-heap-model">Scheduling &mdash; Min-Heap Model</a></li>
+                        <li><a href="#scheduling">Scheduling</a></li>
                         <li><a href="#time-drift-compensation">Time Drift Compensation</a></li>
                         <li><a href="#query-api">Query API</a></li>
                         <li><a href="#tag-based-query-api">Tag-Based Query API</a></li>
                         <li><a href="#iteration-api">Iteration API</a></li>
-                        <li><a href="#cleanup-pipeline">Cleanup Pipeline</a></li>
                         <li><a href="#ownership-integration">Ownership &amp; Integration</a></li>
                         <li><a href="#performance-characteristics">Performance Characteristics</a></li>
                         <li><a href="#best-practices">Best Practices</a></li>
@@ -29,38 +26,37 @@
                     <hr>
 
                     <h2 id="overview">Overview</h2>
-                    <p><code>FStatusInstancePool</code> is the <strong>centralized allocator and scheduler</strong> for all active <code>FStatusInstance</code> objects in a world. It provides O(1) acquire/release, O(1) lookups by StatusID and tag, and O(k log n) min-heap scheduling for tick-based execution.</p>
+                    <p><code>FStatusInstancePool</code> is the <strong>centralized allocator and scheduler</strong> for all active <code>FStatusInstance</code> objects in a world. It provides efficient acquire/release, fast lookups by StatusID and tag, and priority-based scheduling for tick-based execution.</p>
                     <p>The pool is owned by <code>UStatsX_WorldSubsystem</code> &mdash; there is exactly one pool per world.</p>
-                    <p><strong>Source:</strong> <code>Core/StatusInstancePool.h</code>, <code>Core/StatusInstancePool.cpp</code></p>
 
                     <h3>Design Goals</h3>
                     <table class="data-table">
                         <thead>
                             <tr>
                                 <th>Goal</th>
-                                <th>Implementation</th>
+                                <th>Description</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td><strong>Zero allocation in hot path</strong></td>
-                                <td>Pre-allocated contiguous array. Acquire reuses freed slots; new slots append only when free list is empty</td>
+                                <td>Pre-allocated storage with slot reuse avoids runtime heap allocations</td>
                             </tr>
                             <tr>
-                                <td><strong>O(1) instance access</strong></td>
-                                <td><code>StatusIDToIndex</code> map for direct pool index lookup</td>
+                                <td><strong>Fast instance access</strong></td>
+                                <td>O(1) lookup by StatusID</td>
                             </tr>
                             <tr>
-                                <td><strong>O(1) tag queries</strong></td>
-                                <td><code>TagToStatusIDs</code> map for tag-based lookup</td>
+                                <td><strong>Fast tag queries</strong></td>
+                                <td>O(1) lookup by gameplay tag</td>
                             </tr>
                             <tr>
                                 <td><strong>Efficient scheduling</strong></td>
-                                <td>Min-heap ordered by <code>NextExecutionTime</code> &mdash; only ready instances are processed each frame</td>
+                                <td>Priority-based scheduling ensures only ready instances are processed each frame</td>
                             </tr>
                             <tr>
                                 <td><strong>Cache-friendly iteration</strong></td>
-                                <td>Contiguous <code>TArray&lt;FStatusInstance&gt;</code> &mdash; sequential access benefits from hardware prefetch</td>
+                                <td>Contiguous storage benefits from hardware prefetch during iteration</td>
                             </tr>
                         </tbody>
                     </table>

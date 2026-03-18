@@ -1,6 +1,6 @@
 <section id="component-system" class="tutorial-section">
     <h1>Component System</h1>
-    
+
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
         <p><strong>Stats_X v1.404</strong> &mdash; UStatsX_StatsComponentBase<br>
@@ -44,9 +44,9 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Does not tick</strong></td><td><code>PrimaryComponentTick.bCanEverTick = false</code>. All status ticking is driven by <code>UStatsX_WorldSubsystem</code></td></tr>
-            <tr><td><strong>Replicated by default</strong></td><td><code>SetIsReplicatedByDefault(true)</code>. Six <code>FastArraySerializer</code> properties replicate gameplay state</td></tr>
-            <tr><td><strong>Blueprintable</strong></td><td><code>UCLASS(Blueprintable)</code>. Game teams subclass to override <code>Mitigation_CustomFormula</code> and add project-specific logic</td></tr>
+            <tr><td><strong>Does not tick</strong></td><td>All status ticking is driven by <code>UStatsX_WorldSubsystem</code></td></tr>
+            <tr><td><strong>Replicated by default</strong></td><td>Six <code>FastArraySerializer</code> properties replicate gameplay state</td></tr>
+            <tr><td><strong>Blueprintable</strong></td><td>Game teams subclass to override <code>Mitigation_CustomFormula</code> and add project-specific logic</td></tr>
             <tr><td><strong>Server-authoritative</strong></td><td>Modifiers, attributes, and status execution are server-only. Clients receive replicated state</td></tr>
             <tr><td><strong>Tag-driven</strong></td><td>All APIs use <code>FGameplayTag</code> for attribute, modifier, status, and event identification</td></tr>
         </tbody>
@@ -63,11 +63,11 @@
         <pre><code>UActorComponent
   └── UStatsX_StatsComponentBase  (also implements IStatsXComponentProvider)
         │
-        ├── Attributes       (TMap&lt;FGameplayTag, FStatAttribute&gt;)
-        ├── Modifiers         (FReplicatedModifierArray — FastArraySerializer)
-        ├── Thresholds        (TMap&lt;int32, FAttributeThreshold&gt;)
-        ├── Status Tracking   (Casted/Received handles, tags, seeds, updates)
-        ├── Interceptors      (Caster-scope + Target-scope registries)
+        ├── Attributes       (Tag-driven attribute storage)
+        ├── Modifiers        (Replicated modifier array)
+        ├── Thresholds       (Attribute threshold monitoring)
+        ├── Status Tracking  (Casted/Received handles, tags, seeds, updates)
+        ├── Interceptors     (Caster-scope + Target-scope registries)
         └── Damage Mitigation (Flat, Percentage, Diminishing, ExpDecay, Custom)</code></pre>
     </div>
     <p>The component implements <code>IStatsXComponentProvider</code>, returning <code>this</code> directly. This interface allows objects in status object pools to resolve their associated component without expensive <code>Cast&lt;&gt;</code> operations.</p>
@@ -77,26 +77,7 @@
     <h2 id="lifecycle">3. Lifecycle</h2>
 
     <h3>Construction</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>UStatsX_StatsComponentBase()
-{
-    SetIsReplicatedByDefault(true);
-    PrimaryComponentTick.bCanEverTick = false;
-    PrimaryComponentTick.bStartWithTickEnabled = false;
-}</code></pre>
-    </div>
-
-    <h3>OnComponentCreated</h3>
-    <p>Guarantees FastArraySerializer initialisation for components created at runtime (e.g., dynamically added via <code>AddComponentByClass</code>):</p>
-    <ul>
-        <li><code>ReplicatedAttributes.Initialize(this)</code></li>
-        <li><code>ReplicatedStatusSeeds.Initialize(this)</code></li>
-        <li><code>ReplicatedStatusUpdates.Initialize(this)</code></li>
-        <li>Resets stream-order dedup watermarks</li>
-    </ul>
+    <p>The component is replicated by default and does not tick. All status ticking is driven by the world subsystem.</p>
 
     <h3>BeginPlay</h3>
     <ol>
@@ -106,7 +87,7 @@
                 <li><code>StatsXWorldSubsystem</code> &mdash; for status execution and pool access</li>
             </ul>
         </li>
-        <li>Initialise all six FastArraySerializer properties</li>
+        <li>Initialise all FastArraySerializer properties</li>
         <li>Schedule client-side sync retry (for late joiners)</li>
     </ol>
 
@@ -115,42 +96,26 @@
         <li>Reset all interceptor registries (Caster + Target)</li>
         <li>Unregister global interceptors via <code>WorldSubsystem</code></li>
         <li>Clear sync retry timer</li>
-        <li>Reset stream-order watermarks</li>
     </ol>
 
     <h3>GC Integration</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>static void AddReferencedObjects(UObject* InThis, FReferenceCollector&amp; Collector);</code></pre>
-    </div>
-    <p>Manually adds interceptor <code>UObject</code> references to the GC collector, since <code>FInterceptorRegistration</code> stores <code>TObjectPtr&lt;UForgeInterceptorBase&gt;</code> in non-UPROPERTY maps.</p>
+    <p>The component overrides <code>AddReferencedObjects()</code> to manually add interceptor <code>UObject</code> references to the GC collector, since interceptor registrations are stored in non-UPROPERTY maps.</p>
 
     <hr>
 
     <h2 id="subsystem-pointers">4. Subsystem Pointers</h2>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>UStatsX_GameInstanceSubsystem* StatsXGameInstanceSubsystem;
-UStatsX_WorldSubsystem*        StatsXWorldSubsystem;</code></pre>
-    </div>
-    <p>Cached at <code>BeginPlay</code> &mdash; <strong>do not access before BeginPlay</strong>. The GameInstanceSubsystem provides <code>GenerateStatusID()</code>, the WorldSubsystem provides <code>ExecuteStatus()</code>, pool access, and the event system.</p>
+    <p>The component caches pointers to two subsystems at <code>BeginPlay</code> &mdash; <strong>do not access before BeginPlay</strong>:</p>
+    <ul>
+        <li><code>StatsXGameInstanceSubsystem</code> &mdash; provides <code>GenerateStatusID()</code></li>
+        <li><code>StatsXWorldSubsystem</code> &mdash; provides <code>ExecuteStatus()</code>, pool access, and the event system</li>
+    </ul>
 
     <hr>
 
     <h2 id="attributes-section">5. Attributes Section</h2>
 
     <h3>Storage</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TMap&lt;FGameplayTag, FStatAttribute&gt; StatsAttributes;</code></pre>
-    </div>
-    <p>Each attribute is a tag-driven triplet: <code>Current</code>, <code>Max</code>, <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).</p>
+    <p>Attributes are stored in a tag-driven map. Each attribute is a triplet: <code>Current</code>, <code>Max</code>, <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).</p>
 
     <h3>Initialisation API</h3>
     <table class="data-table">
@@ -186,8 +151,8 @@ UStatsX_WorldSubsystem*        StatsXWorldSubsystem;</code></pre>
     <p>Both <code>ModifyAttribute</code> and <code>SetAttribute</code> trigger:</p>
     <ol>
         <li>Clamping (unless <code>bOverflows</code> is true)</li>
-        <li>Threshold checks (<code>CheckAttributeThresholds</code>)</li>
-        <li>Replication update (<code>UpdateReplicatedAttribute</code>)</li>
+        <li>Threshold checks</li>
+        <li>Replication update</li>
         <li>Event broadcast (<code>OnAttributeChanged</code>)</li>
     </ol>
 
@@ -208,19 +173,7 @@ UStatsX_WorldSubsystem*        StatsXWorldSubsystem;</code></pre>
     </table>
 
     <h3>Replication Support</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FReplicatedAttributeArray ReplicatedAttributes;   // FastArraySerializer
-mutable TMap&lt;FGameplayTag, int32&gt; AttributeIndexCache;  // O(1) index lookup</code></pre>
-    </div>
-    <ul>
-        <li><code>UpdateReplicatedAttribute()</code> &mdash; upserts the fast array entry for the changed attribute</li>
-        <li><code>FindReplicatedAttributeIndex()</code> &mdash; O(1) via <code>AttributeIndexCache</code></li>
-        <li><code>SynchronizeLocalAttributes()</code> &mdash; client-side: applies replicated state to local <code>StatsAttributes</code> map</li>
-        <li><code>ScheduleSyncRetry()</code> &mdash; handles late-joiner sync with up to 10 retry attempts</li>
-    </ul>
+    <p>Attributes are replicated via <code>FastArraySerializer</code>. The system uses internal index caches for efficient O(1) lookup during add/remove/update operations. Client-side sync is handled via <code>SynchronizeLocalAttributes()</code>, with retry support for late-joiner scenarios.</p>
 
     <hr>
 
@@ -238,7 +191,7 @@ mutable TMap&lt;FGameplayTag, int32&gt; AttributeIndexCache;  // O(1) index look
     float AdditiveValue,
     float MultiplicativeValue = 1.0f);</code></pre>
     </div>
-    <p>Returns a unique <code>InstanceID</code> for the created modifier. The modifier is added to <code>ReplicatedModifiers</code> (FastArraySerializer) and the affected attribute is marked dirty.</p>
+    <p>Returns a unique <code>InstanceID</code> for the created modifier. The modifier is added to the replicated modifier array and the affected attribute is marked dirty for recalculation.</p>
 
     <h3>Removal API</h3>
     <table class="data-table">
@@ -274,53 +227,8 @@ mutable TMap&lt;FGameplayTag, int32&gt; AttributeIndexCache;  // O(1) index look
         </tbody>
     </table>
 
-    <h3>Recalculation Pipeline</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>AddModifier / RemoveModifier
-  └─ MarkAttributeDirty(AttributeTag)
-       └─ DirtyAttributes.Add(AttributeTag)
-
-RecalculateAllDirtyAttributes()  (called automatically)
-  └─ for each dirty tag:
-       RecalculateAttribute(Tag)
-         └─ Max = (Base + ΣAdditive) × ΠMultiplicative
-            Clamp Current to [0, Max] (unless bOverflows)</code></pre>
-    </div>
-
-    <h3>Index Caches</h3>
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Cache</th>
-                <th>Type</th>
-                <th>Purpose</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td><code>ModifierIDToIndex</code></td><td><code>TMap&lt;int32, int32&gt;</code></td><td>InstanceID &rarr; array index</td></tr>
-            <tr><td><code>ModifiersByAttribute</code></td><td><code>TMap&lt;FGameplayTag, TArray&lt;int32&gt;&gt;</code></td><td>AttributeTag &rarr; array indices</td></tr>
-        </tbody>
-    </table>
-    <p>Both are rebuilt via <code>RebuildModifierIndexCache()</code> after structural array modifications.</p>
-
-    <h3>ID Generation</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>int32 NextModifierID = INT32_MIN + 1;
-
-int32 GenerateModifierID()
-{
-    int32 ID = NextModifierID++;
-    if (NextModifierID == INT32_MAX) NextModifierID = INT32_MIN + 1;
-    return ID;
-}</code></pre>
-    </div>
-    <p>Wrapping counter using the full <code>int32</code> range &mdash; billions of unique IDs per component lifetime.</p>
+    <h3>Recalculation</h3>
+    <p>When modifiers are added or removed, affected attributes are marked dirty. The recalculation pipeline computes the final Max value using additive and multiplicative modifiers, then clamps Current to the valid range (unless overflow is enabled).</p>
 
     <hr>
 
@@ -339,25 +247,8 @@ bool  HasActiveThresholds() const;</code></pre>
     </div>
     <p><code>AddAttributeThreshold</code> returns a unique handle. The threshold fires <code>OnAttributeThresholdReached</code> when the monitored sub-attribute crosses the configured value.</p>
 
-    <h3>Storage</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TMap&lt;FGameplayTag, TArray&lt;int32&gt;&gt; AttributeToThresholdHandles;  // Tag → handles
-TMap&lt;int32, FAttributeThreshold&gt;  ActiveThresholds;              // Handle → data</code></pre>
-    </div>
-
     <h3>Check Flow</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>ModifyAttribute / SetAttribute
-  └─ CheckAttributeThresholds(AttributeTag, SubAttributeTag, OldValue, NewValue, Causer)
-       └─ for each handle on this attribute:
-            if threshold crossed → OnAttributeThresholdReached.Broadcast(...)</code></pre>
-    </div>
+    <p>Whenever an attribute is modified, the system checks all active thresholds for that attribute and broadcasts the <code>OnAttributeThresholdReached</code> event for any that have been crossed.</p>
 
     <h3>Event Signature</h3>
     <div class="code-block">
@@ -377,24 +268,6 @@ TMap&lt;int32, FAttributeThreshold&gt;  ActiveThresholds;              // Handle
 
     <h2 id="status-tracking">8. Status Tracking</h2>
     <p>The component maintains <strong>dual-sided tracking</strong> &mdash; statuses this actor has <strong>casted</strong> and statuses it has <strong>received</strong>.</p>
-
-    <h3>Handle Arrays</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TArray&lt;int32&gt; CastedStatusHandles;    // Pool indices of casted instances
-TArray&lt;int32&gt; ReceivedStatusHandles;  // Pool indices of received instances</code></pre>
-    </div>
-
-    <h3>Tag Containers</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FGameplayTagContainer CastedStatusesContainer;    // Fast tag queries
-FGameplayTagContainer ReceivedStatusesContainer;</code></pre>
-    </div>
 
     <h3>Query API</h3>
     <table class="data-table">
@@ -416,39 +289,20 @@ FGameplayTagContainer ReceivedStatusesContainer;</code></pre>
         </tbody>
     </table>
 
-    <h3>Replicated Tag Arrays</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FReplicatedCastedTagArray   ReplicatedCastedTags;     // FastArraySerializer
-FReplicatedReceivedTagArray ReplicatedReceivedTags;    // FastArraySerializer</code></pre>
-    </div>
-    <p>Index caches (<code>CastedTagIndexCache</code>, <code>ReceivedTagIndexCache</code>) provide O(1) lookup for add/remove operations.</p>
-
-    <h3>Replicated Status Seeds &amp; Updates</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FReplicatedStatusSeedArray   ReplicatedStatusSeeds;    // Lifecycle snapshots
-FReplicatedStatusUpdateArray ReplicatedStatusUpdates;   // Delta stream</code></pre>
-    </div>
+    <h3>Replicated Status Data</h3>
+    <p>Status tracking is replicated via FastArraySerializer in two streams:</p>
     <ul>
         <li><strong>Seeds</strong> &mdash; full snapshot on status add/remove (StackCount, StartTime, MaxDuration, TickInterval, MaxIterations)</li>
         <li><strong>Updates</strong> &mdash; incremental delta stream for stack/refresh/runtime tuning changes</li>
-        <li><strong>Dedup watermarks</strong> &mdash; <code>LastAcceptedCastedStatusUpdateEventID</code> / <code>LastAcceptedReceivedStatusUpdateEventID</code> prevent duplicate processing</li>
     </ul>
+    <p>Dedup watermarks prevent duplicate processing of replicated events.</p>
 
     <h3>Status Update Field Helpers</h3>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
         </div>
-        <pre><code>// C++ fast path (inline bitmask)
-static bool HasStatusUpdateFieldFast(int32 ChangedFields, EStatusUpdateField Field);
-
-// Blueprint helpers
+        <pre><code>// Blueprint helpers
 bool StatusUpdateHasField(UpdateData, Field);
 bool StatusUpdateHasStackCount(UpdateData);
 bool StatusUpdateHasStartTime(UpdateData);
@@ -472,22 +326,7 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     AActor* TargetActor,
     const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides);</code></pre>
     </div>
-
-    <p><strong>Flow:</strong></p>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>1. Resolve StatusDefinition via soft reference
-2. Pre-generate StatusID from GameInstanceSubsystem
-3. If asset already loaded:
-     ExecuteStatus() immediately → return actual ID
-4. If not loaded:
-     RequestAsyncLoad() → lambda captures StatusID + weak refs
-     On load: ExecuteStatus() in callback
-5. Return pre-generated StatusID</code></pre>
-    </div>
-    <p>The async path captures <code>TWeakObjectPtr</code> for both actors and the subsystem. If overrides are present, they are copied into the lambda capture. If no overrides, a lightweight lambda without extra capture is used.</p>
+    <p>Resolves the StatusDefinition asset, pre-generates a StatusID, and either executes immediately (if the asset is loaded) or triggers an async load. The StatusID is returned immediately in both cases, allowing callers to track the status before execution begins.</p>
 
     <h3>CastStatusSync</h3>
     <div class="code-block">
@@ -500,20 +339,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     AActor* TargetActor,
     const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides);</code></pre>
     </div>
-
-    <p><strong>Flow:</strong></p>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>1. Resolve StatusDefinition via soft reference
-2. LoadSynchronous() — may cause hitch if not cached
-3. GenerateStatusID()
-4. ExecuteStatus() immediately
-5. Return EForgeExecutionResult</code></pre>
-    </div>
     <div class="info-box warning">
-        <div class="info-title">⚠️ Warning</div>
+        <div class="info-title">&#9888;&#65039; Warning</div>
         <p>Synchronous loading may stall the game thread. Prefer <code>CastStatusAsync</code> for non-critical paths.</p>
     </div>
 
@@ -556,51 +383,27 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     </table>
 
     <h3>Blueprint Events</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FOnComponentStatusSet    OnCastedStatusSet;       // Lifecycle boundary (add/remove)
-FOnComponentStatusSet    OnReceivedStatusSet;      // Lifecycle boundary (add/remove)
-FOnComponentStatusUpdate OnCastedStatusUpdate;     // Delta updates
-FOnComponentStatusUpdate OnReceivedStatusUpdate;   // Delta updates
-FOnStatusTagChanged      OnCastedStatusTagChanged; // Tag add/remove
-FOnStatusTagChanged      OnReceivedStatusTagChanged;</code></pre>
-    </div>
-
-    <h3>Replication Helpers</h3>
     <table class="data-table">
         <thead>
             <tr>
-                <th>Method</th>
-                <th>Purpose</th>
+                <th>Delegate</th>
+                <th>Fired When</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>UpsertReplicatedStatusSeed()</code></td><td>Add/update seed snapshot for clients</td></tr>
-            <tr><td><code>RemoveReplicatedStatusSeed()</code></td><td>Remove seed snapshot on status end</td></tr>
-            <tr><td><code>PushReplicatedStatusUpdate()</code></td><td>Append delta update to stream</td></tr>
-            <tr><td><code>FindReplicatedStatusSeedIndex()</code></td><td>O(1) lookup via cache</td></tr>
-            <tr><td><code>RebuildReplicatedStatusSeedIndexCaches()</code></td><td>Rebuild after removals</td></tr>
+            <tr><td><code>OnCastedStatusSet</code></td><td>Casted status lifecycle boundary (add/remove)</td></tr>
+            <tr><td><code>OnReceivedStatusSet</code></td><td>Received status lifecycle boundary (add/remove)</td></tr>
+            <tr><td><code>OnCastedStatusUpdate</code></td><td>Casted status delta update</td></tr>
+            <tr><td><code>OnReceivedStatusUpdate</code></td><td>Received status delta update</td></tr>
+            <tr><td><code>OnCastedStatusTagChanged</code></td><td>Casted tag added/removed</td></tr>
+            <tr><td><code>OnReceivedStatusTagChanged</code></td><td>Received tag added/removed</td></tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="interceptor-section">11. Interceptor Section</h2>
-    <p>Each component manages <strong>two independent interceptor registries</strong> &mdash; one for Caster-scope events, one for Target-scope events.</p>
-
-    <h3>Registry Structure (per scope)</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TMultiMap&lt;FGameplayTag, int32&gt;        EventToHandlesMap;
-TMap&lt;int32, FInterceptorRegistration&gt; ActiveRegistrations;
-FGameplayTagContainer                 EventsWithInterceptors;  // fast early-exit cache
-int32                                 DispatchDepth;           // reentrancy guard
-TSet&lt;int32&gt;                           PendingRemovalHandles;   // deferred removal</code></pre>
-    </div>
+    <p>Each component manages <strong>two independent interceptor registries</strong> &mdash; one for Caster-scope events, one for Target-scope events. The system maintains efficient registries for interceptor lookup and dispatch.</p>
 
     <h3>Registration API</h3>
     <div class="code-block">
@@ -635,18 +438,7 @@ TSet&lt;int32&gt;                           PendingRemovalHandles;   // deferred
     </table>
 
     <h3>Reentrancy Safety</h3>
-    <p>When interceptors are being dispatched (<code>DispatchDepth &gt; 0</code>), removal requests are <strong>deferred</strong>:</p>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">Structure</span>
-        </div>
-        <pre><code>UnregisterInterceptor(Handle)
-  └─ if DispatchDepth &gt; 0:
-       MarkInterceptorHandlePending(Handle)    // Flag, don't remove
-     else:
-       RemoveInterceptorHandleImmediate(Handle) // Remove now</code></pre>
-    </div>
-    <p>After dispatch completes, <code>FlushPendingInterceptorRemovals()</code> processes all deferred handles.</p>
+    <p>When interceptors are being dispatched, removal requests are <strong>deferred</strong> to avoid iterator invalidation. After dispatch completes, all deferred removals are flushed.</p>
 
     <h3>Dispatch API</h3>
     <div class="code-block">
@@ -659,19 +451,7 @@ TSet&lt;int32&gt;                           PendingRemovalHandles;   // deferred
     EInterceptorScope Scope,
     EInterceptorEventPhase Phase);</code></pre>
     </div>
-    <p>Returns <code>false</code> if any interceptor halted execution (Cancelled).</p>
-
-    <h3>Event Cache</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>FGameplayTagContainer CasterEventsWithInterceptors;
-FGameplayTagContainer TargetEventsWithInterceptors;
-
-bool HasInterceptorsForEvents(const FGameplayTagContainer&amp; Events, EInterceptorScope Scope) const;</code></pre>
-    </div>
-    <p>The tag container cache enables <strong>O(1) early exit</strong> &mdash; if no interceptors are registered for the requested events, the broadcast is skipped entirely.</p>
+    <p>Returns <code>false</code> if any interceptor halted execution. The system uses an event cache for O(1) early exit when no interceptors are registered for the requested events.</p>
 
     <hr>
 
@@ -693,13 +473,7 @@ bool HasInterceptorsForEvents(const FGameplayTagContainer&amp; Events, EIntercep
     <p>The component provides four built-in mitigation formulas plus a Blueprint-overridable custom formula.</p>
 
     <h3>Resistance Mapping</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>TMap&lt;FGameplayTag, FGameplayTagContainer&gt; DamageToResistancesMap;</code></pre>
-    </div>
-    <p>Maps damage types to resistance attribute tags. Used by all built-in formulas to resolve which attributes reduce incoming damage.</p>
+    <p>A tag-driven map associates damage types with resistance attribute tags. All built-in formulas use this mapping to resolve which attributes reduce incoming damage.</p>
 
     <h3>Built-In Formulas</h3>
     <table class="data-table">
@@ -719,14 +493,7 @@ bool HasInterceptorsForEvents(const FGameplayTagContainer&amp; Events, EIntercep
     </table>
 
     <h3>Scale Factors</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>float DiminishingMitigationScaleFactor = 100.f;
-float ExponentialDecayMitigationScaleFactor = 100.f;</code></pre>
-    </div>
-    <p>Both are <code>EditAnywhere</code> / <code>BlueprintReadWrite</code> &mdash; tunable per-actor.</p>
+    <p>Diminishing and exponential decay formulas use configurable scale factors that are <code>EditAnywhere</code> / <code>BlueprintReadWrite</code> &mdash; tunable per-actor.</p>
 
     <h3>Custom Formula (Blueprint Override)</h3>
     <div class="code-block">
@@ -755,44 +522,27 @@ float Mitigation_CustomFormula(
         <thead>
             <tr>
                 <th>Property</th>
-                <th>Type</th>
                 <th>Content</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>ReplicatedAttributes</code></td><td><code>FReplicatedAttributeArray</code></td><td>Attribute values (per-attribute replication flag)</td></tr>
-            <tr><td><code>ReplicatedModifiers</code></td><td><code>FReplicatedModifierArray</code></td><td>Active modifiers</td></tr>
-            <tr><td><code>ReplicatedCastedTags</code></td><td><code>FReplicatedCastedTagArray</code></td><td>Casted status tags</td></tr>
-            <tr><td><code>ReplicatedReceivedTags</code></td><td><code>FReplicatedReceivedTagArray</code></td><td>Received status tags</td></tr>
-            <tr><td><code>ReplicatedStatusSeeds</code></td><td><code>FReplicatedStatusSeedArray</code></td><td>Status lifecycle snapshots</td></tr>
-            <tr><td><code>ReplicatedStatusUpdates</code></td><td><code>FReplicatedStatusUpdateArray</code></td><td>Status delta stream</td></tr>
+            <tr><td><code>ReplicatedAttributes</code></td><td>Attribute values (per-attribute replication flag)</td></tr>
+            <tr><td><code>ReplicatedModifiers</code></td><td>Active modifiers</td></tr>
+            <tr><td><code>ReplicatedCastedTags</code></td><td>Casted status tags</td></tr>
+            <tr><td><code>ReplicatedReceivedTags</code></td><td>Received status tags</td></tr>
+            <tr><td><code>ReplicatedStatusSeeds</code></td><td>Status lifecycle snapshots</td></tr>
+            <tr><td><code>ReplicatedStatusUpdates</code></td><td>Status delta stream</td></tr>
         </tbody>
     </table>
     <p>All six use <code>FastArraySerializer</code> for delta-compressed replication.</p>
 
-    <h3>Registration</h3>
-    <div class="code-block">
-        <div class="code-header">
-            <span class="code-lang">C++</span>
-        </div>
-        <pre><code>void GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; OutLifetimeProps) const
-{
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedAttributes);
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedModifiers);
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedCastedTags);
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedReceivedTags);
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedStatusSeeds);
-    DOREPLIFETIME(UStatsX_StatsComponentBase, ReplicatedStatusUpdates);
-}</code></pre>
-    </div>
-
     <h3>Client Sync Retry</h3>
-    <p>Non-authority clients schedule periodic sync retries (up to <code>MaxSyncRetries = 10</code>) to handle late-joiner scenarios where the initial replication burst may be incomplete.</p>
+    <p>Non-authority clients schedule periodic sync retries to handle late-joiner scenarios where the initial replication burst may be incomplete.</p>
 
     <hr>
 
     <h2 id="debug-facilities">15. Debug Facilities</h2>
-    <p>Available only in <code>WITH_EDITORONLY_DATA</code> builds:</p>
+    <p>Available only in editor builds:</p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
@@ -811,17 +561,14 @@ bool DebugModifiers = false;</code></pre>
         <div class="code-header">
             <span class="code-lang">C++</span>
         </div>
-        <pre><code>UINTERFACE(MinimalAPI, BlueprintType)
-class UStatsXComponentProvider : public UInterface { ... };
-
-class IStatsXComponentProvider
+        <pre><code>class IStatsXComponentProvider
 {
 public:
     virtual UStatsX_StatsComponentBase* GetStatsComponent() = 0;
     virtual UStatsX_StatsComponentBase* GetStatsComponentChecked(bool&amp; bOutIsValid);
 };</code></pre>
     </div>
-    <p><strong>Purpose:</strong> Objects stored in <code>FStatusInstance::InstanceObjectPool</code> that need to provide access to their associated component can implement this interface. This avoids <code>Cast&lt;&gt;</code> runtime cost &mdash; a simple interface call resolves the component reference.</p>
+    <p><strong>Purpose:</strong> Objects that need to provide access to their associated component can implement this interface. This avoids <code>Cast&lt;&gt;</code> runtime cost &mdash; a simple interface call resolves the component reference.</p>
     <p><code>UStatsX_StatsComponentBase</code> itself implements this interface, returning <code>this</code>.</p>
 
     <hr>

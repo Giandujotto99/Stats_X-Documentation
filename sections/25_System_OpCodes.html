@@ -13,9 +13,9 @@
     <ol>
         <li><a href="#opcodes-overview">Overview</a></li>
         <li><a href="#execution-results">Execution Results</a></li>
-        <li><a href="#system-opcodes-0-31">System OpCodes (0&ndash;31)</a></li>
-        <li><a href="#built-in-node-opcodes">Built-In Node OpCodes (32&ndash;9999)</a></li>
-        <li><a href="#custom-opcodes">Custom OpCodes (10000+)</a></li>
+        <li><a href="#system-opcodes-ref">System OpCodes</a></li>
+        <li><a href="#built-in-node-opcodes">Built-In Node OpCodes</a></li>
+        <li><a href="#custom-opcodes">Custom OpCodes</a></li>
         <li><a href="#variable-pool-types">Variable Pool Types</a></li>
         <li><a href="#opcodes-summary">Summary</a></li>
     </ol>
@@ -24,24 +24,23 @@
 
     <h2 id="opcodes-overview">1. Overview</h2>
 
-    <p>Every ForgeVM instruction is identified by a <code>uint16</code> opcode. The opcode space is partitioned into three ranges:</p>
+    <p>Every ForgeVM instruction is identified by an opcode. The opcode space is partitioned into three categories:</p>
 
     <table class="data-table">
         <thead>
             <tr>
-                <th>Range</th>
+                <th>Category</th>
                 <th>Purpose</th>
-                <th>Namespace</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>0&ndash;31</td><td>System opcodes &mdash; VM control flow</td><td><code>ForgeSystemOpCodes</code></td></tr>
-            <tr><td>32&ndash;9999</td><td>Built-in node opcodes &mdash; shipped with the plugin</td><td><code>ForgeOpCodes</code></td></tr>
-            <tr><td>10000&ndash;65535</td><td>Custom opcodes &mdash; auto-generated from <code>.toon</code> files</td><td><code>ForgeOpCodes_Custom</code></td></tr>
+            <tr><td>System OpCodes</td><td>VM control flow &mdash; reserved ranges for internal use.</td></tr>
+            <tr><td>Built-In Node OpCodes</td><td>Shipped with the plugin &mdash; standard node operations.</td></tr>
+            <tr><td>Custom OpCodes</td><td>Auto-generated from <code>.toon</code> files &mdash; project-defined extensions.</td></tr>
         </tbody>
     </table>
 
-    <p>System opcodes are handled directly by the VM dispatcher (<code>ExecuteSystemOp</code>). Built-in opcodes are dispatched to registered handler functions via <code>FForgeNodeRegistry_Runtime</code>. Custom opcodes follow the same handler registration pattern and are regenerated on editor startup.</p>
+    <p>The system reserves ranges for internal opcodes while allowing custom extensions. Built-in and custom opcodes are dispatched to registered handler functions. Custom opcodes are regenerated on editor startup.</p>
 
     <hr>
 
@@ -67,75 +66,72 @@
 
     <hr>
 
-    <h2 id="system-opcodes-0-31">3. System OpCodes (0&ndash;31)</h2>
+    <h2 id="system-opcodes-ref">3. System OpCodes</h2>
 
-    <p>Defined in <code>ForgeSystemOpCodes.h</code> under namespace <code>ForgeSystemOpCodes</code>.</p>
+    <p>System opcodes handle VM control flow. These are internal to the ForgeVM and not directly used by end users.</p>
 
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>0</td><td><code>OP_Start</code></td><td>Entry point for VM execution.</td></tr>
-            <tr><td>1</td><td><code>OP_Jump</code></td><td>Unconditional jump to target instruction.</td></tr>
-            <tr><td>2</td><td><code>OP_JumpIfFalse</code></td><td>Conditional jump &mdash; branches if boolean is false.</td></tr>
-            <tr><td>3</td><td><code>OP_JumpTable</code></td><td>Switch/jump table for multi-way branching.</td></tr>
-            <tr><td>4</td><td><code>OP_Nop</code></td><td>No operation (safe placeholder).</td></tr>
-            <tr><td>5</td><td><code>OP_BeginBlock</code></td><td>Start of a flow control block.</td></tr>
-            <tr><td>6</td><td><code>OP_EndBlock</code></td><td>End of a flow control block.</td></tr>
-            <tr><td>7</td><td><code>OP_ContinueData</code></td><td>Continuation data slot (pure data, handler skips).</td></tr>
-            <tr><td>8</td><td><code>OP_BeginEventBlock</code></td><td>Marker for start of an event/function block.</td></tr>
-            <tr><td>9</td><td><code>OP_EndEventBlock</code></td><td>End of event/function block &mdash; copies return values and pops call frame.</td></tr>
-            <tr><td>10</td><td><code>OP_CallFunction</code></td><td>Captures arguments, pushes call frame, jumps to function block.</td></tr>
-            <tr><td>11</td><td><code>OP_EndAsyncEvent</code></td><td>End of async event handler block &mdash; returns <code>Suspended</code>.</td></tr>
-            <tr><td>12&ndash;31</td><td><em>(reserved)</em></td><td>Reserved for future system opcodes.</td></tr>
+            <tr><td><code>OP_Start</code></td><td>Entry point for VM execution.</td></tr>
+            <tr><td><code>OP_Jump</code></td><td>Unconditional jump.</td></tr>
+            <tr><td><code>OP_JumpIfFalse</code></td><td>Conditional branch.</td></tr>
+            <tr><td><code>OP_JumpTable</code></td><td>Multi-way branching.</td></tr>
+            <tr><td><code>OP_Nop</code></td><td>No operation.</td></tr>
+            <tr><td><code>OP_BeginBlock</code></td><td>Start of a flow control block.</td></tr>
+            <tr><td><code>OP_EndBlock</code></td><td>End of a flow control block.</td></tr>
+            <tr><td><code>OP_ContinueData</code></td><td>Continuation data slot.</td></tr>
+            <tr><td><code>OP_BeginEventBlock</code></td><td>Start of an event/function block.</td></tr>
+            <tr><td><code>OP_EndEventBlock</code></td><td>End of an event/function block.</td></tr>
+            <tr><td><code>OP_CallFunction</code></td><td>Call a function block.</td></tr>
+            <tr><td><code>OP_EndAsyncEvent</code></td><td>End of an async event handler block.</td></tr>
         </tbody>
     </table>
 
     <hr>
 
-    <h2 id="built-in-node-opcodes">4. Built-In Node OpCodes (32&ndash;9999)</h2>
+    <h2 id="built-in-node-opcodes">4. Built-In Node OpCodes</h2>
 
-    <p>Defined in <code>ForgeOpCodes_BuiltIn.h</code> under namespace <code>ForgeOpCodes</code>. Organized below by category as annotated in the source.</p>
+    <p>Built-in opcodes are shipped with the plugin and cover standard node operations. Organized below by category.</p>
 
     <h3>Flow</h3>
 
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>1</td><td><code>OP_Start</code></td><td>Entry point for status execution.</td></tr>
-            <tr><td>33</td><td><code>OP_CallFunction_Node</code></td><td>Call a function node (compiler-substituted).</td></tr>
-            <tr><td>34</td><td><code>OP_Return</code></td><td>Return from function (compiler-substituted).</td></tr>
-            <tr><td>35</td><td><code>OP_OnEnd</code></td><td>Completion marker.</td></tr>
-            <tr><td>259</td><td><code>OP_Casting</code></td><td>Execute casting behavior with pre-cast checks.</td></tr>
-            <tr><td>260</td><td><code>OP_OneShotBehavior</code></td><td>Execute a one-time behavior block.</td></tr>
-            <tr><td>261</td><td><code>OP_LoopBehavior</code></td><td>Execute repeating behavior with tick interval.</td></tr>
-            <tr><td>264</td><td><code>OP_UntilDeprecationBehavior</code></td><td>Execute until duration expires.</td></tr>
-            <tr><td>297</td><td><code>OP_End</code></td><td>End execution flow.</td></tr>
-            <tr><td>298</td><td><code>OP_Continue</code></td><td>Continue to next loop iteration.</td></tr>
-            <tr><td>299</td><td><code>OP_Break</code></td><td>Break out of current loop.</td></tr>
-            <tr><td>312</td><td><code>OP_DoOnce</code></td><td>Execute logic once, then gate it.</td></tr>
-            <tr><td>314</td><td><code>OP_Gate</code></td><td>Gate logic flow open/closed.</td></tr>
-            <tr><td>321</td><td><code>OP_PlayMontage</code></td><td>Play animation montage with event callbacks.</td></tr>
-            <tr><td>330</td><td><code>OP_WaitForEvent</code></td><td>Suspend until a single event signal.</td></tr>
-            <tr><td>331</td><td><code>OP_GateOpen</code></td><td>Open a gate to allow flow.</td></tr>
-            <tr><td>332</td><td><code>OP_GateClose</code></td><td>Close a gate to block flow.</td></tr>
-            <tr><td>333</td><td><code>OP_GateToggle</code></td><td>Toggle gate state.</td></tr>
-            <tr><td>334</td><td><code>OP_DoOnceReset</code></td><td>Reset a DoOnce gate.</td></tr>
-            <tr><td>371</td><td><code>OP_WaitForEvents</code></td><td>Suspend until multiple event signals.</td></tr>
-            <tr><td>372</td><td><code>OP_OnEventTriggered</code></td><td>Compile-time marker for event trigger (no runtime handler).</td></tr>
-            <tr><td>381</td><td><code>OP_WhileLoop</code></td><td>Execute while condition is true.</td></tr>
-            <tr><td>391</td><td><code>OP_ForEachActorInRange</code></td><td>Loop through actors in spatial range.</td></tr>
+            <tr><td><code>OP_Start</code></td><td>Entry point for status execution.</td></tr>
+            <tr><td><code>OP_CallFunction_Node</code></td><td>Call a function node.</td></tr>
+            <tr><td><code>OP_Return</code></td><td>Return from function.</td></tr>
+            <tr><td><code>OP_OnEnd</code></td><td>Completion marker.</td></tr>
+            <tr><td><code>OP_Casting</code></td><td>Execute casting behavior with pre-cast checks.</td></tr>
+            <tr><td><code>OP_OneShotBehavior</code></td><td>Execute a one-time behavior block.</td></tr>
+            <tr><td><code>OP_LoopBehavior</code></td><td>Execute repeating behavior with tick interval.</td></tr>
+            <tr><td><code>OP_UntilDeprecationBehavior</code></td><td>Execute until duration expires.</td></tr>
+            <tr><td><code>OP_End</code></td><td>End execution flow.</td></tr>
+            <tr><td><code>OP_Continue</code></td><td>Continue to next loop iteration.</td></tr>
+            <tr><td><code>OP_Break</code></td><td>Break out of current loop.</td></tr>
+            <tr><td><code>OP_DoOnce</code></td><td>Execute logic once, then gate it.</td></tr>
+            <tr><td><code>OP_Gate</code></td><td>Gate logic flow open/closed.</td></tr>
+            <tr><td><code>OP_PlayMontage</code></td><td>Play animation montage with event callbacks.</td></tr>
+            <tr><td><code>OP_WaitForEvent</code></td><td>Suspend until a single event signal.</td></tr>
+            <tr><td><code>OP_GateOpen</code></td><td>Open a gate to allow flow.</td></tr>
+            <tr><td><code>OP_GateClose</code></td><td>Close a gate to block flow.</td></tr>
+            <tr><td><code>OP_GateToggle</code></td><td>Toggle gate state.</td></tr>
+            <tr><td><code>OP_DoOnceReset</code></td><td>Reset a DoOnce gate.</td></tr>
+            <tr><td><code>OP_WaitForEvents</code></td><td>Suspend until multiple event signals.</td></tr>
+            <tr><td><code>OP_OnEventTriggered</code></td><td>Event trigger marker.</td></tr>
+            <tr><td><code>OP_WhileLoop</code></td><td>Execute while condition is true.</td></tr>
+            <tr><td><code>OP_ForEachActorInRange</code></td><td>Loop through actors in spatial range.</td></tr>
         </tbody>
     </table>
 
@@ -144,20 +140,19 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>257</td><td><code>OP_CustomCheck</code></td><td>Execute custom check logic (Blueprint-defined).</td></tr>
-            <tr><td>258</td><td><code>OP_CheckCost</code></td><td>Check if caster has resources for action.</td></tr>
-            <tr><td>265</td><td><code>OP_CheckAttributeRequirement</code></td><td>Check attribute meets requirement.</td></tr>
-            <tr><td>266</td><td><code>OP_CheckTags</code></td><td>Check for gameplay tags.</td></tr>
-            <tr><td>267</td><td><code>OP_CheckChance</code></td><td>Check random chance (percentage).</td></tr>
-            <tr><td>268</td><td><code>OP_CompareFloats</code></td><td>Compare two float values.</td></tr>
-            <tr><td>273</td><td><code>OP_CompareIntegers</code></td><td>Compare two integer values.</td></tr>
-            <tr><td>311</td><td><code>OP_Branch</code></td><td>Conditional branch (if/else).</td></tr>
+            <tr><td><code>OP_CustomCheck</code></td><td>Execute custom check logic (Blueprint-defined).</td></tr>
+            <tr><td><code>OP_CheckCost</code></td><td>Check if caster has resources for action.</td></tr>
+            <tr><td><code>OP_CheckAttributeRequirement</code></td><td>Check attribute meets requirement.</td></tr>
+            <tr><td><code>OP_CheckTags</code></td><td>Check for gameplay tags.</td></tr>
+            <tr><td><code>OP_CheckChance</code></td><td>Check random chance (percentage).</td></tr>
+            <tr><td><code>OP_CompareFloats</code></td><td>Compare two float values.</td></tr>
+            <tr><td><code>OP_CompareIntegers</code></td><td>Compare two integer values.</td></tr>
+            <tr><td><code>OP_Branch</code></td><td>Conditional branch (if/else).</td></tr>
         </tbody>
     </table>
 
@@ -166,13 +161,12 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>317</td><td><code>OP_IsValid</code></td><td>Check if object/actor is valid.</td></tr>
+            <tr><td><code>OP_IsValid</code></td><td>Check if object/actor is valid.</td></tr>
         </tbody>
     </table>
 
@@ -181,44 +175,43 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>256</td><td><code>OP_CustomAction</code></td><td>Execute custom action logic (Blueprint-defined).</td></tr>
-            <tr><td>262</td><td><code>OP_CallPropagationPreEvents</code></td><td>Call pre-propagation event handlers.</td></tr>
-            <tr><td>263</td><td><code>OP_CallPropagationPostEvents</code></td><td>Call post-propagation event handlers.</td></tr>
-            <tr><td>269</td><td><code>OP_AddModifier</code></td><td>Add modifier to attribute.</td></tr>
-            <tr><td>270</td><td><code>OP_CastStatus</code></td><td>Cast a status effect on target.</td></tr>
-            <tr><td>271</td><td><code>OP_CalculateMitigation</code></td><td>Calculate damage mitigation (see 22 &mdash; Damage Mitigation).</td></tr>
-            <tr><td>272</td><td><code>OP_ModifyAttribute</code></td><td>Modify attribute value (delta apply).</td></tr>
-            <tr><td>274</td><td><code>OP_RemoveModifier</code></td><td>Remove modifier from attribute.</td></tr>
-            <tr><td>275</td><td><code>OP_RefreshStatusByTag</code></td><td>Refresh status effects by gameplay tag.</td></tr>
-            <tr><td>276</td><td><code>OP_RegisterLocalInterceptor</code></td><td>Register local (instance) event interceptor.</td></tr>
-            <tr><td>277</td><td><code>OP_RegisterGlobalInterceptor</code></td><td>Register global event interceptor.</td></tr>
-            <tr><td>278</td><td><code>OP_RefreshStatusbyID</code></td><td>Refresh specific status by ID.</td></tr>
-            <tr><td>322</td><td><code>OP_RemoveStatusByID</code></td><td>Remove status effect by ID.</td></tr>
-            <tr><td>323</td><td><code>OP_RemoveStatusByTag</code></td><td>Remove status effects by tag.</td></tr>
-            <tr><td>325</td><td><code>OP_SendEvent</code></td><td>Send event to target.</td></tr>
-            <tr><td>326</td><td><code>OP_SpawnActorFromClass</code></td><td>Spawn actor from class.</td></tr>
-            <tr><td>327</td><td><code>OP_SpawnVFX</code></td><td>Spawn visual effects.</td></tr>
-            <tr><td>328</td><td><code>OP_UnregisterGlobalInterceptor</code></td><td>Unregister global interceptor.</td></tr>
-            <tr><td>329</td><td><code>OP_UnregisterLocalInterceptor</code></td><td>Unregister local interceptor.</td></tr>
-            <tr><td>335</td><td><code>OP_StopVFX</code></td><td>Stop visual effects.</td></tr>
-            <tr><td>336</td><td><code>OP_UpdateVFX</code></td><td>Update visual effects parameters.</td></tr>
-            <tr><td>337</td><td><code>OP_SpawnSFX</code></td><td>Spawn sound effects.</td></tr>
-            <tr><td>338</td><td><code>OP_StopSFX</code></td><td>Stop sound effects.</td></tr>
-            <tr><td>349</td><td><code>OP_LineTraceByChannel</code></td><td>Perform line trace / raycast.</td></tr>
-            <tr><td>365</td><td><code>OP_SetActorLocation</code></td><td>Set actor world location.</td></tr>
-            <tr><td>366</td><td><code>OP_SetActorRotation</code></td><td>Set actor world rotation.</td></tr>
-            <tr><td>367</td><td><code>OP_InterpActorLocation</code></td><td>Interpolate actor location over time.</td></tr>
-            <tr><td>370</td><td><code>OP_DestroyActor</code></td><td>Destroy actor.</td></tr>
-            <tr><td>379</td><td><code>OP_AddStatusStacksByID</code></td><td>Add status stacks by ID.</td></tr>
-            <tr><td>380</td><td><code>OP_AddStatusStacksByTag</code></td><td>Add status stacks by tag.</td></tr>
-            <tr><td>382</td><td><code>OP_SetAttribute</code></td><td>Set attribute to exact value.</td></tr>
-            <tr><td>390</td><td><code>OP_SpawnVFXAttachedtoActor</code></td><td>Spawn VFX attached to actor.</td></tr>
+            <tr><td><code>OP_CustomAction</code></td><td>Execute custom action logic (Blueprint-defined).</td></tr>
+            <tr><td><code>OP_CallPropagationPreEvents</code></td><td>Call pre-propagation event handlers.</td></tr>
+            <tr><td><code>OP_CallPropagationPostEvents</code></td><td>Call post-propagation event handlers.</td></tr>
+            <tr><td><code>OP_AddModifier</code></td><td>Add modifier to attribute.</td></tr>
+            <tr><td><code>OP_CastStatus</code></td><td>Cast a status effect on target.</td></tr>
+            <tr><td><code>OP_CalculateMitigation</code></td><td>Calculate damage mitigation (see 22 &mdash; Damage Mitigation).</td></tr>
+            <tr><td><code>OP_ModifyAttribute</code></td><td>Modify attribute value.</td></tr>
+            <tr><td><code>OP_RemoveModifier</code></td><td>Remove modifier from attribute.</td></tr>
+            <tr><td><code>OP_RefreshStatusByTag</code></td><td>Refresh status effects by gameplay tag.</td></tr>
+            <tr><td><code>OP_RegisterLocalInterceptor</code></td><td>Register local event interceptor.</td></tr>
+            <tr><td><code>OP_RegisterGlobalInterceptor</code></td><td>Register global event interceptor.</td></tr>
+            <tr><td><code>OP_RefreshStatusbyID</code></td><td>Refresh specific status by ID.</td></tr>
+            <tr><td><code>OP_RemoveStatusByID</code></td><td>Remove status effect by ID.</td></tr>
+            <tr><td><code>OP_RemoveStatusByTag</code></td><td>Remove status effects by tag.</td></tr>
+            <tr><td><code>OP_SendEvent</code></td><td>Send event to target.</td></tr>
+            <tr><td><code>OP_SpawnActorFromClass</code></td><td>Spawn actor from class.</td></tr>
+            <tr><td><code>OP_SpawnVFX</code></td><td>Spawn visual effects.</td></tr>
+            <tr><td><code>OP_UnregisterGlobalInterceptor</code></td><td>Unregister global interceptor.</td></tr>
+            <tr><td><code>OP_UnregisterLocalInterceptor</code></td><td>Unregister local interceptor.</td></tr>
+            <tr><td><code>OP_StopVFX</code></td><td>Stop visual effects.</td></tr>
+            <tr><td><code>OP_UpdateVFX</code></td><td>Update visual effects parameters.</td></tr>
+            <tr><td><code>OP_SpawnSFX</code></td><td>Spawn sound effects.</td></tr>
+            <tr><td><code>OP_StopSFX</code></td><td>Stop sound effects.</td></tr>
+            <tr><td><code>OP_LineTraceByChannel</code></td><td>Perform line trace / raycast.</td></tr>
+            <tr><td><code>OP_SetActorLocation</code></td><td>Set actor world location.</td></tr>
+            <tr><td><code>OP_SetActorRotation</code></td><td>Set actor world rotation.</td></tr>
+            <tr><td><code>OP_InterpActorLocation</code></td><td>Interpolate actor location over time.</td></tr>
+            <tr><td><code>OP_DestroyActor</code></td><td>Destroy actor.</td></tr>
+            <tr><td><code>OP_AddStatusStacksByID</code></td><td>Add status stacks by ID.</td></tr>
+            <tr><td><code>OP_AddStatusStacksByTag</code></td><td>Add status stacks by tag.</td></tr>
+            <tr><td><code>OP_SetAttribute</code></td><td>Set attribute to exact value.</td></tr>
+            <tr><td><code>OP_SpawnVFXAttachedtoActor</code></td><td>Spawn VFX attached to actor.</td></tr>
         </tbody>
     </table>
 
@@ -227,42 +220,41 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>279</td><td><code>OP_GetAttributeValue</code></td><td>Get current attribute value.</td></tr>
-            <tr><td>280</td><td><code>OP_GetDistance</code></td><td>Calculate distance between two actors.</td></tr>
-            <tr><td>293</td><td><code>OP_GetCasterActor</code></td><td>Get casting actor reference.</td></tr>
-            <tr><td>294</td><td><code>OP_GetTargetActor</code></td><td>Get target actor reference.</td></tr>
-            <tr><td>295</td><td><code>OP_GetCasterStatsComponent</code></td><td>Get caster's stats component.</td></tr>
-            <tr><td>296</td><td><code>OP_GetTargetStatsComponent</code></td><td>Get target's stats component.</td></tr>
-            <tr><td>315</td><td><code>OP_GetStatusRemainingTime</code></td><td>Get remaining duration of status.</td></tr>
-            <tr><td>316</td><td><code>OP_GetStatusStacksByID</code></td><td>Get stack count of status by ID.</td></tr>
-            <tr><td>339</td><td><code>OP_ThisID</code></td><td>Get current status instance ID.</td></tr>
-            <tr><td>341</td><td><code>OP_GetSocket</code></td><td>Get actor socket location.</td></tr>
-            <tr><td>342</td><td><code>OP_GetActorForwardVector</code></td><td>Get actor forward vector.</td></tr>
-            <tr><td>343</td><td><code>OP_GetActorRightVector</code></td><td>Get actor right vector.</td></tr>
-            <tr><td>344</td><td><code>OP_GetActorUpVector</code></td><td>Get actor up vector.</td></tr>
-            <tr><td>345</td><td><code>OP_GetActorLocation</code></td><td>Get actor world location.</td></tr>
-            <tr><td>346</td><td><code>OP_GetActorRotation</code></td><td>Get actor world rotation.</td></tr>
-            <tr><td>347</td><td><code>OP_GetActorScale</code></td><td>Get actor world scale.</td></tr>
-            <tr><td>348</td><td><code>OP_GetActorTransform</code></td><td>Get actor world transform.</td></tr>
-            <tr><td>350</td><td><code>OP_BreakHitResult</code></td><td>Extract data from line trace hit result.</td></tr>
-            <tr><td>353</td><td><code>OP_GetComponentByTag</code></td><td>Get component by gameplay tag.</td></tr>
-            <tr><td>354</td><td><code>OP_GetComponentByClass</code></td><td>Get component by class.</td></tr>
-            <tr><td>355</td><td><code>OP_GetComponentForwardVector</code></td><td>Get component forward vector.</td></tr>
-            <tr><td>356</td><td><code>OP_GetComponentRightVector</code></td><td>Get component right vector.</td></tr>
-            <tr><td>357</td><td><code>OP_GetComponentUpVector</code></td><td>Get component up vector.</td></tr>
-            <tr><td>358</td><td><code>OP_GetComponentTransform</code></td><td>Get component world transform.</td></tr>
-            <tr><td>359</td><td><code>OP_GetComponentLocation</code></td><td>Get component world location.</td></tr>
-            <tr><td>360</td><td><code>OP_GetComponentRotation</code></td><td>Get component world rotation.</td></tr>
-            <tr><td>361</td><td><code>OP_GetComponentScale</code></td><td>Get component world scale.</td></tr>
-            <tr><td>369</td><td><code>OP_DoesImplementInterface</code></td><td>Check if object implements interface.</td></tr>
-            <tr><td>378</td><td><code>OP_GetStatusStacksByTag</code></td><td>Get stack count of status by tag.</td></tr>
-            <tr><td>392</td><td><code>OP_GetOtherComponent</code></td><td>Get other component from reference.</td></tr>
+            <tr><td><code>OP_GetAttributeValue</code></td><td>Get current attribute value.</td></tr>
+            <tr><td><code>OP_GetDistance</code></td><td>Calculate distance between two actors.</td></tr>
+            <tr><td><code>OP_GetCasterActor</code></td><td>Get casting actor reference.</td></tr>
+            <tr><td><code>OP_GetTargetActor</code></td><td>Get target actor reference.</td></tr>
+            <tr><td><code>OP_GetCasterStatsComponent</code></td><td>Get caster's stats component.</td></tr>
+            <tr><td><code>OP_GetTargetStatsComponent</code></td><td>Get target's stats component.</td></tr>
+            <tr><td><code>OP_GetStatusRemainingTime</code></td><td>Get remaining duration of status.</td></tr>
+            <tr><td><code>OP_GetStatusStacksByID</code></td><td>Get stack count of status by ID.</td></tr>
+            <tr><td><code>OP_ThisID</code></td><td>Get current status instance ID.</td></tr>
+            <tr><td><code>OP_GetSocket</code></td><td>Get actor socket location.</td></tr>
+            <tr><td><code>OP_GetActorForwardVector</code></td><td>Get actor forward vector.</td></tr>
+            <tr><td><code>OP_GetActorRightVector</code></td><td>Get actor right vector.</td></tr>
+            <tr><td><code>OP_GetActorUpVector</code></td><td>Get actor up vector.</td></tr>
+            <tr><td><code>OP_GetActorLocation</code></td><td>Get actor world location.</td></tr>
+            <tr><td><code>OP_GetActorRotation</code></td><td>Get actor world rotation.</td></tr>
+            <tr><td><code>OP_GetActorScale</code></td><td>Get actor world scale.</td></tr>
+            <tr><td><code>OP_GetActorTransform</code></td><td>Get actor world transform.</td></tr>
+            <tr><td><code>OP_BreakHitResult</code></td><td>Extract data from line trace hit result.</td></tr>
+            <tr><td><code>OP_GetComponentByTag</code></td><td>Get component by gameplay tag.</td></tr>
+            <tr><td><code>OP_GetComponentByClass</code></td><td>Get component by class.</td></tr>
+            <tr><td><code>OP_GetComponentForwardVector</code></td><td>Get component forward vector.</td></tr>
+            <tr><td><code>OP_GetComponentRightVector</code></td><td>Get component right vector.</td></tr>
+            <tr><td><code>OP_GetComponentUpVector</code></td><td>Get component up vector.</td></tr>
+            <tr><td><code>OP_GetComponentTransform</code></td><td>Get component world transform.</td></tr>
+            <tr><td><code>OP_GetComponentLocation</code></td><td>Get component world location.</td></tr>
+            <tr><td><code>OP_GetComponentRotation</code></td><td>Get component world rotation.</td></tr>
+            <tr><td><code>OP_GetComponentScale</code></td><td>Get component world scale.</td></tr>
+            <tr><td><code>OP_DoesImplementInterface</code></td><td>Check if object implements interface.</td></tr>
+            <tr><td><code>OP_GetStatusStacksByTag</code></td><td>Get stack count of status by tag.</td></tr>
+            <tr><td><code>OP_GetOtherComponent</code></td><td>Get other component from reference.</td></tr>
         </tbody>
     </table>
 
@@ -271,49 +263,48 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>281</td><td><code>OP_LiteralFloat</code></td><td>Push float literal value.</td></tr>
-            <tr><td>282</td><td><code>OP_Add</code></td><td>Add two floats.</td></tr>
-            <tr><td>283</td><td><code>OP_Subtract</code></td><td>Subtract two floats.</td></tr>
-            <tr><td>284</td><td><code>OP_Multiply</code></td><td>Multiply two floats.</td></tr>
-            <tr><td>285</td><td><code>OP_Divide</code></td><td>Divide two floats.</td></tr>
-            <tr><td>286</td><td><code>OP_Clamp</code></td><td>Clamp float to min/max range.</td></tr>
-            <tr><td>287</td><td><code>OP_Power</code></td><td>Power / exponent function.</td></tr>
-            <tr><td>288</td><td><code>OP_RandomFloatInRange</code></td><td>Random float within range.</td></tr>
-            <tr><td>289</td><td><code>OP_RandomIntegerInRange</code></td><td>Random integer within range.</td></tr>
-            <tr><td>290</td><td><code>OP_FloatToInteger</code></td><td>Convert float to integer.</td></tr>
-            <tr><td>291</td><td><code>OP_IntToFloat</code></td><td>Convert integer to float.</td></tr>
-            <tr><td>303</td><td><code>OP_Ceil</code></td><td>Ceiling (round up).</td></tr>
-            <tr><td>310</td><td><code>OP_Abs</code></td><td>Absolute value.</td></tr>
-            <tr><td>313</td><td><code>OP_Floor</code></td><td>Floor (round down).</td></tr>
-            <tr><td>318</td><td><code>OP_Lerp</code></td><td>Linear interpolation between floats.</td></tr>
-            <tr><td>319</td><td><code>OP_Max</code></td><td>Maximum of two floats.</td></tr>
-            <tr><td>320</td><td><code>OP_Min</code></td><td>Minimum of two floats.</td></tr>
-            <tr><td>324</td><td><code>OP_Round</code></td><td>Round to nearest integer.</td></tr>
-            <tr><td>340</td><td><code>OP_MakeTransform</code></td><td>Create transform from components.</td></tr>
-            <tr><td>351</td><td><code>OP_AddVectors</code></td><td>Add two vectors.</td></tr>
-            <tr><td>352</td><td><code>OP_MultiplyVF</code></td><td>Multiply vector by float.</td></tr>
-            <tr><td>363</td><td><code>OP_VLerp</code></td><td>Vector linear interpolation.</td></tr>
-            <tr><td>364</td><td><code>OP_RLerp</code></td><td>Rotator linear interpolation.</td></tr>
-            <tr><td>368</td><td><code>OP_NearlyEqualVector</code></td><td>Check if vectors are nearly equal.</td></tr>
-            <tr><td>373</td><td><code>OP_LiteralBool</code></td><td>Push boolean literal value.</td></tr>
-            <tr><td>374</td><td><code>OP_AddInt</code></td><td>Add two integers.</td></tr>
-            <tr><td>375</td><td><code>OP_LiteralInteger</code></td><td>Push integer literal value.</td></tr>
-            <tr><td>376</td><td><code>OP_LiteralObject</code></td><td>Push object reference literal.</td></tr>
-            <tr><td>377</td><td><code>OP_LiteralMontage</code></td><td>Push montage reference literal.</td></tr>
-            <tr><td>383</td><td><code>OP_NormalizeFloat</code></td><td>Normalize float (divide by max).</td></tr>
-            <tr><td>384</td><td><code>OP_NormalizeVector</code></td><td>Normalize vector to unit length.</td></tr>
-            <tr><td>385</td><td><code>OP_SubtractInt</code></td><td>Subtract two integers.</td></tr>
-            <tr><td>386</td><td><code>OP_MultiplyInt</code></td><td>Multiply two integers.</td></tr>
-            <tr><td>387</td><td><code>OP_SubtractVector</code></td><td>Subtract two vectors.</td></tr>
-            <tr><td>388</td><td><code>OP_MultiplyVector</code></td><td>Multiply vector component-wise.</td></tr>
-            <tr><td>389</td><td><code>OP_DivideVector</code></td><td>Divide vector by scalar.</td></tr>
-            <tr><td>393</td><td><code>OP_CompareObjects</code></td><td>Compare two objects for equality.</td></tr>
+            <tr><td><code>OP_LiteralFloat</code></td><td>Float literal value.</td></tr>
+            <tr><td><code>OP_Add</code></td><td>Add two floats.</td></tr>
+            <tr><td><code>OP_Subtract</code></td><td>Subtract two floats.</td></tr>
+            <tr><td><code>OP_Multiply</code></td><td>Multiply two floats.</td></tr>
+            <tr><td><code>OP_Divide</code></td><td>Divide two floats.</td></tr>
+            <tr><td><code>OP_Clamp</code></td><td>Clamp float to min/max range.</td></tr>
+            <tr><td><code>OP_Power</code></td><td>Power / exponent function.</td></tr>
+            <tr><td><code>OP_RandomFloatInRange</code></td><td>Random float within range.</td></tr>
+            <tr><td><code>OP_RandomIntegerInRange</code></td><td>Random integer within range.</td></tr>
+            <tr><td><code>OP_FloatToInteger</code></td><td>Convert float to integer.</td></tr>
+            <tr><td><code>OP_IntToFloat</code></td><td>Convert integer to float.</td></tr>
+            <tr><td><code>OP_Ceil</code></td><td>Ceiling (round up).</td></tr>
+            <tr><td><code>OP_Abs</code></td><td>Absolute value.</td></tr>
+            <tr><td><code>OP_Floor</code></td><td>Floor (round down).</td></tr>
+            <tr><td><code>OP_Lerp</code></td><td>Linear interpolation between floats.</td></tr>
+            <tr><td><code>OP_Max</code></td><td>Maximum of two floats.</td></tr>
+            <tr><td><code>OP_Min</code></td><td>Minimum of two floats.</td></tr>
+            <tr><td><code>OP_Round</code></td><td>Round to nearest integer.</td></tr>
+            <tr><td><code>OP_MakeTransform</code></td><td>Create transform from components.</td></tr>
+            <tr><td><code>OP_AddVectors</code></td><td>Add two vectors.</td></tr>
+            <tr><td><code>OP_MultiplyVF</code></td><td>Multiply vector by float.</td></tr>
+            <tr><td><code>OP_VLerp</code></td><td>Vector linear interpolation.</td></tr>
+            <tr><td><code>OP_RLerp</code></td><td>Rotator linear interpolation.</td></tr>
+            <tr><td><code>OP_NearlyEqualVector</code></td><td>Check if vectors are nearly equal.</td></tr>
+            <tr><td><code>OP_LiteralBool</code></td><td>Boolean literal value.</td></tr>
+            <tr><td><code>OP_AddInt</code></td><td>Add two integers.</td></tr>
+            <tr><td><code>OP_LiteralInteger</code></td><td>Integer literal value.</td></tr>
+            <tr><td><code>OP_LiteralObject</code></td><td>Object reference literal.</td></tr>
+            <tr><td><code>OP_LiteralMontage</code></td><td>Montage reference literal.</td></tr>
+            <tr><td><code>OP_NormalizeFloat</code></td><td>Normalize float.</td></tr>
+            <tr><td><code>OP_NormalizeVector</code></td><td>Normalize vector to unit length.</td></tr>
+            <tr><td><code>OP_SubtractInt</code></td><td>Subtract two integers.</td></tr>
+            <tr><td><code>OP_MultiplyInt</code></td><td>Multiply two integers.</td></tr>
+            <tr><td><code>OP_SubtractVector</code></td><td>Subtract two vectors.</td></tr>
+            <tr><td><code>OP_MultiplyVector</code></td><td>Multiply vector component-wise.</td></tr>
+            <tr><td><code>OP_DivideVector</code></td><td>Divide vector by scalar.</td></tr>
+            <tr><td><code>OP_CompareObjects</code></td><td>Compare two objects for equality.</td></tr>
         </tbody>
     </table>
 
@@ -322,14 +313,13 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>304</td><td><code>OP_SetVariable</code></td><td>Set local variable value.</td></tr>
-            <tr><td>305</td><td><code>OP_GetVariable</code></td><td>Get local variable value.</td></tr>
+            <tr><td><code>OP_SetVariable</code></td><td>Set local variable value.</td></tr>
+            <tr><td><code>OP_GetVariable</code></td><td>Get local variable value.</td></tr>
         </tbody>
     </table>
 
@@ -338,15 +328,14 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>306</td><td><code>OP_ArrayAdd</code></td><td>Add element to array.</td></tr>
-            <tr><td>307</td><td><code>OP_ArrayGetAt</code></td><td>Get array element by index.</td></tr>
-            <tr><td>308</td><td><code>OP_ArrayLength</code></td><td>Get array length.</td></tr>
+            <tr><td><code>OP_ArrayAdd</code></td><td>Add element to array.</td></tr>
+            <tr><td><code>OP_ArrayGetAt</code></td><td>Get array element by index.</td></tr>
+            <tr><td><code>OP_ArrayLength</code></td><td>Get array length.</td></tr>
         </tbody>
     </table>
 
@@ -355,13 +344,12 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>309</td><td><code>OP_Function</code></td><td>Define / call function block.</td></tr>
+            <tr><td><code>OP_Function</code></td><td>Define / call function block.</td></tr>
         </tbody>
     </table>
 
@@ -370,25 +358,24 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Description</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>292</td><td><code>OP_PrintString</code></td><td>Print debug string to log.</td></tr>
-            <tr><td>300</td><td><code>OP_FloatToString</code></td><td>Convert float to string.</td></tr>
-            <tr><td>301</td><td><code>OP_IntToString</code></td><td>Convert integer to string.</td></tr>
-            <tr><td>302</td><td><code>OP_ObjectNameToString</code></td><td>Convert object name to string.</td></tr>
-            <tr><td>362</td><td><code>OP_VectorToString</code></td><td>Convert vector to string.</td></tr>
+            <tr><td><code>OP_PrintString</code></td><td>Print debug string to log.</td></tr>
+            <tr><td><code>OP_FloatToString</code></td><td>Convert float to string.</td></tr>
+            <tr><td><code>OP_IntToString</code></td><td>Convert integer to string.</td></tr>
+            <tr><td><code>OP_ObjectNameToString</code></td><td>Convert object name to string.</td></tr>
+            <tr><td><code>OP_VectorToString</code></td><td>Convert vector to string.</td></tr>
         </tbody>
     </table>
 
     <hr>
 
-    <h2 id="custom-opcodes">5. Custom OpCodes (10000+)</h2>
+    <h2 id="custom-opcodes">5. Custom OpCodes</h2>
 
-    <p>Defined in <code>ForgeOpCodes_Custom.h</code> under namespace <code>ForgeOpCodes_Custom</code>. This file is <strong>auto-generated</strong> from Custom Node Definition files (<code>.toon</code>) and regenerated on editor startup.</p>
+    <p>Custom opcodes are <strong>auto-generated</strong> from Custom Node Definition files (<code>.toon</code>) and regenerated on editor startup.</p>
 
     <table class="data-table">
         <thead>
@@ -398,45 +385,42 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Start value</td><td><code>USER_OPCODE_START = 10000</code></td></tr>
-            <tr><td>Maximum value</td><td><code>65535</code> (uint16 limit)</td></tr>
             <tr><td>Source</td><td><code>.toon</code> files in the project</td></tr>
             <tr><td>Generation</td><td>Automatic on editor startup</td></tr>
         </tbody>
     </table>
 
-    <p>The base installation ships with an empty custom opcode namespace. Custom node definitions added to the project are assigned sequential opcode values starting at 10000.</p>
+    <p>The base installation ships with an empty custom opcode namespace. Custom node definitions added to the project are assigned sequential opcode values in a reserved range.</p>
 
     <hr>
 
     <h2 id="variable-pool-types">6. Variable Pool Types</h2>
 
-    <p>Defined in <code>ForgeSystemOpCodes.h</code> under namespace <code>ForgePoolType</code>. These identifiers specify the data type of ForgeVM variable pool slots.</p>
+    <p>These identifiers specify the supported data types for ForgeVM variable pool slots.</p>
 
     <table class="data-table">
         <thead>
             <tr>
-                <th>Value</th>
                 <th>Name</th>
                 <th>Engine Type</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td>0</td><td><code>Pool_Float</code></td><td><code>float</code></td></tr>
-            <tr><td>1</td><td><code>Pool_Int</code></td><td><code>int32</code></td></tr>
-            <tr><td>2</td><td><code>Pool_Bool</code></td><td><code>bool</code></td></tr>
-            <tr><td>3</td><td><code>Pool_Byte</code></td><td><code>uint8</code></td></tr>
-            <tr><td>4</td><td><code>Pool_Name</code></td><td><code>FName</code></td></tr>
-            <tr><td>5</td><td><code>Pool_String</code></td><td><code>FString</code></td></tr>
-            <tr><td>6</td><td><code>Pool_Vector</code></td><td><code>FVector</code></td></tr>
-            <tr><td>7</td><td><code>Pool_Rotator</code></td><td><code>FRotator</code></td></tr>
-            <tr><td>8</td><td><code>Pool_Transform</code></td><td><code>FTransform</code></td></tr>
-            <tr><td>9</td><td><code>Pool_Tag</code></td><td><code>FGameplayTag</code></td></tr>
-            <tr><td>10</td><td><code>Pool_Object</code></td><td><code>UObject*</code></td></tr>
-            <tr><td>11</td><td><code>Pool_Class</code></td><td><code>UClass*</code></td></tr>
-            <tr><td>12</td><td><code>Pool_SoftObject</code></td><td><code>TSoftObjectPtr</code></td></tr>
-            <tr><td>13</td><td><code>Pool_SoftClass</code></td><td><code>TSoftClassPtr</code></td></tr>
-            <tr><td>14</td><td><code>Pool_Struct</code></td><td><code>UScriptStruct</code> instance</td></tr>
+            <tr><td><code>Pool_Float</code></td><td><code>float</code></td></tr>
+            <tr><td><code>Pool_Int</code></td><td><code>int32</code></td></tr>
+            <tr><td><code>Pool_Bool</code></td><td><code>bool</code></td></tr>
+            <tr><td><code>Pool_Byte</code></td><td><code>uint8</code></td></tr>
+            <tr><td><code>Pool_Name</code></td><td><code>FName</code></td></tr>
+            <tr><td><code>Pool_String</code></td><td><code>FString</code></td></tr>
+            <tr><td><code>Pool_Vector</code></td><td><code>FVector</code></td></tr>
+            <tr><td><code>Pool_Rotator</code></td><td><code>FRotator</code></td></tr>
+            <tr><td><code>Pool_Transform</code></td><td><code>FTransform</code></td></tr>
+            <tr><td><code>Pool_Tag</code></td><td><code>FGameplayTag</code></td></tr>
+            <tr><td><code>Pool_Object</code></td><td><code>UObject*</code></td></tr>
+            <tr><td><code>Pool_Class</code></td><td><code>UClass*</code></td></tr>
+            <tr><td><code>Pool_SoftObject</code></td><td><code>TSoftObjectPtr</code></td></tr>
+            <tr><td><code>Pool_SoftClass</code></td><td><code>TSoftClassPtr</code></td></tr>
+            <tr><td><code>Pool_Struct</code></td><td><code>UScriptStruct</code> instance</td></tr>
         </tbody>
     </table>
 
