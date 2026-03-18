@@ -6,13 +6,14 @@
         <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
             22 native gameplay tags declared via <code>UE_DECLARE_GAMEPLAY_TAG_EXTERN</code> /
             <code>UE_DEFINE_GAMEPLAY_TAG</code> &mdash; centralized tag hierarchy for attributes, sub-attributes, damage
-            types, statuses, events, modifiers, variables, containers, and mitigation formulas.</p>
+            types, statuses, events, modifiers, variables, containers, and mitigation formulas.
+        </p>
     </div>
 
     <div class="video-wrapper">
         <video controls>
             <source
-                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/System_OpCodes.mp4"
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Declared_Gameplay_Tags.mp4"
                 type="video/mp4">
         </video>
     </div>
@@ -42,7 +43,8 @@
 
     <p>Stats_X declares <strong>22 native gameplay tags</strong> using the Unreal Engine
         <code>UE_DECLARE_GAMEPLAY_TAG_EXTERN</code> / <code>UE_DEFINE_GAMEPLAY_TAG</code> pattern. All tags are
-        centralized in a single header/definition pair:</p>
+        centralized in a single header/definition pair:
+    </p>
 
     <table class="data-table">
         <thead>
@@ -64,7 +66,8 @@
     </table>
 
     <p>Tags are registered at module load time via the native gameplay tag system. No <code>.ini</code>,
-        <code>.csv</code>, or <code>RequestGameplayTag</code> dynamic registrations are used.</p>
+        <code>.csv</code>, or <code>RequestGameplayTag</code> dynamic registrations are used.
+    </p>
 
     <hr>
 
@@ -144,7 +147,8 @@
     <h2 id="dgt-sub-attribute-tags">4. Sub-Attribute Tags</h2>
 
     <p>Sub-attribute tags identify which facet of an attribute is being read or written by opcodes such as
-        <code>OP_ModifyAttribute</code>, <code>OP_SetAttribute</code>, and <code>OP_GetAttributeValue</code>.</p>
+        <code>OP_ModifyAttribute</code>, <code>OP_SetAttribute</code>, and <code>OP_GetAttributeValue</code>.
+    </p>
 
     <table class="data-table">
         <thead>
@@ -205,13 +209,15 @@
                 <td><code>StatsX_DamageType</code></td>
                 <td>Parent tag for all damage type categories (Fire, Physical, Magical, etc.). Used by
                     <code>OP_CalculateMitigation</code> to map incoming damage types to resistance attributes via
-                    <code>DamageToResistancesMap</code>.</td>
+                    <code>DamageToResistancesMap</code>.
+                </td>
             </tr>
         </tbody>
     </table>
 
     <p>Projects extend this hierarchy with game-specific children (e.g. <code>StatsX.DamageType.Fire</code>,
-        <code>StatsX.DamageType.Physical</code>).</p>
+        <code>StatsX.DamageType.Physical</code>).
+    </p>
 
     <hr>
 
@@ -236,7 +242,8 @@
     </table>
 
     <p>Each status definition is assigned a child tag under this hierarchy (e.g. <code>StatsX.Status.Burn</code>,
-        <code>StatsX.Status.Shield</code>).</p>
+        <code>StatsX.Status.Shield</code>).
+    </p>
 
     <hr>
 
@@ -298,7 +305,8 @@
     </table>
 
     <p>Projects extend with game-specific children (e.g. <code>StatsX.ModSource.Buff</code>,
-        <code>StatsX.ModSource.Equipment</code>, <code>StatsX.ModSource.Status</code>).</p>
+        <code>StatsX.ModSource.Equipment</code>, <code>StatsX.ModSource.Status</code>).
+    </p>
 
     <hr>
 
@@ -354,7 +362,8 @@
                 <td><code>StatsX.ContainerType.ReceivedStatuses</code></td>
                 <td><code>StatsX_ContainerType_ReceivedStatuses</code></td>
                 <td>Queries statuses currently affecting this entity. Dispatches to <code>HasReceivedStatus</code> /
-                    <code>HasAnyReceivedStatus</code> / <code>HasAllReceivedStatus</code>.</td>
+                    <code>HasAnyReceivedStatus</code> / <code>HasAllReceivedStatus</code>.
+                </td>
             </tr>
         </tbody>
     </table>
@@ -384,25 +393,29 @@
                 <td><code>StatsX.MitigationFormula.XPercentage</code></td>
                 <td><code>StatsX_MitigationFormula_XPercentage</code></td>
                 <td><code>Mitigation_XPercentage</code> &mdash; percentage:
-                    <code>Delta * (1 - clamp(Resistance, 0, 1))</code>.</td>
+                    <code>Delta * (1 - clamp(Resistance, 0, 1))</code>.
+                </td>
             </tr>
             <tr>
                 <td><code>StatsX.MitigationFormula.XDiminishing</code></td>
                 <td><code>StatsX_MitigationFormula_XDiminishing</code></td>
                 <td><code>Mitigation_XDiminishing</code> &mdash; asymptotic:
-                    <code>Delta * (Scale / (Scale + Resistance))</code>.</td>
+                    <code>Delta * (Scale / (Scale + Resistance))</code>.
+                </td>
             </tr>
             <tr>
                 <td><code>StatsX.MitigationFormula.XExponentialDecay</code></td>
                 <td><code>StatsX_MitigationFormula_XExponentialDecay</code></td>
                 <td><code>Mitigation_XExponentialDecay</code> &mdash; exponential:
-                    <code>Delta * e^(-Resistance / Scale)</code>.</td>
+                    <code>Delta * e^(-Resistance / Scale)</code>.
+                </td>
             </tr>
         </tbody>
     </table>
 
     <p>If the formula tag does not match any of the four built-ins, the system falls back to
-        <code>Mitigation_CustomFormula</code> (Blueprint-implementable event).</p>
+        <code>Mitigation_CustomFormula</code> (Blueprint-implementable event).
+    </p>
 
     <hr>
 
