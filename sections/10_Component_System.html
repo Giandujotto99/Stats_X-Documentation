@@ -1,12 +1,6 @@
 <section id="component-system" class="tutorial-section">
     <h1>Component System</h1>
 
-    <div class="info-box info">
-        <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; UStatsX_StatsComponentBase<br>
-            Per-actor component that owns attributes, modifiers, thresholds, status tracking, interceptors, and damage
-            mitigation &mdash; the primary gameplay-facing interface of the plugin.</p>
-    </div>
 
     <div class="video-wrapper">
         <video controls>
@@ -100,7 +94,8 @@
     </div>
     <p>The component implements <code>IStatsXComponentProvider</code>, returning <code>this</code> directly. This
         interface allows objects in status object pools to resolve their associated component without expensive
-        <code>Cast&lt;&gt;</code> operations.</p>
+        <code>Cast&lt;&gt;</code> operations.
+    </p>
 
     <hr>
 
@@ -150,7 +145,8 @@
 
     <h3>Storage</h3>
     <p>Attributes are stored in a tag-driven map. Each attribute is a triplet: <code>Current</code>, <code>Max</code>,
-        <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).</p>
+        <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).
+    </p>
 
     <h3>Initialisation API</h3>
     <table class="data-table">
@@ -177,7 +173,8 @@
     </table>
     <p>All three validate that the tag is a child of <code>StatsX.Attribute</code>.
         <code>InitializeResourceAttribute</code> enforces <code>StatsX.Attribute.Resource</code>,
-        <code>InitializeStatAttribute</code> enforces <code>StatsX.Attribute.Stat</code>.</p>
+        <code>InitializeStatAttribute</code> enforces <code>StatsX.Attribute.Stat</code>.
+    </p>
 
     <h3>Modification API</h3>
     <table class="data-table">
@@ -245,7 +242,8 @@
     <h3>Replication Support</h3>
     <p>Attributes are replicated via <code>FastArraySerializer</code>. The system uses internal index caches for
         efficient O(1) lookup during add/remove/update operations. Client-side sync is handled via
-        <code>SynchronizeLocalAttributes()</code>, with retry support for late-joiner scenarios.</p>
+        <code>SynchronizeLocalAttributes()</code>, with retry support for late-joiner scenarios.
+    </p>
 
     <hr>
 
@@ -353,11 +351,13 @@ void  ClearThresholdsForAttribute(FGameplayTag AttributeTag);
 bool  HasActiveThresholds() const;</code></pre>
     </div>
     <p><code>AddAttributeThreshold</code> returns a unique handle. The threshold fires
-        <code>OnAttributeThresholdReached</code> when the monitored sub-attribute crosses the configured value.</p>
+        <code>OnAttributeThresholdReached</code> when the monitored sub-attribute crosses the configured value.
+    </p>
 
     <h3>Check Flow</h3>
     <p>Whenever an attribute is modified, the system checks all active thresholds for that attribute and broadcasts the
-        <code>OnAttributeThresholdReached</code> event for any that have been crossed.</p>
+        <code>OnAttributeThresholdReached</code> event for any that have been crossed.
+    </p>
 
     <h3>Event Signature</h3>
     <div class="code-block">
@@ -377,7 +377,8 @@ bool  HasActiveThresholds() const;</code></pre>
 
     <h2 id="status-tracking">8. Status Tracking</h2>
     <p>The component maintains <strong>dual-sided tracking</strong> &mdash; statuses this actor has
-        <strong>casted</strong> and statuses it has <strong>received</strong>.</p>
+        <strong>casted</strong> and statuses it has <strong>received</strong>.
+    </p>
 
     <h3>Query API</h3>
     <table class="data-table">
@@ -511,7 +512,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     </table>
     <p>All removal methods delegate to <code>WorldSubsystem-&gt;RemoveStatus()</code>. The
         <code>bExecuteOnEndEvent</code> flag controls whether the <code>OnEnd</code> event block is dispatched before
-        termination.</p>
+        termination.
+    </p>
 
     <hr>
 
@@ -665,7 +667,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     </div>
     <p>Sends a Forge event using the component's owner actor as scope. Only status instances waiting on the same event
         tag + scope actor are resumed. The optional <code>Payload</code> is auto-applied as variable overrides on
-        <code>WaitForEvent</code> resume.</p>
+        <code>WaitForEvent</code> resume.
+    </p>
     <p>Returns the number of listeners that were resumed.</p>
 
     <hr>
@@ -712,7 +715,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
 
     <h3>Scale Factors</h3>
     <p>Diminishing and exponential decay formulas use configurable scale factors that are <code>EditAnywhere</code> /
-        <code>BlueprintReadWrite</code> &mdash; tunable per-actor.</p>
+        <code>BlueprintReadWrite</code> &mdash; tunable per-actor.
+    </p>
 
     <h3>Custom Formula (Blueprint Override)</h3>
     <div class="code-block">

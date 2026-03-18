@@ -1,12 +1,6 @@
 <section id="execution-context" class="tutorial-section">
     <h1>Execution Context</h1>
 
-    <div class="info-box info">
-        <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVMContext<br>
-            Transient execution state: the single shared scratchpad through which every handler reads inputs, writes
-            outputs, and accesses the running status.</p>
-    </div>
 
     <div class="video-wrapper">
         <video controls>
@@ -52,7 +46,8 @@
         <code>ExecuteStatus()</code> or <code>ResumeInstance()</code> call. All internal arrays use
         <code>SetNum(0, EAllowShrinking::No)</code> &mdash; capacity survives across executions, only logical size
         resets to zero. After a few warm-up frames, the context reaches a high-water mark and performs zero heap
-        allocations for the remainder of the session.</p>
+        allocations for the remainder of the session.
+    </p>
     <p>The context is <strong>transient by contract</strong>: any data that must survive beyond <code>Execute()</code>
         is migrated to <code>FStatusInstance</code> by the handler that promoted the execution. The context itself never
         persists.</p>
@@ -145,7 +140,8 @@ struct FForgeVMContext
             </tr>
             <tr>
                 <td><code>CasterActor</code>, <code>TargetActor</code>, <code>CasterComponent</code>,
-                    <code>TargetComponent</code></td>
+                    <code>TargetComponent</code>
+                </td>
                 <td><code>.Reset()</code> (caller sets after)</td>
             </tr>
             <tr>
@@ -219,7 +215,8 @@ void AllocateVariableBlob(int32 SizeInBytes);</code></pre>
         <li>If size &gt; 0 &rarr; <code>Memzero</code> to guarantee clean reads</li>
     </ol>
     <p>These are called by the VM after <code>Reset()</code> &mdash; the size comes from the compiled
-        <code>Definition-&gt;ContextStackSize</code> and <code>Definition-&gt;VariableBlobSize</code>.</p>
+        <code>Definition-&gt;ContextStackSize</code> and <code>Definition-&gt;VariableBlobSize</code>.
+    </p>
 
     <hr>
 
@@ -312,7 +309,8 @@ void AllocateVariableBlob(int32 SizeInBytes);</code></pre>
     </ul>
     <p>Scalars are stored inline (<code>float</code> at offset N = 4 bytes). Object references store a
         <code>uint16</code> index into <code>ContextObjectStack</code>. (see <a href="#object-indirection">Section
-            6</a>)</p>
+            6</a>)
+    </p>
 
     <h3>5.2 VariableBlob &mdash; Dedicated Variable Storage</h3>
     <div class="code-block">
@@ -329,7 +327,8 @@ void AllocateVariableBlob(int32 SizeInBytes);</code></pre>
         <li><strong>Size:</strong> <code>Definition-&gt;VariableBlobSize</code></li>
         <li><strong>Instance promotion:</strong> When a handler creates an instance, variable data migrates to
             <code>Instance-&gt;VariableBlob</code>. After promotion, handlers read/write directly from
-            <code>Instance-&gt;VariableBlob</code> via the Instance data source.</li>
+            <code>Instance-&gt;VariableBlob</code> via the Instance data source.
+        </li>
     </ul>
 
     <h3>5.3 ContextArrayPool &mdash; Dynamic Arrays</h3>
@@ -346,7 +345,8 @@ uint16 ActiveTransientArrays;</code></pre>
         <li><strong>Handle:</strong> <code>uint16</code> index into the pool</li>
         <li><strong>Instance redirection:</strong> When <code>Instance</code> exists, variable handles
             (<code>&lt; ArraySlotCount</code>) resolve to <code>Instance-&gt;ArrayPool</code> via
-            <code>ResolveArraySlot()</code></li>
+            <code>ResolveArraySlot()</code>
+        </li>
     </ul>
 
     <h3>5.4 Function Call ABI Storage</h3>
@@ -454,7 +454,8 @@ return GetContextObject(ObjectIndex);  // bounds-checked lookup</code></pre>
 
     <h3>Overflow Guard</h3>
     <p>All three pools guard against exceeding <code>uint16</code> capacity (65&nbsp;535 =
-        <code>FORGE_INVALID_INDEX</code> sentinel):</p>
+        <code>FORGE_INVALID_INDEX</code> sentinel):
+    </p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
@@ -792,7 +793,8 @@ T ReadCallFrameValue(uint16 ArgIndex) const;</code></pre>
         <li>Flow nodes read/modify <code>BlockIndex</code> and <code>LoopCount</code></li>
         <li><code>OP_EndBlock</code> signals block completion &mdash; the flow node decides whether to loop or exit</li>
         <li><code>Break</code> / <code>Continue</code> operations manipulate <code>PC</code> and
-            <code>FlowBlockStack</code> directly</li>
+            <code>FlowBlockStack</code> directly
+        </li>
     </ul>
 
     <hr>
@@ -825,7 +827,8 @@ int32 LastSwitchValue = 0;</code></pre>
 
     <p>Used by condition and switch nodes to communicate results to subsequent <code>OP_JumpIfFalse</code> and
         <code>OP_JumpTable</code> system ops. These are single-value registers &mdash; not a stack &mdash; because
-        branching is never nested within a single instruction step.</p>
+        branching is never nested within a single instruction step.
+    </p>
 
     <hr>
 
@@ -839,7 +842,8 @@ int32 LastSwitchValue = 0;</code></pre>
     </div>
 
     <p>Handlers that need more than 104 payload bits use <strong>continuation slots</strong> &mdash;
-        <code>OP_ContinueData</code> instructions that follow the primary instruction in the bytecode stream.</p>
+        <code>OP_ContinueData</code> instructions that follow the primary instruction in the bytecode stream.
+    </p>
 
     <div class="code-block">
         <div class="code-header">
@@ -920,7 +924,8 @@ Context.PC += 1;  // Skip the continuation slot</code></pre>
 
     <h2 id="function-state-persistence">18. Function State Persistence</h2>
     <p>When execution suspends inside a function call, the entire call ABI state must survive to the next
-        <code>ResumeInstance()</code> call.</p>
+        <code>ResumeInstance()</code> call.
+    </p>
 
     <h3>PersistFunctionStateToInstance()</h3>
     <div class="code-block">
@@ -963,7 +968,8 @@ FString GetContextString(uint16 Index) const;</code></pre>
     </div>
     <p>Stores transient <code>FString</code> values for debug nodes (<code>PrintString</code>,
         <code>FloatToString</code>, etc.). The <code>ContextStack</code> stores <code>uint16</code> indices, same
-        pattern as the object indirection.</p>
+        pattern as the object indirection.
+    </p>
     <p><strong>Not available in shipping builds</strong> &mdash; string operations are stripped in production bytecode.
     </p>
 

@@ -1,12 +1,6 @@
 <section id="cosmetic-cue-routing" class="tutorial-section">
     <h1>Cosmetic Cue Routing</h1>
 
-    <div class="info-box info">
-        <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
-            Layer: <strong>Presentation / Network</strong> &mdash; replicated transport for cosmetic cues via
-            <code>AStatsX_NetCueRelay</code>.</p>
-    </div>
 
     <div class="video-wrapper">
         <video controls>
@@ -438,7 +432,8 @@ DOREPLIFETIME(AStatsX_NetCueRelay, bGlobalRelay);</code></pre>
             <tr>
                 <td><code>FStatsXReplicatedStateCueArray</code></td>
                 <td><code>FFastArraySerializer</code> container with <code>TArray&lt;Item&gt;</code> and
-                    <code>OwnerRelay</code> back-pointer</td>
+                    <code>OwnerRelay</code> back-pointer
+                </td>
             </tr>
         </tbody>
     </table>
@@ -820,7 +815,8 @@ void AStatsX_NetCueRelay::MulticastBurstCue_Implementation(const FStatsXNetCueWi
     <ol>
         <li>Find audio component by handle.</li>
         <li>Immediate <code>Stop()</code> if <code>Float0 &le; &epsilon;</code>, otherwise
-            <code>FadeOut(FadeOutTime, 0.f)</code>.</li>
+            <code>FadeOut(FadeOutTime, 0.f)</code>.
+        </li>
         <li><code>UnregisterLocalSFXComponent</code>.</li>
     </ol>
 
@@ -844,7 +840,8 @@ void AStatsX_NetCueRelay::MulticastBurstCue_Implementation(const FStatsXNetCueWi
         <li>Validate <code>CueType != None</code>.</li>
         <li><code>GetOrCreateNetCueRelay(RouteActor)</code> &mdash; attempt route-actor relay.</li>
         <li>If null and route actor was valid &rarr; <strong>fallback to global relay</strong> via
-            <code>GetOrCreateNetCueRelay(nullptr)</code>.</li>
+            <code>GetOrCreateNetCueRelay(nullptr)</code>.
+        </li>
         <li><code>Relay-&gt;PushCueFromServer(Cue)</code>.</li>
     </ol>
 
@@ -993,13 +990,15 @@ void AStatsX_NetCueRelay::MulticastBurstCue_Implementation(const FStatsXNetCueWi
 
     <p>StopMontage cues are not produced by a dedicated opcode but by the
         <code>UForge_MontageCallbackHelper::Cleanup(bool bStopMontage)</code> path. When a status instance ends or the
-        montage completes:</p>
+        montage completes:
+    </p>
 
     <ol>
         <li>Helper constructs <code>FStatsXCosmeticCue</code> with:
             <ul>
                 <li><code>CueType = StopMontage</code>, <code>Channel = StateReliable</code>,
-                    <code>RoutePolicy = TargetActor</code>.</li>
+                    <code>RoutePolicy = TargetActor</code>.
+                </li>
                 <li><code>Asset</code> = the playing montage.</li>
                 <li><code>Float0</code> = 0.15 (blend-out time).</li>
                 <li><code>Key</code> = original StatusID + NodePC from the PlayMontage cue.</li>

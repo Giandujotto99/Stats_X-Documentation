@@ -1,13 +1,6 @@
 <section id="interceptor-system" class="tutorial-section">
     <h1>Interceptor System</h1>
 
-    <div class="info-box info">
-        <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; UForgeInterceptorBase, FInterceptorRegistration,
-            BroadcastInterceptorEvents<br>
-            Condition / Action pattern for observing and altering status execution at any point in the graph &mdash;
-            per-caster, per-target, or world-wide.</p>
-    </div>
 
     <div class="video-wrapper">
         <video controls>
@@ -405,7 +398,8 @@ struct FInterceptorRegistration
 
     <h3>Component-Side (Caster + Target)</h3>
     <p><code>UStatsX_StatsComponentBase</code> holds <strong>two</strong> copies &mdash; one prefixed
-        <code>Caster*</code>, one prefixed <code>Target*</code>:</p>
+        <code>Caster*</code>, one prefixed <code>Target*</code>:
+    </p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">Structure</span>
@@ -442,7 +436,8 @@ NextGlobalInterceptorHandle</code></pre>
     return true;  // No interceptors → continue execution immediately</code></pre>
     </div>
     <p>The cache is <strong>rebuilt per-tag</strong> after registration changes via
-        <code>RefreshInterceptorEventCacheTag()</code>.</p>
+        <code>RefreshInterceptorEventCacheTag()</code>.
+    </p>
 
     <hr>
 
@@ -466,7 +461,8 @@ NextGlobalInterceptorHandle</code></pre>
     <ol>
         <li>Select maps based on <code>Scope</code> (Caster or Target).</li>
         <li><code>NewObject&lt;UForgeInterceptorBase&gt;(this, InterceptorClass)</code> &mdash; interceptor is
-            <strong>outer'd</strong> to the component.</li>
+            <strong>outer'd</strong> to the component.
+        </li>
         <li><code>Interceptor-&gt;SetupSourceData(SourceActor, SourceComponent)</code>.</li>
         <li>Build <code>FInterceptorRegistration</code> with Priority, RegistrationTime, SourceStatusID.</li>
         <li>Assign monotonic handle via <code>NextInterceptorHandle++</code>.</li>
@@ -506,7 +502,8 @@ bool UnregisterGlobalInterceptor(int32 Handle);         // WorldSubsystem</code>
             pending</strong> (<code>bPendingRemoval = true</code>) rather than removed immediately. It is flushed when
         dispatch finishes.</p>
     <p>If <code>DispatchDepth == 0</code>, the handle is removed immediately via
-        <code>RemoveInterceptorHandleImmediate()</code>, which:</p>
+        <code>RemoveInterceptorHandleImmediate()</code>, which:
+    </p>
     <ol>
         <li>Removes from <code>ActiveRegistrations</code>.</li>
         <li>Iterates <code>EventToHandlesMap</code> to remove all entries with this handle.</li>
@@ -531,7 +528,8 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
         <pre><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase* SourceComponent);</code></pre>
     </div>
     <p>Iterates both Caster and Target registries; removes all registrations whose <code>Owner</code> matches
-        <code>SourceComponent</code>. Reentrancy-aware per scope.</p>
+        <code>SourceComponent</code>. Reentrancy-aware per scope.
+    </p>
 
     <h3>9.4 By Source Status ID</h3>
     <div class="code-block">
@@ -569,7 +567,8 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
     </div>
     <ol>
         <li><strong>Determine scope</strong> from string suffix: <code>.Caster</code>, <code>.Target</code>,
-            <code>.Global</code>.</li>
+            <code>.Global</code>.
+        </li>
         <li><strong>Extract base tag</strong> via <code>EventTag.RequestDirectParent()</code>:
             <div class="code-block">
                 <div class="code-header">
@@ -650,7 +649,8 @@ Scope::Global  → Context.GetSubsystem()-&gt;BroadcastGlobalInterceptorEvent(Ba
         <li><strong>IsValid() guard:</strong> Checks UObject validity after each re-lookup &mdash; the interceptor may
             have been garbage-collected during a nested operation.</li>
         <li><strong>SetupTriggeringData / ClearTriggeringData</strong> bracket both <code>Condition()</code> and
-            <code>Action()</code> independently &mdash; if Condition skips, Action's context is not leaked.</li>
+            <code>Action()</code> independently &mdash; if Condition skips, Action's context is not leaked.
+        </li>
     </ol>
 
     <hr>
@@ -724,7 +724,8 @@ DispatchDepth == 0 →  FlushPendingInterceptorRemovals():
 };</code></pre>
     </div>
     <p>Compiled into the <code>StatusDefinition</code> at editor time. At runtime, the VM sets
-        <code>Context.ActivePayloadEntries</code> and <code>Context.ActivePayloadCount</code> before the broadcast.</p>
+        <code>Context.ActivePayloadEntries</code> and <code>Context.ActivePayloadCount</code> before the broadcast.
+    </p>
 
     <h3>13.2 Reading Payload Values</h3>
     <div class="code-block">
@@ -900,7 +901,8 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
 
     <h2 id="variable-access">14. Variable Access</h2>
     <p>Interceptors can read and write <strong>status variables</strong> of the triggering status via the
-        <code>ForgeVariableAccess</code> helper.</p>
+        <code>ForgeVariableAccess</code> helper.
+    </p>
 
     <h3>14.1 Read Path</h3>
     <div class="code-block">
@@ -1110,7 +1112,8 @@ return Context-&gt;Instance
         </tbody>
     </table>
     <p>All triggering accessors read from the top of the <code>TriggerFrameStack</code> via
-        <code>GetActiveContext()</code>.</p>
+        <code>GetActiveContext()</code>.
+    </p>
 
     <hr>
 
@@ -1118,7 +1121,8 @@ return Context-&gt;Instance
 
     <h3>AddReferencedObjects</h3>
     <p>Both <code>UStatsX_StatsComponentBase</code> and <code>UStatsX_WorldSubsystem</code> override
-        <code>AddReferencedObjects()</code> to walk their interceptor registries:</p>
+        <code>AddReferencedObjects()</code> to walk their interceptor registries:
+    </p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
