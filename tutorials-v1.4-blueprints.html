@@ -39,30 +39,22 @@
 
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-section">
-                <div class="sidebar-title">Blueprints</div>
-                <ul class="sidebar-nav">
-                    <li><a href="#overview" data-section="overview" class="active">Overview</a></li>
-                </ul>
+            <div id="tutorial-sidebar-content">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Loading</div>
+                    <ul class="sidebar-nav">
+                        <li><a href="#" aria-disabled="true">Loading sections...</a></li>
+                    </ul>
+                </div>
             </div>
         </aside>
 
         <!-- Main Content -->
         <main class="main-content content">
             <div class="content-wrapper">
-                <section id="overview" class="tutorial-section active">
-                    <h1>v1.4 Blueprints Tutorials</h1>
-                    <p style="color: var(--text-secondary); margin-bottom: 32px;">
-                        Step-by-step Blueprints guides for Stats_X v1.4
-                    </p>
-                    <div class="info-box info">
-                        <div class="info-title">Coming Soon</div>
-                        <p>The v1.4 Blueprints tutorials are currently being prepared. In the meantime, you can check
-                            out the <a href="tutorials-v1.0.html">v1.0 tutorials</a> for reference or return to the
-                            <a href="tutorials-v1.4.html">v1.4 track selector</a>.
-                        </p>
-                    </div>
-                </section>
+                <div style="padding: 4rem; text-align: center; color: var(--text-muted);">
+                    <h3>Loading tutorial...</h3>
+                </div>
             </div>
         </main>
     </div>
@@ -76,7 +68,225 @@
         </div>
     </footer>
 
-    <script src="js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const manifestPath = 'tutorial_v1_4_sections/manifest.json';
+            const sectionsBasePath = 'tutorial_v1_4_sections';
+            const sidebarContent = document.getElementById('tutorial-sidebar-content');
+            const contentContainer = document.querySelector('.content-wrapper');
+            const sidebar = document.getElementById('sidebar');
+            const menuToggle = document.querySelector('.mobile-menu-toggle');
+
+            let sectionFiles = {};
+            let navLinks = [];
+            let defaultSectionId = '';
+
+            function setContentMessage(title, body) {
+                contentContainer.innerHTML = `
+                    <section class="tutorial-section active">
+                        <h2>${title}</h2>
+                        <p>${body}</p>
+                    </section>
+                `;
+            }
+
+            function setSidebarMessage(title, label) {
+                sidebarContent.innerHTML = `
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">${title}</div>
+                        <ul class="sidebar-nav">
+                            <li><a href="#" aria-disabled="true">${label}</a></li>
+                        </ul>
+                    </div>
+                `;
+            }
+
+            function buildSidebar(manifest) {
+                const fragment = document.createDocumentFragment();
+                sectionFiles = {};
+
+                (manifest.groups || []).forEach((group) => {
+                    const sections = Array.isArray(group.sections) ? group.sections : [];
+
+                    if (!sections.length) {
+                        return;
+                    }
+
+                    const groupElement = document.createElement('div');
+                    groupElement.className = 'sidebar-section';
+
+                    const titleElement = document.createElement('div');
+                    titleElement.className = 'sidebar-title';
+                    titleElement.textContent = group.title || 'Sections';
+                    groupElement.appendChild(titleElement);
+
+                    const listElement = document.createElement('ul');
+                    listElement.className = 'sidebar-nav';
+
+                    sections.forEach((section) => {
+                        if (!section.id || !section.label || !section.file) {
+                            return;
+                        }
+
+                        sectionFiles[section.id] = section.file;
+
+                        const itemElement = document.createElement('li');
+                        const linkElement = document.createElement('a');
+                        linkElement.href = `#${section.id}`;
+                        linkElement.dataset.section = section.id;
+                        linkElement.textContent = section.label;
+
+                        itemElement.appendChild(linkElement);
+                        listElement.appendChild(itemElement);
+                    });
+
+                    groupElement.appendChild(listElement);
+                    fragment.appendChild(groupElement);
+                });
+
+                sidebarContent.innerHTML = '';
+                sidebarContent.appendChild(fragment);
+                navLinks = Array.from(sidebarContent.querySelectorAll('[data-section]'));
+            }
+
+            function updateActiveLink(sectionId) {
+                navLinks.forEach((link) => {
+                    const isActive = link.dataset.section === sectionId;
+                    link.classList.toggle('active', isActive);
+
+                    if (isActive) {
+                        link.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                });
+            }
+
+            async function loadSection(sectionId) {
+                const filename = sectionFiles[sectionId];
+
+                if (!filename) {
+                    setContentMessage('Section not found', 'This tutorial section is not mapped in manifest.json yet.');
+                    return;
+                }
+
+                try {
+                    contentContainer.innerHTML = '<div style="padding: 4rem; text-align: center; color: var(--text-muted);"><h3>Loading tutorial...</h3></div>';
+
+                    const response = await fetch(`${sectionsBasePath}/${filename}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const htmlContent = (await response.text()).trim();
+
+                    if (!htmlContent) {
+                        setContentMessage('Empty section', `The file ${filename} does not contain any content yet.`);
+                        return;
+                    }
+
+                    contentContainer.innerHTML = htmlContent;
+
+                    let renderedSection = contentContainer.querySelector('.tutorial-section');
+
+                    if (!renderedSection) {
+                        contentContainer.innerHTML = `\n                            <section id="${sectionId}" class="tutorial-section active">\n                                ${htmlContent}\n                            </section>\n                        `;
+                        renderedSection = contentContainer.querySelector('.tutorial-section');
+                    }
+
+                    renderedSection.classList.add('active');
+
+                    if (!renderedSection.id) {
+                        renderedSection.id = sectionId;
+                    }
+
+                    updateActiveLink(sectionId);
+                    window.scrollTo({ top: 0, behavior: 'auto' });
+                    sidebar.classList.remove('open');
+                } catch (error) {
+                    console.error('Error loading tutorial section:', error);
+                    contentContainer.innerHTML = `
+                        <section class="tutorial-section active">
+                            <h2>Error Loading Section</h2>
+                            <p>Could not load <code>${filename}</code>. Make sure the server is running.</p>
+                            <pre>${error.message}</pre>
+                        </section>
+                    `;
+                }
+            }
+
+            function bindNavigation() {
+                navLinks.forEach((link) => {
+                    link.addEventListener('click', (event) => {
+                        event.preventDefault();
+
+                        const sectionId = link.dataset.section;
+                        history.pushState(null, null, `#${sectionId}`);
+                        loadSection(sectionId);
+                    });
+                });
+            }
+
+            async function initTutorialLoader() {
+                try {
+                    const response = await fetch(manifestPath);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const manifest = await response.json();
+                    buildSidebar(manifest);
+
+                    if (!navLinks.length) {
+                        setSidebarMessage('Blueprints', 'No sections configured');
+                        setContentMessage('No sections configured', 'Add your tutorial files in tutorial_v1_4_sections and register them in manifest.json.');
+                        return;
+                    }
+
+                    bindNavigation();
+
+                    const initialHash = window.location.hash.substring(1);
+                    defaultSectionId = manifest.defaultSection || navLinks[0].dataset.section;
+                    const targetSection = sectionFiles[initialHash] ? initialHash : defaultSectionId;
+
+                    if (!targetSection) {
+                        setContentMessage('No default section', 'Add at least one valid section in manifest.json.');
+                        return;
+                    }
+
+                    if (window.location.hash !== `#${targetSection}`) {
+                        history.replaceState(null, null, `#${targetSection}`);
+                    }
+
+                    loadSection(targetSection);
+                } catch (error) {
+                    console.error('Error loading tutorial manifest:', error);
+                    setSidebarMessage('Blueprints', 'Manifest error');
+                    contentContainer.innerHTML = `
+                        <section class="tutorial-section active">
+                            <h2>Error Loading Tutorials</h2>
+                            <p>Could not load <code>${manifestPath}</code>. Make sure the file exists and the server is running.</p>
+                            <pre>${error.message}</pre>
+                        </section>
+                    `;
+                }
+            }
+
+            menuToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+            });
+
+            window.addEventListener('popstate', () => {
+                const hash = window.location.hash.substring(1);
+
+                if (hash && sectionFiles[hash]) {
+                    loadSection(hash);
+                } else if (!hash && defaultSectionId) {
+                    loadSection(defaultSectionId);
+                }
+            });
+
+            initTutorialLoader();
+        });
+    </script>
 </body>
 
 </html>

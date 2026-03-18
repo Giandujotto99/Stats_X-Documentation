@@ -1,0 +1,55 @@
+{
+  "defaultSection": "overview",
+  "groups": [
+    {
+      "title": "Getting Started",
+      "sections": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "file": "01_Overview.html"
+        },
+        {
+          "id": "installation",
+          "label": "Installation — Important",
+          "file": "Installation.html"
+        },
+        {
+          "id": "setup-gameplay-tags",
+          "label": "Setup GameplayTags",
+          "file": "SetupGameplayTags.html"
+        }
+      ]
+    },
+    {
+      "title": "Attributes",
+      "sections": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "file": "01_Overview.html"
+        }
+      ]
+    },
+    {
+      "title": "Status System",
+      "sections": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "file": "01_Overview.html"
+        }
+      ]
+    },
+    {
+      "title": "Status Examples",
+      "sections": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "file": "01_Overview.html"
+        }
+      ]
+    }
+  ]
+}
