@@ -1,10 +1,20 @@
 <section id="interceptor-system" class="tutorial-section">
     <h1>Interceptor System</h1>
-    
+
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; UForgeInterceptorBase, FInterceptorRegistration, BroadcastInterceptorEvents<br>
-        Condition / Action pattern for observing and altering status execution at any point in the graph &mdash; per-caster, per-target, or world-wide.</p>
+        <p><strong>Stats_X v1.404</strong> &mdash; UForgeInterceptorBase, FInterceptorRegistration,
+            BroadcastInterceptorEvents<br>
+            Condition / Action pattern for observing and altering status execution at any point in the graph &mdash;
+            per-caster, per-target, or world-wide.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Stats_X_Interceptors.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -34,7 +44,9 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p>Interceptors provide an <strong>observer-with-veto</strong> pattern for the ForgeVM execution pipeline. Any node in the StatusForge graph can emit Pre/Post events; registered interceptors receive those events, inspect (and optionally modify) the execution context, and may <strong>halt</strong> the entire status execution.</p>
+    <p>Interceptors provide an <strong>observer-with-veto</strong> pattern for the ForgeVM execution pipeline. Any node
+        in the StatusForge graph can emit Pre/Post events; registered interceptors receive those events, inspect (and
+        optionally modify) the execution context, and may <strong>halt</strong> the entire status execution.</p>
 
     <table class="data-table">
         <thead>
@@ -44,12 +56,33 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Condition/Action split</strong></td><td>Separate filter pass from effect pass &mdash; Condition never mutates state, Action may write and halt</td></tr>
-            <tr><td><strong>Three scopes</strong></td><td>Caster, Target, Global &mdash; maps directly to the three perspectives of a status interaction</td></tr>
-            <tr><td><strong>Priority ordering</strong></td><td>Higher-priority interceptors execute first within a scope</td></tr>
-            <tr><td><strong>Deferred removal</strong></td><td>Interceptors removed during dispatch are marked pending, flushed after the dispatch loop</td></tr>
-            <tr><td><strong>Nested-safe</strong></td><td><code>TriggerFrameStack</code> with <code>TInlineAllocator&lt;4&gt;</code> supports recursive casts without corruption</td></tr>
-            <tr><td><strong>UObject-based</strong></td><td><code>UForgeInterceptorBase : UObject</code> &mdash; participates in GC, supports Blueprint/C++ subclassing</td></tr>
+            <tr>
+                <td><strong>Condition/Action split</strong></td>
+                <td>Separate filter pass from effect pass &mdash; Condition never mutates state, Action may write and
+                    halt</td>
+            </tr>
+            <tr>
+                <td><strong>Three scopes</strong></td>
+                <td>Caster, Target, Global &mdash; maps directly to the three perspectives of a status interaction</td>
+            </tr>
+            <tr>
+                <td><strong>Priority ordering</strong></td>
+                <td>Higher-priority interceptors execute first within a scope</td>
+            </tr>
+            <tr>
+                <td><strong>Deferred removal</strong></td>
+                <td>Interceptors removed during dispatch are marked pending, flushed after the dispatch loop</td>
+            </tr>
+            <tr>
+                <td><strong>Nested-safe</strong></td>
+                <td><code>TriggerFrameStack</code> with <code>TInlineAllocator&lt;4&gt;</code> supports recursive casts
+                    without corruption</td>
+            </tr>
+            <tr>
+                <td><strong>UObject-based</strong></td>
+                <td><code>UForgeInterceptorBase : UObject</code> &mdash; participates in GC, supports Blueprint/C++
+                    subclassing</td>
+            </tr>
         </tbody>
     </table>
 
@@ -87,9 +120,18 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>BroadcastInterceptorEvents()</code> (StatsXHelpers)</td><td>Entry point &mdash; parses scope suffix, routes to correct registry</td></tr>
-            <tr><td><code>UStatsX_StatsComponentBase</code></td><td>Hosts Caster-scope and Target-scope registries</td></tr>
-            <tr><td><code>UStatsX_WorldSubsystem</code></td><td>Hosts Global-scope registry</td></tr>
+            <tr>
+                <td><code>BroadcastInterceptorEvents()</code> (StatsXHelpers)</td>
+                <td>Entry point &mdash; parses scope suffix, routes to correct registry</td>
+            </tr>
+            <tr>
+                <td><code>UStatsX_StatsComponentBase</code></td>
+                <td>Hosts Caster-scope and Target-scope registries</td>
+            </tr>
+            <tr>
+                <td><code>UStatsX_WorldSubsystem</code></td>
+                <td>Hosts Global-scope registry</td>
+            </tr>
         </tbody>
     </table>
 
@@ -119,9 +161,21 @@ enum class EInterceptorScope : uint8
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Caster</strong></td><td><code>UStatsX_StatsComponentBase</code> (caster's component)</td><td>"When <strong>I</strong> cast a damage status, boost it by 20%"</td></tr>
-            <tr><td><strong>Target</strong></td><td><code>UStatsX_StatsComponentBase</code> (target's component)</td><td>"When <strong>I</strong> receive a healing status, halve it"</td></tr>
-            <tr><td><strong>Global</strong></td><td><code>UStatsX_WorldSubsystem</code></td><td>"Whenever <strong>anyone</strong> deals fire damage in this world, log it"</td></tr>
+            <tr>
+                <td><strong>Caster</strong></td>
+                <td><code>UStatsX_StatsComponentBase</code> (caster's component)</td>
+                <td>"When <strong>I</strong> cast a damage status, boost it by 20%"</td>
+            </tr>
+            <tr>
+                <td><strong>Target</strong></td>
+                <td><code>UStatsX_StatsComponentBase</code> (target's component)</td>
+                <td>"When <strong>I</strong> receive a healing status, halve it"</td>
+            </tr>
+            <tr>
+                <td><strong>Global</strong></td>
+                <td><code>UStatsX_WorldSubsystem</code></td>
+                <td>"Whenever <strong>anyone</strong> deals fire damage in this world, log it"</td>
+            </tr>
         </tbody>
     </table>
 
@@ -133,7 +187,8 @@ enum class EInterceptorScope : uint8
         <pre><code>Broadcast tag : StatsX.Event.Pre.OnHealthDamaged.Caster   ← scope suffix
 Registration tag : StatsX.Event.Pre.OnHealthDamaged         ← no suffix</code></pre>
     </div>
-    <p><code>BroadcastInterceptorEvents()</code> strips the suffix via <code>RequestDirectParent()</code> to derive the registration tag.</p>
+    <p><code>BroadcastInterceptorEvents()</code> strips the suffix via <code>RequestDirectParent()</code> to derive the
+        registration tag.</p>
 
     <hr>
 
@@ -161,12 +216,23 @@ enum class EInterceptorEventPhase : uint8
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Pre</strong></td><td>Inputs of the next node</td><td>Yes (Context/Instance sources)</td><td>No &mdash; not yet computed</td></tr>
-            <tr><td><strong>Post</strong></td><td>Inputs + outputs of the previous node</td><td>Yes (Context/Instance sources)</td><td>Yes</td></tr>
+            <tr>
+                <td><strong>Pre</strong></td>
+                <td>Inputs of the next node</td>
+                <td>Yes (Context/Instance sources)</td>
+                <td>No &mdash; not yet computed</td>
+            </tr>
+            <tr>
+                <td><strong>Post</strong></td>
+                <td>Inputs + outputs of the previous node</td>
+                <td>Yes (Context/Instance sources)</td>
+                <td>Yes</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>Both phases can return <code>false</code> from <code>Action()</code> to <strong>halt</strong> status execution.</p>
+    <p>Both phases can return <code>false</code> from <code>Action()</code> to <strong>halt</strong> status execution.
+    </p>
 
     <hr>
 
@@ -198,9 +264,21 @@ class STATS_X_API UForgeInterceptorBase : public UObject</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>SetupSourceData(...)</code></td><td>Once at registration</td><td>Stores weak pointers to the actor/component that <strong>registered</strong> the interceptor</td></tr>
-            <tr><td><code>SetupTriggeringData(...)</code></td><td>Each trigger, before Condition/Action</td><td>Pushes a <code>FTriggerFrame</code> onto the stack</td></tr>
-            <tr><td><code>ClearTriggeringData()</code></td><td>After Condition/Action</td><td>Pops the top <code>FTriggerFrame</code> (no shrink)</td></tr>
+            <tr>
+                <td><code>SetupSourceData(...)</code></td>
+                <td>Once at registration</td>
+                <td>Stores weak pointers to the actor/component that <strong>registered</strong> the interceptor</td>
+            </tr>
+            <tr>
+                <td><code>SetupTriggeringData(...)</code></td>
+                <td>Each trigger, before Condition/Action</td>
+                <td>Pushes a <code>FTriggerFrame</code> onto the stack</td>
+            </tr>
+            <tr>
+                <td><code>ClearTriggeringData()</code></td>
+                <td>After Condition/Action</td>
+                <td>Pops the top <code>FTriggerFrame</code> (no shrink)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -214,8 +292,17 @@ class STATS_X_API UForgeInterceptorBase : public UObject</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Condition()</code></td><td><code>true</code> (handle all events)</td><td><code>true</code> = proceed to Action, <code>false</code> = skip this interceptor</td></tr>
-            <tr><td><code>Action()</code></td><td><code>true</code> (continue execution)</td><td><code>true</code> = continue status execution, <code>false</code> = <strong>HALT</strong> execution</td></tr>
+            <tr>
+                <td><code>Condition()</code></td>
+                <td><code>true</code> (handle all events)</td>
+                <td><code>true</code> = proceed to Action, <code>false</code> = skip this interceptor</td>
+            </tr>
+            <tr>
+                <td><code>Action()</code></td>
+                <td><code>true</code> (continue execution)</td>
+                <td><code>true</code> = continue status execution, <code>false</code> = <strong>HALT</strong> execution
+                </td>
+            </tr>
         </tbody>
     </table>
     <p>Both are <code>BlueprintNativeEvent</code> &mdash; overridable in Blueprint or C++.</p>
@@ -233,9 +320,13 @@ class STATS_X_API UForgeInterceptorBase : public UObject</code></pre>
 
 TArray&lt;FTriggerFrame, TInlineAllocator&lt;4&gt;&gt; TriggerFrameStack;</code></pre>
     </div>
-    <p>The stack supports <strong>nested broadcasts</strong>: if an interceptor's Action triggers another status cast that fires interceptor events on the same interceptor instance, the new frame is pushed on top. <code>GetActiveContext()</code> and <code>GetActivePhase()</code> always return the <strong>top</strong> frame.</p>
+    <p>The stack supports <strong>nested broadcasts</strong>: if an interceptor's Action triggers another status cast
+        that fires interceptor events on the same interceptor instance, the new frame is pushed on top.
+        <code>GetActiveContext()</code> and <code>GetActivePhase()</code> always return the <strong>top</strong> frame.
+    </p>
     <ul>
-        <li><code>TInlineAllocator&lt;4&gt;</code> &mdash; 4 frames inline, no heap allocation for typical nesting depths.</li>
+        <li><code>TInlineAllocator&lt;4&gt;</code> &mdash; 4 frames inline, no heap allocation for typical nesting
+            depths.</li>
         <li><code>Pop(EAllowShrinking::No)</code> &mdash; no reallocation on pop.</li>
     </ul>
 
@@ -269,11 +360,28 @@ struct FInterceptorRegistration
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Interceptor</code></td><td>Strong <code>TObjectPtr</code> &mdash; keeps the UObject alive</td></tr>
-            <tr><td><code>Owner</code></td><td>Weak reference &mdash; enables bulk unregistration when an owner is destroyed</td></tr>
-            <tr><td><code>Priority</code></td><td>Passed from the RegisterInterceptor node input; higher values execute first</td></tr>
-            <tr><td><code>SourceStatusID</code></td><td>Enables bulk unregistration by status ID (e.g., when a status is removed, clean up its interceptors)</td></tr>
-            <tr><td><code>bPendingRemoval</code></td><td>Set during dispatch to avoid iterator invalidation; flushed when <code>DispatchDepth</code> returns to 0</td></tr>
+            <tr>
+                <td><code>Interceptor</code></td>
+                <td>Strong <code>TObjectPtr</code> &mdash; keeps the UObject alive</td>
+            </tr>
+            <tr>
+                <td><code>Owner</code></td>
+                <td>Weak reference &mdash; enables bulk unregistration when an owner is destroyed</td>
+            </tr>
+            <tr>
+                <td><code>Priority</code></td>
+                <td>Passed from the RegisterInterceptor node input; higher values execute first</td>
+            </tr>
+            <tr>
+                <td><code>SourceStatusID</code></td>
+                <td>Enables bulk unregistration by status ID (e.g., when a status is removed, clean up its interceptors)
+                </td>
+            </tr>
+            <tr>
+                <td><code>bPendingRemoval</code></td>
+                <td>Set during dispatch to avoid iterator invalidation; flushed when <code>DispatchDepth</code> returns
+                    to 0</td>
+            </tr>
         </tbody>
     </table>
 
@@ -296,7 +404,8 @@ struct FInterceptorRegistration
     </div>
 
     <h3>Component-Side (Caster + Target)</h3>
-    <p><code>UStatsX_StatsComponentBase</code> holds <strong>two</strong> copies &mdash; one prefixed <code>Caster*</code>, one prefixed <code>Target*</code>:</p>
+    <p><code>UStatsX_StatsComponentBase</code> holds <strong>two</strong> copies &mdash; one prefixed
+        <code>Caster*</code>, one prefixed <code>Target*</code>:</p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">Structure</span>
@@ -323,7 +432,8 @@ NextGlobalInterceptorHandle</code></pre>
     </div>
 
     <h3>Early-Exit Cache</h3>
-    <p><code>EventsWithInterceptors</code> (<code>FGameplayTagContainer</code>) provides <strong>O(1) tag membership</strong> check. Before iterating the <code>EventToHandlesMap</code>, the system checks:</p>
+    <p><code>EventsWithInterceptors</code> (<code>FGameplayTagContainer</code>) provides <strong>O(1) tag
+            membership</strong> check. Before iterating the <code>EventToHandlesMap</code>, the system checks:</p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
@@ -331,7 +441,8 @@ NextGlobalInterceptorHandle</code></pre>
         <pre><code>if (!EventsCache-&gt;HasTag(EventTag))
     return true;  // No interceptors → continue execution immediately</code></pre>
     </div>
-    <p>The cache is <strong>rebuilt per-tag</strong> after registration changes via <code>RefreshInterceptorEventCacheTag()</code>.</p>
+    <p>The cache is <strong>rebuilt per-tag</strong> after registration changes via
+        <code>RefreshInterceptorEventCacheTag()</code>.</p>
 
     <hr>
 
@@ -354,7 +465,8 @@ NextGlobalInterceptorHandle</code></pre>
     <p><strong>Flow:</strong></p>
     <ol>
         <li>Select maps based on <code>Scope</code> (Caster or Target).</li>
-        <li><code>NewObject&lt;UForgeInterceptorBase&gt;(this, InterceptorClass)</code> &mdash; interceptor is <strong>outer'd</strong> to the component.</li>
+        <li><code>NewObject&lt;UForgeInterceptorBase&gt;(this, InterceptorClass)</code> &mdash; interceptor is
+            <strong>outer'd</strong> to the component.</li>
         <li><code>Interceptor-&gt;SetupSourceData(SourceActor, SourceComponent)</code>.</li>
         <li>Build <code>FInterceptorRegistration</code> with Priority, RegistrationTime, SourceStatusID.</li>
         <li>Assign monotonic handle via <code>NextInterceptorHandle++</code>.</li>
@@ -390,8 +502,11 @@ NextGlobalInterceptorHandle</code></pre>
         <pre><code>bool UnregisterInterceptor(int32 Handle);              // Component
 bool UnregisterGlobalInterceptor(int32 Handle);         // WorldSubsystem</code></pre>
     </div>
-    <p><strong>Reentrancy-aware:</strong> If <code>DispatchDepth &gt; 0</code>, the handle is <strong>marked pending</strong> (<code>bPendingRemoval = true</code>) rather than removed immediately. It is flushed when dispatch finishes.</p>
-    <p>If <code>DispatchDepth == 0</code>, the handle is removed immediately via <code>RemoveInterceptorHandleImmediate()</code>, which:</p>
+    <p><strong>Reentrancy-aware:</strong> If <code>DispatchDepth &gt; 0</code>, the handle is <strong>marked
+            pending</strong> (<code>bPendingRemoval = true</code>) rather than removed immediately. It is flushed when
+        dispatch finishes.</p>
+    <p>If <code>DispatchDepth == 0</code>, the handle is removed immediately via
+        <code>RemoveInterceptorHandleImmediate()</code>, which:</p>
     <ol>
         <li>Removes from <code>ActiveRegistrations</code>.</li>
         <li>Iterates <code>EventToHandlesMap</code> to remove all entries with this handle.</li>
@@ -415,7 +530,8 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
         </div>
         <pre><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase* SourceComponent);</code></pre>
     </div>
-    <p>Iterates both Caster and Target registries; removes all registrations whose <code>Owner</code> matches <code>SourceComponent</code>. Reentrancy-aware per scope.</p>
+    <p>Iterates both Caster and Target registries; removes all registrations whose <code>Owner</code> matches
+        <code>SourceComponent</code>. Reentrancy-aware per scope.</p>
 
     <h3>9.4 By Source Status ID</h3>
     <div class="code-block">
@@ -424,7 +540,8 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
         </div>
         <pre><code>int32 UnregisterAllInterceptorsFromStatusID(int64 StatusID);</code></pre>
     </div>
-    <p>Iterates both Caster and Target registries; removes all registrations whose <code>SourceStatusID</code> matches. Reentrancy-aware per scope.</p>
+    <p>Iterates both Caster and Target registries; removes all registrations whose <code>SourceStatusID</code> matches.
+        Reentrancy-aware per scope.</p>
 
     <hr>
 
@@ -451,7 +568,8 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
                                            ^^^^^^^ scope suffix</code></pre>
     </div>
     <ol>
-        <li><strong>Determine scope</strong> from string suffix: <code>.Caster</code>, <code>.Target</code>, <code>.Global</code>.</li>
+        <li><strong>Determine scope</strong> from string suffix: <code>.Caster</code>, <code>.Target</code>,
+            <code>.Global</code>.</li>
         <li><strong>Extract base tag</strong> via <code>EventTag.RequestDirectParent()</code>:
             <div class="code-block">
                 <div class="code-header">
@@ -473,15 +591,20 @@ int32 UnregisterGlobalInterceptorsForEvent(const FGameplayTag&amp; EventTag);</c
 Scope::Target  → AffectedComponent (or Context.TargetComponent)-&gt;BroadcastToScope(BaseTag, ...)
 Scope::Global  → Context.GetSubsystem()-&gt;BroadcastGlobalInterceptorEvent(BaseTag, ...)</code></pre>
     </div>
-    <p><strong>AffectedComponent override:</strong> For Target scope, an explicit <code>AffectedComponent</code> parameter allows propagation events to reach third-party actors that are neither the status caster nor target.</p>
+    <p><strong>AffectedComponent override:</strong> For Target scope, an explicit <code>AffectedComponent</code>
+        parameter allows propagation events to reach third-party actors that are neither the status caster nor target.
+    </p>
 
     <h3>10.3 Short-Circuit</h3>
-    <p>If <strong>any</strong> interceptor's <code>Action()</code> returns <code>false</code>, the entire function returns <code>false</code> immediately &mdash; no further tags are processed. The caller (ForgeVM) interprets this as a <strong>halt</strong>.</p>
+    <p>If <strong>any</strong> interceptor's <code>Action()</code> returns <code>false</code>, the entire function
+        returns <code>false</code> immediately &mdash; no further tags are processed. The caller (ForgeVM) interprets
+        this as a <strong>halt</strong>.</p>
 
     <hr>
 
     <h2 id="dispatch-loop">11. Dispatch Loop</h2>
-    <p><code>BroadcastToScope()</code> (component) and <code>BroadcastGlobalInterceptorEvent()</code> (subsystem) share identical dispatch logic:</p>
+    <p><code>BroadcastToScope()</code> (component) and <code>BroadcastGlobalInterceptorEvent()</code> (subsystem) share
+        identical dispatch logic:</p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">Structure</span>
@@ -522,9 +645,12 @@ Scope::Global  → Context.GetSubsystem()-&gt;BroadcastGlobalInterceptorEvent(Ba
 
     <h3>Key Safety Checks</h3>
     <ol>
-        <li><strong>Double re-lookup:</strong> After <code>Condition()</code> and before <code>Action()</code>, the registration is looked up again. Condition may trigger nested casts that modify the registry.</li>
-        <li><strong>IsValid() guard:</strong> Checks UObject validity after each re-lookup &mdash; the interceptor may have been garbage-collected during a nested operation.</li>
-        <li><strong>SetupTriggeringData / ClearTriggeringData</strong> bracket both <code>Condition()</code> and <code>Action()</code> independently &mdash; if Condition skips, Action's context is not leaked.</li>
+        <li><strong>Double re-lookup:</strong> After <code>Condition()</code> and before <code>Action()</code>, the
+            registration is looked up again. Condition may trigger nested casts that modify the registry.</li>
+        <li><strong>IsValid() guard:</strong> Checks UObject validity after each re-lookup &mdash; the interceptor may
+            have been garbage-collected during a nested operation.</li>
+        <li><strong>SetupTriggeringData / ClearTriggeringData</strong> bracket both <code>Condition()</code> and
+            <code>Action()</code> independently &mdash; if Condition skips, Action's context is not leaked.</li>
     </ol>
 
     <hr>
@@ -581,7 +707,8 @@ DispatchDepth == 0 →  FlushPendingInterceptorRemovals():
     <hr>
 
     <h2 id="payload-system">13. Payload System</h2>
-    <p>Payload entries expose the <strong>inputs and outputs</strong> of the StatusForge graph node adjacent to the event.</p>
+    <p>Payload entries expose the <strong>inputs and outputs</strong> of the StatusForge graph node adjacent to the
+        event.</p>
 
     <h3>13.1 Compiled Payload Entry</h3>
     <div class="code-block">
@@ -596,7 +723,8 @@ DispatchDepth == 0 →  FlushPendingInterceptorRemovals():
     uint8 FieldType;    // EForgeFieldType
 };</code></pre>
     </div>
-    <p>Compiled into the <code>StatusDefinition</code> at editor time. At runtime, the VM sets <code>Context.ActivePayloadEntries</code> and <code>Context.ActivePayloadCount</code> before the broadcast.</p>
+    <p>Compiled into the <code>StatusDefinition</code> at editor time. At runtime, the VM sets
+        <code>Context.ActivePayloadEntries</code> and <code>Context.ActivePayloadCount</code> before the broadcast.</p>
 
     <h3>13.2 Reading Payload Values</h3>
     <div class="code-block">
@@ -659,13 +787,41 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetPayloadFloat</code></td><td><code>float</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadInt</code></td><td><code>int32</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadBool</code></td><td><code>bool</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadTag</code></td><td><code>FGameplayTag</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadTagContainer</code></td><td><code>FGameplayTagContainer</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadObject</code></td><td><code>UObject*</code></td><td>✓</td></tr>
-            <tr><td><code>GetPayloadVector</code></td><td><code>FVector</code></td><td>✓</td></tr>
+            <tr>
+                <td><code>GetPayloadFloat</code></td>
+                <td><code>float</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadInt</code></td>
+                <td><code>int32</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadBool</code></td>
+                <td><code>bool</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadTagContainer</code></td>
+                <td><code>FGameplayTagContainer</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadObject</code></td>
+                <td><code>UObject*</code></td>
+                <td>✓</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadVector</code></td>
+                <td><code>FVector</code></td>
+                <td>✓</td>
+            </tr>
         </tbody>
     </table>
 
@@ -679,13 +835,41 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>SetPayloadFloat</code></td><td><code>float</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadInt</code></td><td><code>int32</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadBool</code></td><td><code>bool</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadTag</code></td><td><code>FGameplayTag</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadTagContainer</code></td><td><code>FGameplayTagContainer</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadObject</code></td><td><code>UObject*</code></td><td>Context, Instance</td></tr>
-            <tr><td><code>SetPayloadVector</code></td><td><code>FVector</code></td><td>Context, Instance</td></tr>
+            <tr>
+                <td><code>SetPayloadFloat</code></td>
+                <td><code>float</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadInt</code></td>
+                <td><code>int32</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadBool</code></td>
+                <td><code>bool</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadTagContainer</code></td>
+                <td><code>FGameplayTagContainer</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadObject</code></td>
+                <td><code>UObject*</code></td>
+                <td>Context, Instance</td>
+            </tr>
+            <tr>
+                <td><code>SetPayloadVector</code></td>
+                <td><code>FVector</code></td>
+                <td>Context, Instance</td>
+            </tr>
         </tbody>
     </table>
 
@@ -699,15 +883,24 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>HasPayloadField</code></td><td><code>bool</code></td><td>Check if a field exists by name</td></tr>
-            <tr><td><code>GetPayloadFieldNames</code></td><td><code>TArray&lt;FName&gt;</code></td><td>List all available payload fields</td></tr>
+            <tr>
+                <td><code>HasPayloadField</code></td>
+                <td><code>bool</code></td>
+                <td>Check if a field exists by name</td>
+            </tr>
+            <tr>
+                <td><code>GetPayloadFieldNames</code></td>
+                <td><code>TArray&lt;FName&gt;</code></td>
+                <td>List all available payload fields</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="variable-access">14. Variable Access</h2>
-    <p>Interceptors can read and write <strong>status variables</strong> of the triggering status via the <code>ForgeVariableAccess</code> helper.</p>
+    <p>Interceptors can read and write <strong>status variables</strong> of the triggering status via the
+        <code>ForgeVariableAccess</code> helper.</p>
 
     <h3>14.1 Read Path</h3>
     <div class="code-block">
@@ -726,7 +919,8 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
     return Value;
 }</code></pre>
     </div>
-    <p>The variable blob is resolved from the active context &mdash; either the instance blob (persistent) or the context stack (transient), depending on the status state.</p>
+    <p>The variable blob is resolved from the active context &mdash; either the instance blob (persistent) or the
+        context stack (transient), depending on the status state.</p>
 
     <h3>14.2 Write Path</h3>
     <div class="code-block">
@@ -745,7 +939,8 @@ bool WritePayloadValue(FForgeVMContext* Ctx, const FForgePayloadEntry&amp; Entry
     </div>
 
     <h3>14.3 Object Variable Indirection</h3>
-    <p>Object variables are stored as <code>uint16</code> pool indices in the variable blob. The interceptor resolves them through the context's object pool:</p>
+    <p>Object variables are stored as <code>uint16</code> pool indices in the variable blob. The interceptor resolves
+        them through the context's object pool:</p>
     <p><strong>Read:</strong></p>
     <div class="code-block">
         <div class="code-header">
@@ -778,12 +973,30 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetVariableFloat</code></td><td><code>float</code></td></tr>
-            <tr><td><code>GetVariableInt</code></td><td><code>int32</code></td></tr>
-            <tr><td><code>GetVariableBool</code></td><td><code>bool</code></td></tr>
-            <tr><td><code>GetVariableTag</code></td><td><code>FGameplayTag</code></td></tr>
-            <tr><td><code>GetVariableVector</code></td><td><code>FVector</code></td></tr>
-            <tr><td><code>GetVariableObject</code></td><td><code>UObject*</code></td></tr>
+            <tr>
+                <td><code>GetVariableFloat</code></td>
+                <td><code>float</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableInt</code></td>
+                <td><code>int32</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableBool</code></td>
+                <td><code>bool</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableTag</code></td>
+                <td><code>FGameplayTag</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableVector</code></td>
+                <td><code>FVector</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableObject</code></td>
+                <td><code>UObject*</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -796,15 +1009,34 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>SetVariableFloat</code></td><td><code>float</code></td></tr>
-            <tr><td><code>SetVariableInt</code></td><td><code>int32</code></td></tr>
-            <tr><td><code>SetVariableBool</code></td><td><code>bool</code></td></tr>
-            <tr><td><code>SetVariableTag</code></td><td><code>FGameplayTag</code></td></tr>
-            <tr><td><code>SetVariableVector</code></td><td><code>FVector</code></td></tr>
-            <tr><td><code>SetVariableObject</code></td><td><code>UObject*</code></td></tr>
+            <tr>
+                <td><code>SetVariableFloat</code></td>
+                <td><code>float</code></td>
+            </tr>
+            <tr>
+                <td><code>SetVariableInt</code></td>
+                <td><code>int32</code></td>
+            </tr>
+            <tr>
+                <td><code>SetVariableBool</code></td>
+                <td><code>bool</code></td>
+            </tr>
+            <tr>
+                <td><code>SetVariableTag</code></td>
+                <td><code>FGameplayTag</code></td>
+            </tr>
+            <tr>
+                <td><code>SetVariableVector</code></td>
+                <td><code>FVector</code></td>
+            </tr>
+            <tr>
+                <td><code>SetVariableObject</code></td>
+                <td><code>UObject*</code></td>
+            </tr>
         </tbody>
     </table>
-    <p>All variable accessors use the <code>Categories = "StatsX.Variable"</code> meta specifier, providing a filtered tag picker in the Blueprint editor.</p>
+    <p>All variable accessors use the <code>Categories = "StatsX.Variable"</code> meta specifier, providing a filtered
+        tag picker in the Blueprint editor.</p>
 
     <hr>
 
@@ -821,8 +1053,16 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetSourceActor()</code></td><td><code>AActor*</code></td><td>The actor that <strong>registered</strong> this interceptor (caster of the registering status)</td></tr>
-            <tr><td><code>GetSourceComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>The component that <strong>registered</strong> this interceptor</td></tr>
+            <tr>
+                <td><code>GetSourceActor()</code></td>
+                <td><code>AActor*</code></td>
+                <td>The actor that <strong>registered</strong> this interceptor (caster of the registering status)</td>
+            </tr>
+            <tr>
+                <td><code>GetSourceComponent()</code></td>
+                <td><code>UStatsX_StatsComponentBase*</code></td>
+                <td>The component that <strong>registered</strong> this interceptor</td>
+            </tr>
         </tbody>
     </table>
     <p>Stored as <code>TWeakObjectPtr</code> &mdash; returns <code>nullptr</code> if the source has been destroyed.</p>
@@ -837,22 +1077,48 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetCasterActor()</code></td><td><code>AActor*</code></td><td>Caster of the status that <strong>triggered</strong> this event</td></tr>
-            <tr><td><code>GetTargetActor()</code></td><td><code>AActor*</code></td><td>Target of the status that <strong>triggered</strong> this event</td></tr>
-            <tr><td><code>GetCasterComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Caster's component</td></tr>
-            <tr><td><code>GetTargetComponent()</code></td><td><code>UStatsX_StatsComponentBase*</code></td><td>Target's component</td></tr>
-            <tr><td><code>GetTriggeringStatusID()</code></td><td><code>int64</code></td><td>StatusID of the triggering status instance</td></tr>
-            <tr><td><code>IsPreEvent()</code></td><td><code>bool</code></td><td><code>true</code> if Pre phase, <code>false</code> if Post phase</td></tr>
+            <tr>
+                <td><code>GetCasterActor()</code></td>
+                <td><code>AActor*</code></td>
+                <td>Caster of the status that <strong>triggered</strong> this event</td>
+            </tr>
+            <tr>
+                <td><code>GetTargetActor()</code></td>
+                <td><code>AActor*</code></td>
+                <td>Target of the status that <strong>triggered</strong> this event</td>
+            </tr>
+            <tr>
+                <td><code>GetCasterComponent()</code></td>
+                <td><code>UStatsX_StatsComponentBase*</code></td>
+                <td>Caster's component</td>
+            </tr>
+            <tr>
+                <td><code>GetTargetComponent()</code></td>
+                <td><code>UStatsX_StatsComponentBase*</code></td>
+                <td>Target's component</td>
+            </tr>
+            <tr>
+                <td><code>GetTriggeringStatusID()</code></td>
+                <td><code>int64</code></td>
+                <td>StatusID of the triggering status instance</td>
+            </tr>
+            <tr>
+                <td><code>IsPreEvent()</code></td>
+                <td><code>bool</code></td>
+                <td><code>true</code> if Pre phase, <code>false</code> if Post phase</td>
+            </tr>
         </tbody>
     </table>
-    <p>All triggering accessors read from the top of the <code>TriggerFrameStack</code> via <code>GetActiveContext()</code>.</p>
+    <p>All triggering accessors read from the top of the <code>TriggerFrameStack</code> via
+        <code>GetActiveContext()</code>.</p>
 
     <hr>
 
     <h2 id="gc-safety">16. GC Safety</h2>
 
     <h3>AddReferencedObjects</h3>
-    <p>Both <code>UStatsX_StatsComponentBase</code> and <code>UStatsX_WorldSubsystem</code> override <code>AddReferencedObjects()</code> to walk their interceptor registries:</p>
+    <p>Both <code>UStatsX_StatsComponentBase</code> and <code>UStatsX_WorldSubsystem</code> override
+        <code>AddReferencedObjects()</code> to walk their interceptor registries:</p>
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">C++</span>
@@ -867,15 +1133,20 @@ return Context-&gt;Instance
     }
 }</code></pre>
     </div>
-    <p>This prevents the GC from collecting interceptor UObjects that are only referenced inside the registry maps (which are not <code>UPROPERTY</code> containers for the <code>TWeakObjectPtr&lt;UObject&gt; Owner</code> field).</p>
+    <p>This prevents the GC from collecting interceptor UObjects that are only referenced inside the registry maps
+        (which are not <code>UPROPERTY</code> containers for the <code>TWeakObjectPtr&lt;UObject&gt; Owner</code>
+        field).</p>
 
     <h3>IsValid Checks</h3>
-    <p>The dispatch loop calls <code>IsValid(Interceptor)</code> before <strong>every</strong> use &mdash; both before Condition and before Action. This handles the edge case where a nested operation during Condition causes the interceptor to be garbage-collected.</p>
+    <p>The dispatch loop calls <code>IsValid(Interceptor)</code> before <strong>every</strong> use &mdash; both before
+        Condition and before Action. This handles the edge case where a nested operation during Condition causes the
+        interceptor to be garbage-collected.</p>
 
     <hr>
 
     <h2 id="performance-instrumentation">17. Performance Instrumentation</h2>
-    <p>Every interceptor operation is wrapped in <code>STATSX_INTERCEPTORS_SCOPE</code> for Unreal Insights profiling:</p>
+    <p>Every interceptor operation is wrapped in <code>STATSX_INTERCEPTORS_SCOPE</code> for Unreal Insights profiling:
+    </p>
 
     <table class="data-table">
         <thead>
@@ -885,17 +1156,50 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StatsX.Interceptors.SetupSourceData</code></td><td>Registration-time source data setup</td></tr>
-            <tr><td><code>StatsX.Interceptors.SetupTriggeringData</code></td><td>Per-trigger context push</td></tr>
-            <tr><td><code>StatsX.Interceptors.ClearTriggeringData</code></td><td>Per-trigger context pop</td></tr>
-            <tr><td><code>StatsX.Interceptors.BroadcastEvents</code></td><td>Top-level broadcast entry point</td></tr>
-            <tr><td><code>StatsX.Interceptors.BroadcastLocal</code></td><td>Component-side BroadcastToScope</td></tr>
-            <tr><td><code>StatsX.Interceptors.Condition</code></td><td>Individual Condition() call</td></tr>
-            <tr><td><code>StatsX.Interceptors.Action</code></td><td>Individual Action() call</td></tr>
-            <tr><td><code>StatsX.Interceptors.RegisterGlobalNode</code></td><td>Global registration from node handler</td></tr>
-            <tr><td><code>StatsX.Interceptors.UnregisterLocalRuntime</code></td><td>Component-side handle unregistration</td></tr>
-            <tr><td><code>StatsX.Interceptors.UnregisterGlobalRuntime</code></td><td>Global handle unregistration</td></tr>
-            <tr><td><code>StatsX.Interceptors.UnregisterForEvent</code></td><td>Bulk unregistration by event tag</td></tr>
+            <tr>
+                <td><code>StatsX.Interceptors.SetupSourceData</code></td>
+                <td>Registration-time source data setup</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.SetupTriggeringData</code></td>
+                <td>Per-trigger context push</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.ClearTriggeringData</code></td>
+                <td>Per-trigger context pop</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.BroadcastEvents</code></td>
+                <td>Top-level broadcast entry point</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.BroadcastLocal</code></td>
+                <td>Component-side BroadcastToScope</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.Condition</code></td>
+                <td>Individual Condition() call</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.Action</code></td>
+                <td>Individual Action() call</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.RegisterGlobalNode</code></td>
+                <td>Global registration from node handler</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.UnregisterLocalRuntime</code></td>
+                <td>Component-side handle unregistration</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.UnregisterGlobalRuntime</code></td>
+                <td>Global handle unregistration</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.Interceptors.UnregisterForEvent</code></td>
+                <td>Bulk unregistration by event tag</td>
+            </tr>
         </tbody>
     </table>
 
@@ -914,44 +1218,196 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Override</strong></td><td><code>Condition</code></td><td><code>bool Condition()</code> &mdash; BlueprintNativeEvent</td></tr>
-            <tr><td><strong>Override</strong></td><td><code>Action</code></td><td><code>bool Action()</code> &mdash; BlueprintNativeEvent</td></tr>
-            <tr><td><strong>Source</strong></td><td><code>GetSourceActor</code></td><td><code>AActor* GetSourceActor() const</code></td></tr>
-            <tr><td><strong>Source</strong></td><td><code>GetSourceComponent</code></td><td><code>UStatsX_StatsComponentBase* GetSourceComponent() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>GetCasterActor</code></td><td><code>AActor* GetCasterActor() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>GetTargetActor</code></td><td><code>AActor* GetTargetActor() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>GetCasterComponent</code></td><td><code>UStatsX_StatsComponentBase* GetCasterComponent() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>GetTargetComponent</code></td><td><code>UStatsX_StatsComponentBase* GetTargetComponent() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>GetTriggeringStatusID</code></td><td><code>int64 GetTriggeringStatusID() const</code></td></tr>
-            <tr><td><strong>Triggering</strong></td><td><code>IsPreEvent</code></td><td><code>bool IsPreEvent() const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>HasPayloadField</code></td><td><code>bool HasPayloadField(FName FieldName) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadFloat</code></td><td><code>float GetPayloadFloat(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadInt</code></td><td><code>int32 GetPayloadInt(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadBool</code></td><td><code>bool GetPayloadBool(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadTag</code></td><td><code>FGameplayTag GetPayloadTag(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadTagContainer</code></td><td><code>FGameplayTagContainer GetPayloadTagContainer(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadObject</code></td><td><code>UObject* GetPayloadObject(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadVector</code></td><td><code>FVector GetPayloadVector(FName, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadFloat</code></td><td><code>bool SetPayloadFloat(FName, float)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadInt</code></td><td><code>bool SetPayloadInt(FName, int32)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadBool</code></td><td><code>bool SetPayloadBool(FName, bool)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadTag</code></td><td><code>bool SetPayloadTag(FName, FGameplayTag)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadTagContainer</code></td><td><code>bool SetPayloadTagContainer(FName, FGameplayTagContainer)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadObject</code></td><td><code>bool SetPayloadObject(FName, UObject*)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>SetPayloadVector</code></td><td><code>bool SetPayloadVector(FName, FVector)</code></td></tr>
-            <tr><td><strong>Payload</strong></td><td><code>GetPayloadFieldNames</code></td><td><code>TArray&lt;FName&gt; GetPayloadFieldNames() const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableFloat</code></td><td><code>float GetVariableFloat(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableInt</code></td><td><code>int32 GetVariableInt(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableBool</code></td><td><code>bool GetVariableBool(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableTag</code></td><td><code>FGameplayTag GetVariableTag(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableVector</code></td><td><code>FVector GetVariableVector(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>GetVariableObject</code></td><td><code>UObject* GetVariableObject(FGameplayTag, bool&amp; bFound) const</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableFloat</code></td><td><code>bool SetVariableFloat(FGameplayTag, float)</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableInt</code></td><td><code>bool SetVariableInt(FGameplayTag, int32)</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableBool</code></td><td><code>bool SetVariableBool(FGameplayTag, bool)</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableTag</code></td><td><code>bool SetVariableTag(FGameplayTag, FGameplayTag)</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableVector</code></td><td><code>bool SetVariableVector(FGameplayTag, FVector)</code></td></tr>
-            <tr><td><strong>Variables</strong></td><td><code>SetVariableObject</code></td><td><code>bool SetVariableObject(FGameplayTag, UObject*)</code></td></tr>
+            <tr>
+                <td><strong>Override</strong></td>
+                <td><code>Condition</code></td>
+                <td><code>bool Condition()</code> &mdash; BlueprintNativeEvent</td>
+            </tr>
+            <tr>
+                <td><strong>Override</strong></td>
+                <td><code>Action</code></td>
+                <td><code>bool Action()</code> &mdash; BlueprintNativeEvent</td>
+            </tr>
+            <tr>
+                <td><strong>Source</strong></td>
+                <td><code>GetSourceActor</code></td>
+                <td><code>AActor* GetSourceActor() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Source</strong></td>
+                <td><code>GetSourceComponent</code></td>
+                <td><code>UStatsX_StatsComponentBase* GetSourceComponent() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>GetCasterActor</code></td>
+                <td><code>AActor* GetCasterActor() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>GetTargetActor</code></td>
+                <td><code>AActor* GetTargetActor() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>GetCasterComponent</code></td>
+                <td><code>UStatsX_StatsComponentBase* GetCasterComponent() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>GetTargetComponent</code></td>
+                <td><code>UStatsX_StatsComponentBase* GetTargetComponent() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>GetTriggeringStatusID</code></td>
+                <td><code>int64 GetTriggeringStatusID() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Triggering</strong></td>
+                <td><code>IsPreEvent</code></td>
+                <td><code>bool IsPreEvent() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>HasPayloadField</code></td>
+                <td><code>bool HasPayloadField(FName FieldName) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadFloat</code></td>
+                <td><code>float GetPayloadFloat(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadInt</code></td>
+                <td><code>int32 GetPayloadInt(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadBool</code></td>
+                <td><code>bool GetPayloadBool(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadTag</code></td>
+                <td><code>FGameplayTag GetPayloadTag(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadTagContainer</code></td>
+                <td><code>FGameplayTagContainer GetPayloadTagContainer(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadObject</code></td>
+                <td><code>UObject* GetPayloadObject(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadVector</code></td>
+                <td><code>FVector GetPayloadVector(FName, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadFloat</code></td>
+                <td><code>bool SetPayloadFloat(FName, float)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadInt</code></td>
+                <td><code>bool SetPayloadInt(FName, int32)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadBool</code></td>
+                <td><code>bool SetPayloadBool(FName, bool)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadTag</code></td>
+                <td><code>bool SetPayloadTag(FName, FGameplayTag)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadTagContainer</code></td>
+                <td><code>bool SetPayloadTagContainer(FName, FGameplayTagContainer)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadObject</code></td>
+                <td><code>bool SetPayloadObject(FName, UObject*)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>SetPayloadVector</code></td>
+                <td><code>bool SetPayloadVector(FName, FVector)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Payload</strong></td>
+                <td><code>GetPayloadFieldNames</code></td>
+                <td><code>TArray&lt;FName&gt; GetPayloadFieldNames() const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableFloat</code></td>
+                <td><code>float GetVariableFloat(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableInt</code></td>
+                <td><code>int32 GetVariableInt(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableBool</code></td>
+                <td><code>bool GetVariableBool(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableTag</code></td>
+                <td><code>FGameplayTag GetVariableTag(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableVector</code></td>
+                <td><code>FVector GetVariableVector(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>GetVariableObject</code></td>
+                <td><code>UObject* GetVariableObject(FGameplayTag, bool&amp; bFound) const</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableFloat</code></td>
+                <td><code>bool SetVariableFloat(FGameplayTag, float)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableInt</code></td>
+                <td><code>bool SetVariableInt(FGameplayTag, int32)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableBool</code></td>
+                <td><code>bool SetVariableBool(FGameplayTag, bool)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableTag</code></td>
+                <td><code>bool SetVariableTag(FGameplayTag, FGameplayTag)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableVector</code></td>
+                <td><code>bool SetVariableVector(FGameplayTag, FVector)</code></td>
+            </tr>
+            <tr>
+                <td><strong>Variables</strong></td>
+                <td><code>SetVariableObject</code></td>
+                <td><code>bool SetVariableObject(FGameplayTag, UObject*)</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -965,15 +1421,44 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RegisterInterceptor</code></td><td><code>int32 RegisterInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, EInterceptorScope, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code></td></tr>
-            <tr><td><code>UnregisterInterceptor</code></td><td><code>bool UnregisterInterceptor(int32 Handle)</code></td></tr>
-            <tr><td><code>UnregisterInterceptorsForEvent</code></td><td><code>int32 UnregisterInterceptorsForEvent(FGameplayTag, EInterceptorScope)</code></td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromSource</code></td><td><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromStatusID</code></td><td><code>int32 UnregisterAllInterceptorsFromStatusID(int64)</code></td></tr>
-            <tr><td><code>HasInterceptorsForEvents</code></td><td><code>bool HasInterceptorsForEvents(FGameplayTagContainer, EInterceptorScope) const</code></td></tr>
-            <tr><td><code>GetInterceptorCountForEvent</code></td><td><code>int32 GetInterceptorCountForEvent(FGameplayTag, EInterceptorScope) const</code></td></tr>
-            <tr><td><code>GetHandlesForEvent</code></td><td><code>TArray&lt;int32&gt; GetHandlesForEvent(FGameplayTag, EInterceptorScope) const</code></td></tr>
-            <tr><td><code>BroadcastToScope</code></td><td><code>bool BroadcastToScope(FGameplayTag, FForgeVMContext&amp;, EInterceptorScope, EInterceptorEventPhase)</code></td></tr>
+            <tr>
+                <td><code>RegisterInterceptor</code></td>
+                <td><code>int32 RegisterInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, EInterceptorScope, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>UnregisterInterceptor</code></td>
+                <td><code>bool UnregisterInterceptor(int32 Handle)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterInterceptorsForEvent</code></td>
+                <td><code>int32 UnregisterInterceptorsForEvent(FGameplayTag, EInterceptorScope)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromSource</code></td>
+                <td><code>int32 UnregisterAllInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromStatusID</code></td>
+                <td><code>int32 UnregisterAllInterceptorsFromStatusID(int64)</code></td>
+            </tr>
+            <tr>
+                <td><code>HasInterceptorsForEvents</code></td>
+                <td><code>bool HasInterceptorsForEvents(FGameplayTagContainer, EInterceptorScope) const</code></td>
+            </tr>
+            <tr>
+                <td><code>GetInterceptorCountForEvent</code></td>
+                <td><code>int32 GetInterceptorCountForEvent(FGameplayTag, EInterceptorScope) const</code></td>
+            </tr>
+            <tr>
+                <td><code>GetHandlesForEvent</code></td>
+                <td><code>TArray&lt;int32&gt; GetHandlesForEvent(FGameplayTag, EInterceptorScope) const</code></td>
+            </tr>
+            <tr>
+                <td><code>BroadcastToScope</code></td>
+                <td><code>bool BroadcastToScope(FGameplayTag, FForgeVMContext&amp;, EInterceptorScope, EInterceptorEventPhase)</code>
+                </td>
+            </tr>
         </tbody>
     </table>
 
@@ -987,15 +1472,44 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RegisterGlobalInterceptor</code></td><td><code>int32 RegisterGlobalInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code></td></tr>
-            <tr><td><code>UnregisterGlobalInterceptor</code></td><td><code>bool UnregisterGlobalInterceptor(int32 Handle)</code></td></tr>
-            <tr><td><code>UnregisterGlobalInterceptorsForEvent</code></td><td><code>int32 UnregisterGlobalInterceptorsForEvent(FGameplayTag)</code></td></tr>
-            <tr><td><code>UnregisterGlobalInterceptorsFromSource</code></td><td><code>int32 UnregisterGlobalInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td></tr>
-            <tr><td><code>UnregisterGlobalInterceptorsFromStatusID</code></td><td><code>int32 UnregisterGlobalInterceptorsFromStatusID(int64)</code></td></tr>
-            <tr><td><code>HasGlobalInterceptorsForEvents</code></td><td><code>bool HasGlobalInterceptorsForEvents(FGameplayTagContainer) const</code></td></tr>
-            <tr><td><code>GetGlobalInterceptorCountForEvent</code></td><td><code>int32 GetGlobalInterceptorCountForEvent(FGameplayTag) const</code></td></tr>
-            <tr><td><code>GetGlobalHandlesForEvent</code></td><td><code>TArray&lt;int32&gt; GetGlobalHandlesForEvent(FGameplayTag) const</code></td></tr>
-            <tr><td><code>BroadcastGlobalInterceptorEvent</code></td><td><code>bool BroadcastGlobalInterceptorEvent(FGameplayTag, FForgeVMContext&amp;, EInterceptorEventPhase)</code></td></tr>
+            <tr>
+                <td><code>RegisterGlobalInterceptor</code></td>
+                <td><code>int32 RegisterGlobalInterceptor(FGameplayTag, TSubclassOf&lt;UForgeInterceptorBase&gt;, int32 Priority, AActor*, UStatsX_StatsComponentBase*, int64 SourceStatusID = 0)</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>UnregisterGlobalInterceptor</code></td>
+                <td><code>bool UnregisterGlobalInterceptor(int32 Handle)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterGlobalInterceptorsForEvent</code></td>
+                <td><code>int32 UnregisterGlobalInterceptorsForEvent(FGameplayTag)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterGlobalInterceptorsFromSource</code></td>
+                <td><code>int32 UnregisterGlobalInterceptorsFromSource(UStatsX_StatsComponentBase*)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterGlobalInterceptorsFromStatusID</code></td>
+                <td><code>int32 UnregisterGlobalInterceptorsFromStatusID(int64)</code></td>
+            </tr>
+            <tr>
+                <td><code>HasGlobalInterceptorsForEvents</code></td>
+                <td><code>bool HasGlobalInterceptorsForEvents(FGameplayTagContainer) const</code></td>
+            </tr>
+            <tr>
+                <td><code>GetGlobalInterceptorCountForEvent</code></td>
+                <td><code>int32 GetGlobalInterceptorCountForEvent(FGameplayTag) const</code></td>
+            </tr>
+            <tr>
+                <td><code>GetGlobalHandlesForEvent</code></td>
+                <td><code>TArray&lt;int32&gt; GetGlobalHandlesForEvent(FGameplayTag) const</code></td>
+            </tr>
+            <tr>
+                <td><code>BroadcastGlobalInterceptorEvent</code></td>
+                <td><code>bool BroadcastGlobalInterceptorEvent(FGameplayTag, FForgeVMContext&amp;, EInterceptorEventPhase)</code>
+                </td>
+            </tr>
         </tbody>
     </table>
 
@@ -1009,7 +1523,11 @@ return Context-&gt;Instance
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>BroadcastInterceptorEvents</code></td><td><code>bool BroadcastInterceptorEvents(const FGameplayTagContainer&amp;, FForgeVMContext&amp;, EInterceptorEventPhase, UStatsX_StatsComponentBase* AffectedComponent)</code></td></tr>
+            <tr>
+                <td><code>BroadcastInterceptorEvents</code></td>
+                <td><code>bool BroadcastInterceptorEvents(const FGameplayTagContainer&amp;, FForgeVMContext&amp;, EInterceptorEventPhase, UStatsX_StatsComponentBase* AffectedComponent)</code>
+                </td>
+            </tr>
         </tbody>
     </table>
 

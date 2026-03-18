@@ -3,8 +3,18 @@
 
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; SendForgeEvent, WaitForEvent, RegisterEventListener, ProcessPendingEventResumes<br>
-        Named event dispatch with scope filtering, typed payload delivery, trigger budgets, timeout expiry, and deterministic next-tick resume ordering.</p>
+        <p><strong>Stats_X v1.404</strong> &mdash; SendForgeEvent, WaitForEvent, RegisterEventListener,
+            ProcessPendingEventResumes<br>
+            Named event dispatch with scope filtering, typed payload delivery, trigger budgets, timeout expiry, and
+            deterministic next-tick resume ordering.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/The_Explainer__Forge_Event_System.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -29,7 +39,9 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p>The Forge Event System enables <strong>status-to-status and gameplay-to-status communication</strong> through named, scope-filtered events with typed variable payloads. The event system supports tag-based pub/sub with optional timeouts and payload delivery.</p>
+    <p>The Forge Event System enables <strong>status-to-status and gameplay-to-status communication</strong> through
+        named, scope-filtered events with typed variable payloads. The event system supports tag-based pub/sub with
+        optional timeouts and payload delivery.</p>
 
     <table class="data-table">
         <thead>
@@ -39,13 +51,35 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Named events via GameplayTag</strong></td><td>Loose coupling &mdash; sender doesn&rsquo;t need to know listeners, only the event tag</td></tr>
-            <tr><td><strong>Scope filtering by actor</strong></td><td>Target-specific events (e.g., &ldquo;only fire events affecting this character&rdquo;)</td></tr>
-            <tr><td><strong>Next-tick resume</strong></td><td>Deterministic FIFO ordering &mdash; events queued this frame, handlers run next frame</td></tr>
-            <tr><td><strong>Typed payload</strong></td><td><code>TArray&lt;FForgeVariableOverride&gt;</code> &mdash; same struct and factories as variable overrides</td></tr>
-            <tr><td><strong>Trigger budget</strong></td><td><code>MaxTriggersRemaining</code> &mdash; finite or infinite, auto-remove when exhausted</td></tr>
-            <tr><td><strong>Timeout expiry</strong></td><td>Listeners can expire after a configurable duration</td></tr>
-            <tr><td><strong>Auto-termination</strong></td><td>Suspended instances with no remaining listeners/async ops are terminated automatically</td></tr>
+            <tr>
+                <td><strong>Named events via GameplayTag</strong></td>
+                <td>Loose coupling &mdash; sender doesn&rsquo;t need to know listeners, only the event tag</td>
+            </tr>
+            <tr>
+                <td><strong>Scope filtering by actor</strong></td>
+                <td>Target-specific events (e.g., &ldquo;only fire events affecting this character&rdquo;)</td>
+            </tr>
+            <tr>
+                <td><strong>Next-tick resume</strong></td>
+                <td>Deterministic FIFO ordering &mdash; events queued this frame, handlers run next frame</td>
+            </tr>
+            <tr>
+                <td><strong>Typed payload</strong></td>
+                <td><code>TArray&lt;FForgeVariableOverride&gt;</code> &mdash; same struct and factories as variable
+                    overrides</td>
+            </tr>
+            <tr>
+                <td><strong>Trigger budget</strong></td>
+                <td><code>MaxTriggersRemaining</code> &mdash; finite or infinite, auto-remove when exhausted</td>
+            </tr>
+            <tr>
+                <td><strong>Timeout expiry</strong></td>
+                <td>Listeners can expire after a configurable duration</td>
+            </tr>
+            <tr>
+                <td><strong>Auto-termination</strong></td>
+                <td>Suspended instances with no remaining listeners/async ops are terminated automatically</td>
+            </tr>
         </tbody>
     </table>
 
@@ -116,13 +150,17 @@
 
     <h3>WaitForEvent (Single Event)</h3>
 
-    <p>Registers a listener for a single event tag. The status suspends and waits for the event to fire. When the event is received, the handler block executes on the next tick.</p>
+    <p>Registers a listener for a single event tag. The status suspends and waits for the event to fire. When the event
+        is received, the handler block executes on the next tick.</p>
 
-    <p><strong>Key behavior:</strong> The handler returns immediately after registering the listener. An &ldquo;immediate&rdquo; branch executes in the same frame (for setup logic), then the instance suspends waiting for the event.</p>
+    <p><strong>Key behavior:</strong> The handler returns immediately after registering the listener. An
+        &ldquo;immediate&rdquo; branch executes in the same frame (for setup logic), then the instance suspends waiting
+        for the event.</p>
 
     <h3>WaitForEvents (Multiple Events)</h3>
 
-    <p>Multi-event variant that registers listeners for <strong>multiple events</strong> from a compiled tag list, each with its own handler, trigger count, and timeout.</p>
+    <p>Multi-event variant that registers listeners for <strong>multiple events</strong> from a compiled tag list, each
+        with its own handler, trigger count, and timeout.</p>
 
     <h3>Key Differences</h3>
 
@@ -135,10 +173,26 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Events</td><td>Single</td><td>Multiple (compiled list)</td></tr>
-            <tr><td>Per-event triggers</td><td>Infinite only</td><td>Configurable per event</td></tr>
-            <tr><td>Per-event timeout</td><td>None</td><td>Configurable per event</td></tr>
-            <tr><td>Nested mode</td><td>No</td><td>Yes (works inside behavior nodes)</td></tr>
+            <tr>
+                <td>Events</td>
+                <td>Single</td>
+                <td>Multiple (compiled list)</td>
+            </tr>
+            <tr>
+                <td>Per-event triggers</td>
+                <td>Infinite only</td>
+                <td>Configurable per event</td>
+            </tr>
+            <tr>
+                <td>Per-event timeout</td>
+                <td>None</td>
+                <td>Configurable per event</td>
+            </tr>
+            <tr>
+                <td>Nested mode</td>
+                <td>No</td>
+                <td>Yes (works inside behavior nodes)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -146,9 +200,12 @@
 
     <h2 id="sending-events-from-status">5. Sending Events from Status Logic</h2>
 
-    <p>The <code>OP_SendEvent</code> handler allows status bytecode to send events with typed payloads. Payload overrides are built as <code>TArray&lt;FForgeVariableOverride&gt;</code> (same struct as Variable Overrides) and passed to <code>SendForgeEvent()</code>.</p>
+    <p>The <code>OP_SendEvent</code> handler allows status bytecode to send events with typed payloads. Payload
+        overrides are built as <code>TArray&lt;FForgeVariableOverride&gt;</code> (same struct as Variable Overrides) and
+        passed to <code>SendForgeEvent()</code>.</p>
 
-    <p>The handler supports all variable types as payload fields, matching the same types supported by variable overrides.</p>
+    <p>The handler supports all variable types as payload fields, matching the same types supported by variable
+        overrides.</p>
 
     <hr>
 
@@ -156,11 +213,15 @@
 
     <h3>OP_OnEventTriggered</h3>
 
-    <p>A <strong>no-op marker</strong> that serves as the entry point for compiled event handler blocks. The actual handler logic is the bytecode between <code>OP_OnEventTriggered</code> and <code>OP_EndAsyncEvent</code>.</p>
+    <p>A <strong>no-op marker</strong> that serves as the entry point for compiled event handler blocks. The actual
+        handler logic is the bytecode between <code>OP_OnEventTriggered</code> and <code>OP_EndAsyncEvent</code>.</p>
 
     <h3>OP_EndAsyncEvent</h3>
 
-    <p>Terminates an async event handler block and re-suspends the instance. Event handlers execute as &ldquo;interrupts&rdquo; &mdash; they do not modify the primary async node&rsquo;s persistent state. This ensures timer-based nodes (Delay, LoopBehavior) continue their countdowns undisturbed after event handler completion.</p>
+    <p>Terminates an async event handler block and re-suspends the instance. Event handlers execute as
+        &ldquo;interrupts&rdquo; &mdash; they do not modify the primary async node&rsquo;s persistent state. This
+        ensures timer-based nodes (Delay, LoopBehavior) continue their countdowns undisturbed after event handler
+        completion.</p>
 
     <hr>
 
@@ -174,7 +235,8 @@
     const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
     </div>
 
-    <p>Payload is applied to the instance's variable blob directly, ensuring the handler reads fresh values immediately. The following rules apply:</p>
+    <p>Payload is applied to the instance's variable blob directly, ensuring the handler reads fresh values immediately.
+        The following rules apply:</p>
 
     <table class="data-table">
         <thead>
@@ -184,10 +246,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Object / Class</strong> (Single)</td><td>Allocated into object pool and written to blob</td></tr>
-            <tr><td><strong>Array / Set</strong></td><td><strong>Skipped</strong> &mdash; handle indirection makes raw override unsafe</td></tr>
-            <tr><td><strong>GameplayTagContainer</strong></td><td>Size validated before application</td></tr>
-            <tr><td><strong>Scalar</strong></td><td>Size validated and written to blob</td></tr>
+            <tr>
+                <td><strong>Object / Class</strong> (Single)</td>
+                <td>Allocated into object pool and written to blob</td>
+            </tr>
+            <tr>
+                <td><strong>Array / Set</strong></td>
+                <td><strong>Skipped</strong> &mdash; handle indirection makes raw override unsafe</td>
+            </tr>
+            <tr>
+                <td><strong>GameplayTagContainer</strong></td>
+                <td>Size validated before application</td>
+            </tr>
+            <tr>
+                <td><strong>Scalar</strong></td>
+                <td>Size validated and written to blob</td>
+            </tr>
         </tbody>
     </table>
 
@@ -206,9 +280,21 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>&lt; 0</td><td>Infinite</td><td>Never removed by budget</td></tr>
-            <tr><td>0</td><td>Exhausted/Disabled</td><td>Skipped in registration, removed if encountered</td></tr>
-            <tr><td>&gt; 0</td><td>Finite count</td><td>Decremented each trigger, removed when 0</td></tr>
+            <tr>
+                <td>&lt; 0</td>
+                <td>Infinite</td>
+                <td>Never removed by budget</td>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>Exhausted/Disabled</td>
+                <td>Skipped in registration, removed if encountered</td>
+            </tr>
+            <tr>
+                <td>&gt; 0</td>
+                <td>Finite count</td>
+                <td>Decremented each trigger, removed when 0</td>
+            </tr>
         </tbody>
     </table>
 
@@ -218,9 +304,11 @@
 
     <h2 id="timeout-expiry-system">9. Timeout Expiry System</h2>
 
-    <p>Listeners with a finite <code>MaxWaitingTime</code> are automatically expired when the timeout elapses. Expired listeners are removed efficiently, and the affected status instances are checked for auto-termination.</p>
+    <p>Listeners with a finite <code>MaxWaitingTime</code> are automatically expired when the timeout elapses. Expired
+        listeners are removed efficiently, and the affected status instances are checked for auto-termination.</p>
 
-    <p>The timeout system is checked each tick and operates efficiently with minimal overhead when no listeners are expiring.</p>
+    <p>The timeout system is checked each tick and operates efficiently with minimal overhead when no listeners are
+        expiring.</p>
 
     <hr>
 
@@ -233,7 +321,8 @@
         <pre><code>void AutoTerminateIfEmpty(int64 StatusID);</code></pre>
     </div>
 
-    <p>Called after listener removal to check if a suspended instance has <strong>no remaining reason to stay alive</strong>.</p>
+    <p>Called after listener removal to check if a suspended instance has <strong>no remaining reason to stay
+            alive</strong>.</p>
 
     <h3>Guard Checks (Do NOT Terminate If Any Pass)</h3>
 
@@ -246,16 +335,41 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>1</td><td>Listeners remain</td><td>Still waiting for events</td></tr>
-            <tr><td>2</td><td>Pending async resume queued</td><td>Async callback will fire</td></tr>
-            <tr><td>3</td><td>Active montage callback helper</td><td>Montage still playing</td></tr>
-            <tr><td>4</td><td>Active custom logic</td><td>Async custom action in progress</td></tr>
-            <tr><td>5</td><td>Pending event resume</td><td>Same-frame SendForgeEvent</td></tr>
-            <tr><td>6</td><td>Finite duration remaining</td><td>Behavior node with finite duration</td></tr>
+            <tr>
+                <td>1</td>
+                <td>Listeners remain</td>
+                <td>Still waiting for events</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Pending async resume queued</td>
+                <td>Async callback will fire</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Active montage callback helper</td>
+                <td>Montage still playing</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Active custom logic</td>
+                <td>Async custom action in progress</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Pending event resume</td>
+                <td>Same-frame SendForgeEvent</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>Finite duration remaining</td>
+                <td>Behavior node with finite duration</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>If all guards pass, the instance is terminated. The OnEnd event block (if configured) executes before final cleanup.</p>
+    <p>If all guards pass, the instance is terminated. The OnEnd event block (if configured) executes before final
+        cleanup.</p>
 
     <hr>
 
@@ -283,7 +397,9 @@
 +-- FlushPendingStatusUpdates()</code></pre>
     </div>
 
-    <p><strong>Critical ordering:</strong> Async resumes (montage callbacks) are processed <strong>before</strong> event resumes. This ensures that montage completion handlers update instance state before event handlers observe it.</p>
+    <p><strong>Critical ordering:</strong> Async resumes (montage callbacks) are processed <strong>before</strong> event
+        resumes. This ensures that montage completion handlers update instance state before event handlers observe it.
+    </p>
 
     <hr>
 
@@ -291,7 +407,8 @@
 
     <h3>Registration (WaitForEvent)</h3>
 
-    <p>Default scope resolution: <strong>Target actor first</strong>, then <strong>Caster actor</strong> as fallback.</p>
+    <p>Default scope resolution: <strong>Target actor first</strong>, then <strong>Caster actor</strong> as fallback.
+    </p>
 
     <h3>Dispatch (SendForgeEvent)</h3>
 
@@ -304,10 +421,26 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>nullptr</code> (broadcast)</td><td>Any</td><td>Yes &mdash; all listeners receive</td></tr>
-            <tr><td><code>ActorA</code></td><td><code>ActorA</code></td><td>Yes &mdash; exact match</td></tr>
-            <tr><td><code>ActorA</code></td><td><code>ActorB</code></td><td>No &mdash; skipped</td></tr>
-            <tr><td><code>ActorA</code></td><td><code>nullptr</code></td><td>No &mdash; listener has no scope</td></tr>
+            <tr>
+                <td><code>nullptr</code> (broadcast)</td>
+                <td>Any</td>
+                <td>Yes &mdash; all listeners receive</td>
+            </tr>
+            <tr>
+                <td><code>ActorA</code></td>
+                <td><code>ActorA</code></td>
+                <td>Yes &mdash; exact match</td>
+            </tr>
+            <tr>
+                <td><code>ActorA</code></td>
+                <td><code>ActorB</code></td>
+                <td>No &mdash; skipped</td>
+            </tr>
+            <tr>
+                <td><code>ActorA</code></td>
+                <td><code>nullptr</code></td>
+                <td>No &mdash; listener has no scope</td>
+            </tr>
         </tbody>
     </table>
 
@@ -325,11 +458,28 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RegisterEventListener</code></td><td><code>void RegisterEventListener(const FGameplayTag&amp;, int64 StatusID, int32 ResumePC, AActor* ScopeActor, int32 MaxTriggers = -1, float MaxWaitingTime = -1.0f)</code></td></tr>
-            <tr><td><code>UnregisterEventListeners</code></td><td><code>void UnregisterEventListeners(int64 StatusID)</code></td></tr>
-            <tr><td><code>SendForgeEvent</code></td><td><code>int32 SendForgeEvent(FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code> &mdash; BlueprintCallable</td></tr>
-            <tr><td><code>HasActiveListenersForStatusID</code></td><td><code>bool HasActiveListenersForStatusID(int64) const</code></td></tr>
-            <tr><td><code>QueueAsyncResume</code></td><td><code>void QueueAsyncResume(int64 StatusID, int32 ResumePC)</code></td></tr>
+            <tr>
+                <td><code>RegisterEventListener</code></td>
+                <td><code>void RegisterEventListener(const FGameplayTag&amp;, int64 StatusID, int32 ResumePC, AActor* ScopeActor, int32 MaxTriggers = -1, float MaxWaitingTime = -1.0f)</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>UnregisterEventListeners</code></td>
+                <td><code>void UnregisterEventListeners(int64 StatusID)</code></td>
+            </tr>
+            <tr>
+                <td><code>SendForgeEvent</code></td>
+                <td><code>int32 SendForgeEvent(FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code>
+                    &mdash; BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><code>HasActiveListenersForStatusID</code></td>
+                <td><code>bool HasActiveListenersForStatusID(int64) const</code></td>
+            </tr>
+            <tr>
+                <td><code>QueueAsyncResume</code></td>
+                <td><code>void QueueAsyncResume(int64 StatusID, int32 ResumePC)</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -343,7 +493,11 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>SendForgeEvent</code></td><td><code>int32 SendForgeEvent(FGameplayTag EventTag, const TArray&lt;FForgeVariableOverride&gt;&amp; Payload)</code> &mdash; BlueprintCallable</td></tr>
+            <tr>
+                <td><code>SendForgeEvent</code></td>
+                <td><code>int32 SendForgeEvent(FGameplayTag EventTag, const TArray&lt;FForgeVariableOverride&gt;&amp; Payload)</code>
+                    &mdash; BlueprintCallable</td>
+            </tr>
         </tbody>
     </table>
 
@@ -357,7 +511,11 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>SendForgeEvent</code></td><td><code>static int32 SendForgeEvent(const UObject* WorldContextObject, FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code> &mdash; BlueprintCallable</td></tr>
+            <tr>
+                <td><code>SendForgeEvent</code></td>
+                <td><code>static int32 SendForgeEvent(const UObject* WorldContextObject, FGameplayTag, AActor* ScopeActor, const TArray&lt;FForgeVariableOverride&gt;&amp;)</code>
+                    &mdash; BlueprintCallable</td>
+            </tr>
         </tbody>
     </table>
 
@@ -372,11 +530,31 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>330</td><td><code>OP_WaitForEvent</code></td><td>Register single-event listener and suspend</td></tr>
-            <tr><td>371</td><td><code>OP_WaitForEvents</code></td><td>Register multi-event listeners and suspend</td></tr>
-            <tr><td>325</td><td><code>OP_SendEvent</code></td><td>Send event with payload from status logic</td></tr>
-            <tr><td>372</td><td><code>OP_OnEventTriggered</code></td><td>No-op marker for handler entry point</td></tr>
-            <tr><td>11</td><td><code>OP_EndAsyncEvent</code></td><td>Terminate handler and re-suspend</td></tr>
+            <tr>
+                <td>330</td>
+                <td><code>OP_WaitForEvent</code></td>
+                <td>Register single-event listener and suspend</td>
+            </tr>
+            <tr>
+                <td>371</td>
+                <td><code>OP_WaitForEvents</code></td>
+                <td>Register multi-event listeners and suspend</td>
+            </tr>
+            <tr>
+                <td>325</td>
+                <td><code>OP_SendEvent</code></td>
+                <td>Send event with payload from status logic</td>
+            </tr>
+            <tr>
+                <td>372</td>
+                <td><code>OP_OnEventTriggered</code></td>
+                <td>No-op marker for handler entry point</td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td><code>OP_EndAsyncEvent</code></td>
+                <td>Terminate handler and re-suspend</td>
+            </tr>
         </tbody>
     </table>
 

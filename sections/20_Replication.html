@@ -4,7 +4,15 @@
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
         <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
-        Layer: <strong>Component / Network</strong> &mdash; server-authoritative gameplay state replication.</p>
+            Layer: <strong>Component / Network</strong> &mdash; server-authoritative gameplay state replication.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Replication__A_Split_Model.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -41,20 +49,34 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Gameplay state</strong></td><td>Component (this document)</td><td>Attributes, modifiers, status tags, lifecycle seeds, delta updates</td></tr>
-            <tr><td><strong>Cosmetic state</strong></td><td>World Subsystem</td><td>VFX, SFX, montage cues (see 18 &mdash; Cosmetic Cue Routing)</td></tr>
+            <tr>
+                <td><strong>Gameplay state</strong></td>
+                <td>Component (this document)</td>
+                <td>Attributes, modifiers, status tags, lifecycle seeds, delta updates</td>
+            </tr>
+            <tr>
+                <td><strong>Cosmetic state</strong></td>
+                <td>World Subsystem</td>
+                <td>VFX, SFX, montage cues (see 18 &mdash; Cosmetic Cue Routing)</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>This split ensures gameplay correctness (reliable, delta-compressed) is decoupled from presentation bandwidth (unreliable bursts + state streams).</p>
+    <p>This split ensures gameplay correctness (reliable, delta-compressed) is decoupled from presentation bandwidth
+        (unreliable bursts + state streams).</p>
 
     <hr>
 
     <h2 id="replication-overview">2. Replication Overview</h2>
 
-    <p>Stats_X uses Unreal's built-in replication framework to efficiently synchronize attributes, modifiers, tags, and status updates between server and clients. The component replicates gameplay state using delta-compressed arrays, ensuring that only changed data is transmitted. On the client side, replicated data automatically synchronizes local data structures and broadcasts Blueprint delegates.</p>
+    <p>Stats_X uses Unreal's built-in replication framework to efficiently synchronize attributes, modifiers, tags, and
+        status updates between server and clients. The component replicates gameplay state using delta-compressed
+        arrays, ensuring that only changed data is transmitted. On the client side, replicated data automatically
+        synchronizes local data structures and broadcasts Blueprint delegates.</p>
 
-    <p>All replicated data uses unconditional replication to all connected clients. Client-side logic flows through per-item callbacks (add, change, remove) rather than monolithic OnRep callbacks, providing fine-grained synchronization.</p>
+    <p>All replicated data uses unconditional replication to all connected clients. Client-side logic flows through
+        per-item callbacks (add, change, remove) rather than monolithic OnRep callbacks, providing fine-grained
+        synchronization.</p>
 
     <hr>
 
@@ -70,12 +92,30 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Attributes</strong></td><td>Full attribute snapshots (current, max, base values)</td></tr>
-            <tr><td><strong>Modifiers</strong></td><td>Active modifier instances affecting attributes</td></tr>
-            <tr><td><strong>Casted Tags</strong></td><td>Status tags for statuses this actor has applied</td></tr>
-            <tr><td><strong>Received Tags</strong></td><td>Status tags for statuses applied to this actor</td></tr>
-            <tr><td><strong>Status Seeds</strong></td><td>Lifecycle boundary notifications (status added/removed)</td></tr>
-            <tr><td><strong>Status Updates</strong></td><td>Delta event notifications (stack changes, refreshes, runtime tuning)</td></tr>
+            <tr>
+                <td><strong>Attributes</strong></td>
+                <td>Full attribute snapshots (current, max, base values)</td>
+            </tr>
+            <tr>
+                <td><strong>Modifiers</strong></td>
+                <td>Active modifier instances affecting attributes</td>
+            </tr>
+            <tr>
+                <td><strong>Casted Tags</strong></td>
+                <td>Status tags for statuses this actor has applied</td>
+            </tr>
+            <tr>
+                <td><strong>Received Tags</strong></td>
+                <td>Status tags for statuses applied to this actor</td>
+            </tr>
+            <tr>
+                <td><strong>Status Seeds</strong></td>
+                <td>Lifecycle boundary notifications (status added/removed)</td>
+            </tr>
+            <tr>
+                <td><strong>Status Updates</strong></td>
+                <td>Delta event notifications (stack changes, refreshes, runtime tuning)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -96,8 +136,16 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>Identifies the attribute (e.g. <code>StatsX.Attribute.Health</code>)</td></tr>
-            <tr><td><code>AttributeValue</code></td><td><code>FStatAttribute</code></td><td>Full attribute snapshot</td></tr>
+            <tr>
+                <td><code>AttributeTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Identifies the attribute (e.g. <code>StatsX.Attribute.Health</code>)</td>
+            </tr>
+            <tr>
+                <td><code>AttributeValue</code></td>
+                <td><code>FStatAttribute</code></td>
+                <td>Full attribute snapshot</td>
+            </tr>
         </tbody>
     </table>
 
@@ -112,19 +160,43 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Current</code></td><td><code>float</code></td><td>Actual usable value (e.g. current HP)</td></tr>
-            <tr><td><code>Max</code></td><td><code>float</code></td><td>Calculated maximum: <code>(Base + TotalAdditive) * TotalMultiplicative</code></td></tr>
-            <tr><td><code>Base</code></td><td><code>float</code></td><td>Unmodified foundation value</td></tr>
-            <tr><td><code>bOverflows</code></td><td><code>bool</code></td><td>If true, disables all clamping</td></tr>
-            <tr><td><code>bReplicated</code></td><td><code>bool</code></td><td>If false, attribute is server-only &mdash; not replicated to clients</td></tr>
+            <tr>
+                <td><code>Current</code></td>
+                <td><code>float</code></td>
+                <td>Actual usable value (e.g. current HP)</td>
+            </tr>
+            <tr>
+                <td><code>Max</code></td>
+                <td><code>float</code></td>
+                <td>Calculated maximum: <code>(Base + TotalAdditive) * TotalMultiplicative</code></td>
+            </tr>
+            <tr>
+                <td><code>Base</code></td>
+                <td><code>float</code></td>
+                <td>Unmodified foundation value</td>
+            </tr>
+            <tr>
+                <td><code>bOverflows</code></td>
+                <td><code>bool</code></td>
+                <td>If true, disables all clamping</td>
+            </tr>
+            <tr>
+                <td><code>bReplicated</code></td>
+                <td><code>bool</code></td>
+                <td>If false, attribute is server-only &mdash; not replicated to clients</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>The <code>bReplicated</code> flag is a <strong>per-attribute opt-out</strong>. Attributes marked <code>bReplicated = false</code> are never sent to clients, saving bandwidth for server-only data (e.g. internal timers, scratch values).</p>
+    <p>The <code>bReplicated</code> flag is a <strong>per-attribute opt-out</strong>. Attributes marked
+        <code>bReplicated = false</code> are never sent to clients, saving bandwidth for server-only data (e.g. internal
+        timers, scratch values).
+    </p>
 
     <h3>4.3 Client-Side Behavior</h3>
 
-    <p>When attributes are replicated to clients, the local attribute map is updated and <code>OnAttributeChanged</code> is broadcast. Attribute additions, changes, and removals are all handled automatically.</p>
+    <p>When attributes are replicated to clients, the local attribute map is updated and <code>OnAttributeChanged</code>
+        is broadcast. Attribute additions, changes, and removals are all handled automatically.</p>
 
     <hr>
 
@@ -141,27 +213,55 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>InstanceID</code></td><td><code>int32</code></td><td>Unique modifier identifier</td></tr>
-            <tr><td><code>OwnerID</code></td><td><code>int64</code></td><td>Status instance that created this modifier</td></tr>
-            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>Target attribute</td></tr>
-            <tr><td><code>SourceTag</code></td><td><code>FGameplayTag</code></td><td>Origin of the modifier (buff, equipment, etc.)</td></tr>
-            <tr><td><code>AdditiveValue</code></td><td><code>float</code></td><td>Flat additive bonus: <code>Max += AdditiveValue</code></td></tr>
-            <tr><td><code>MultiplicativeValue</code></td><td><code>float</code></td><td>Multiplicative factor: <code>Max *= MultiplicativeValue</code></td></tr>
+            <tr>
+                <td><code>InstanceID</code></td>
+                <td><code>int32</code></td>
+                <td>Unique modifier identifier</td>
+            </tr>
+            <tr>
+                <td><code>OwnerID</code></td>
+                <td><code>int64</code></td>
+                <td>Status instance that created this modifier</td>
+            </tr>
+            <tr>
+                <td><code>AttributeTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Target attribute</td>
+            </tr>
+            <tr>
+                <td><code>SourceTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Origin of the modifier (buff, equipment, etc.)</td>
+            </tr>
+            <tr>
+                <td><code>AdditiveValue</code></td>
+                <td><code>float</code></td>
+                <td>Flat additive bonus: <code>Max += AdditiveValue</code></td>
+            </tr>
+            <tr>
+                <td><code>MultiplicativeValue</code></td>
+                <td><code>float</code></td>
+                <td>Multiplicative factor: <code>Max *= MultiplicativeValue</code></td>
+            </tr>
         </tbody>
     </table>
 
     <h3>5.2 Client-Side Behavior</h3>
 
-    <p>All modifier replication callbacks trigger attribute recalculation rather than applying the modifier value directly &mdash; the client recomputes <code>Max</code> from the full modifier set for consistency.</p>
+    <p>All modifier replication callbacks trigger attribute recalculation rather than applying the modifier value
+        directly &mdash; the client recomputes <code>Max</code> from the full modifier set for consistency.</p>
 
     <hr>
 
     <h2 id="status-tag-replication">6. Status Tag Replication</h2>
-    <p>Stats_X tracks two independent tag containers per component &mdash; <strong>casted</strong> (statuses this actor applied) and <strong>received</strong> (statuses applied to this actor).</p>
+    <p>Stats_X tracks two independent tag containers per component &mdash; <strong>casted</strong> (statuses this actor
+        applied) and <strong>received</strong> (statuses applied to this actor).</p>
 
     <h3>6.1 Casted Tags</h3>
 
-    <p>When casted tags are replicated, the client updates its local <code>CastedStatusesContainer</code> and broadcasts <code>OnCastedStatusTagChanged</code> with the tag and whether it was added or removed.</p>
+    <p>When casted tags are replicated, the client updates its local <code>CastedStatusesContainer</code> and broadcasts
+        <code>OnCastedStatusTagChanged</code> with the tag and whether it was added or removed.
+    </p>
 
     <h3>6.2 Received Tags</h3>
 
@@ -178,7 +278,8 @@
     <hr>
 
     <h2 id="status-seed-replication">7. Status Seed Replication</h2>
-    <p>Seeds provide <strong>lifecycle boundary notifications</strong> &mdash; when a status is added or removed from the component.</p>
+    <p>Seeds provide <strong>lifecycle boundary notifications</strong> &mdash; when a status is added or removed from
+        the component.</p>
 
     <h3>7.1 FStatusSeedData (Replicated Payload)</h3>
 
@@ -191,22 +292,58 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Unique status instance identifier</td></tr>
-            <tr><td><code>StatusTag</code></td><td><code>FGameplayTag</code></td><td>Status definition tag</td></tr>
-            <tr><td><code>ServerStartTimeSeconds</code></td><td><code>float</code></td><td>Server world time when lifecycle started</td></tr>
-            <tr><td><code>MaxDurationSeconds</code></td><td><code>float</code></td><td>&le; 0 means infinite</td></tr>
-            <tr><td><code>TickIntervalSeconds</code></td><td><code>float</code></td><td>0 means non-periodic</td></tr>
-            <tr><td><code>MaxIterations</code></td><td><code>int32</code></td><td>-1 means infinite</td></tr>
-            <tr><td><code>StackCount</code></td><td><code>int32</code></td><td>Current stack count</td></tr>
-            <tr><td><code>Revision</code></td><td><code>int32</code></td><td>Monotonic per-status revision for stale protection</td></tr>
+            <tr>
+                <td><code>StatusID</code></td>
+                <td><code>int64</code></td>
+                <td>Unique status instance identifier</td>
+            </tr>
+            <tr>
+                <td><code>StatusTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Status definition tag</td>
+            </tr>
+            <tr>
+                <td><code>ServerStartTimeSeconds</code></td>
+                <td><code>float</code></td>
+                <td>Server world time when lifecycle started</td>
+            </tr>
+            <tr>
+                <td><code>MaxDurationSeconds</code></td>
+                <td><code>float</code></td>
+                <td>&le; 0 means infinite</td>
+            </tr>
+            <tr>
+                <td><code>TickIntervalSeconds</code></td>
+                <td><code>float</code></td>
+                <td>0 means non-periodic</td>
+            </tr>
+            <tr>
+                <td><code>MaxIterations</code></td>
+                <td><code>int32</code></td>
+                <td>-1 means infinite</td>
+            </tr>
+            <tr>
+                <td><code>StackCount</code></td>
+                <td><code>int32</code></td>
+                <td>Current stack count</td>
+            </tr>
+            <tr>
+                <td><code>Revision</code></td>
+                <td><code>int32</code></td>
+                <td>Monotonic per-status revision for stale protection</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>The seed carries enough data for clients to compute remaining time locally (<code>ServerStartTimeSeconds + MaxDurationSeconds - CurrentServerTime</code>), eliminating the need for continuous timer replication.</p>
+    <p>The seed carries enough data for clients to compute remaining time locally
+        (<code>ServerStartTimeSeconds + MaxDurationSeconds - CurrentServerTime</code>), eliminating the need for
+        continuous timer replication.</p>
 
     <h3>7.2 Client-Side Behavior</h3>
 
-    <p>When seeds are replicated, the client broadcasts <code>OnCastedStatusSet</code> / <code>OnReceivedStatusSet</code> with the appropriate <code>EStatusSetAction</code>.</p>
+    <p>When seeds are replicated, the client broadcasts <code>OnCastedStatusSet</code> /
+        <code>OnReceivedStatusSet</code> with the appropriate <code>EStatusSetAction</code>.
+    </p>
 
     <h3>7.3 EStatusSetAction</h3>
 
@@ -218,15 +355,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Added</code></td><td>Status just became active</td></tr>
-            <tr><td><code>Removed</code></td><td>Status just expired/was removed</td></tr>
+            <tr>
+                <td><code>Added</code></td>
+                <td>Status just became active</td>
+            </tr>
+            <tr>
+                <td><code>Removed</code></td>
+                <td>Status just expired/was removed</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="status-update-replication">8. Status Update Replication</h2>
-    <p>Updates provide <strong>delta event notifications</strong> for non-deducible mutations (stack changes, refreshes, runtime tuning).</p>
+    <p>Updates provide <strong>delta event notifications</strong> for non-deducible mutations (stack changes, refreshes,
+        runtime tuning).</p>
 
     <h3>8.1 FStatusUpdateData (Replicated Payload)</h3>
 
@@ -239,15 +383,51 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StatusID</code></td><td><code>int64</code></td><td>Target status instance</td></tr>
-            <tr><td><code>Revision</code></td><td><code>int32</code></td><td>Monotonic per-status revision</td></tr>
-            <tr><td><code>Reason</code></td><td><code>EStatusUpdateReason</code></td><td>What triggered this update</td></tr>
-            <tr><td><code>ChangedFields</code></td><td><code>int32</code> (bitmask)</td><td>Which fields carry valid data</td></tr>
-            <tr><td><code>StackCount</code></td><td><code>int32</code></td><td>New stack count (if bit set)</td></tr>
-            <tr><td><code>ServerStartTimeSeconds</code></td><td><code>float</code></td><td>New start time (if bit set)</td></tr>
-            <tr><td><code>MaxDurationSeconds</code></td><td><code>float</code></td><td>New duration (if bit set)</td></tr>
-            <tr><td><code>TickIntervalSeconds</code></td><td><code>float</code></td><td>New tick interval (if bit set)</td></tr>
-            <tr><td><code>MaxIterations</code></td><td><code>int32</code></td><td>New max iterations (if bit set)</td></tr>
+            <tr>
+                <td><code>StatusID</code></td>
+                <td><code>int64</code></td>
+                <td>Target status instance</td>
+            </tr>
+            <tr>
+                <td><code>Revision</code></td>
+                <td><code>int32</code></td>
+                <td>Monotonic per-status revision</td>
+            </tr>
+            <tr>
+                <td><code>Reason</code></td>
+                <td><code>EStatusUpdateReason</code></td>
+                <td>What triggered this update</td>
+            </tr>
+            <tr>
+                <td><code>ChangedFields</code></td>
+                <td><code>int32</code> (bitmask)</td>
+                <td>Which fields carry valid data</td>
+            </tr>
+            <tr>
+                <td><code>StackCount</code></td>
+                <td><code>int32</code></td>
+                <td>New stack count (if bit set)</td>
+            </tr>
+            <tr>
+                <td><code>ServerStartTimeSeconds</code></td>
+                <td><code>float</code></td>
+                <td>New start time (if bit set)</td>
+            </tr>
+            <tr>
+                <td><code>MaxDurationSeconds</code></td>
+                <td><code>float</code></td>
+                <td>New duration (if bit set)</td>
+            </tr>
+            <tr>
+                <td><code>TickIntervalSeconds</code></td>
+                <td><code>float</code></td>
+                <td>New tick interval (if bit set)</td>
+            </tr>
+            <tr>
+                <td><code>MaxIterations</code></td>
+                <td><code>int32</code></td>
+                <td>New max iterations (if bit set)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -261,10 +441,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StackChanged</code></td><td>Stack count modified</td></tr>
-            <tr><td><code>Refreshed</code></td><td>Duration/timer reset</td></tr>
-            <tr><td><code>StackChangedAndRefreshed</code></td><td>Both</td></tr>
-            <tr><td><code>RuntimeTuning</code></td><td>Programmatic parameter change</td></tr>
+            <tr>
+                <td><code>StackChanged</code></td>
+                <td>Stack count modified</td>
+            </tr>
+            <tr>
+                <td><code>Refreshed</code></td>
+                <td>Duration/timer reset</td>
+            </tr>
+            <tr>
+                <td><code>StackChangedAndRefreshed</code></td>
+                <td>Both</td>
+            </tr>
+            <tr>
+                <td><code>RuntimeTuning</code></td>
+                <td>Programmatic parameter change</td>
+            </tr>
         </tbody>
     </table>
 
@@ -279,12 +471,36 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>None</code></td><td>0</td><td>No fields</td></tr>
-            <tr><td><code>StackCount</code></td><td>1</td><td><code>StackCount</code> is valid</td></tr>
-            <tr><td><code>StartTime</code></td><td>2</td><td><code>ServerStartTimeSeconds</code> is valid</td></tr>
-            <tr><td><code>MaxDuration</code></td><td>4</td><td><code>MaxDurationSeconds</code> is valid</td></tr>
-            <tr><td><code>TickInterval</code></td><td>8</td><td><code>TickIntervalSeconds</code> is valid</td></tr>
-            <tr><td><code>MaxIterations</code></td><td>16</td><td><code>MaxIterations</code> is valid</td></tr>
+            <tr>
+                <td><code>None</code></td>
+                <td>0</td>
+                <td>No fields</td>
+            </tr>
+            <tr>
+                <td><code>StackCount</code></td>
+                <td>1</td>
+                <td><code>StackCount</code> is valid</td>
+            </tr>
+            <tr>
+                <td><code>StartTime</code></td>
+                <td>2</td>
+                <td><code>ServerStartTimeSeconds</code> is valid</td>
+            </tr>
+            <tr>
+                <td><code>MaxDuration</code></td>
+                <td>4</td>
+                <td><code>MaxDurationSeconds</code> is valid</td>
+            </tr>
+            <tr>
+                <td><code>TickInterval</code></td>
+                <td>8</td>
+                <td><code>TickIntervalSeconds</code> is valid</td>
+            </tr>
+            <tr>
+                <td><code>MaxIterations</code></td>
+                <td>16</td>
+                <td><code>MaxIterations</code> is valid</td>
+            </tr>
         </tbody>
     </table>
 
@@ -292,7 +508,8 @@
 
     <h3>8.4 Client-Side Behavior</h3>
 
-    <p>Status updates use event ordering to prevent duplicate or out-of-order processing on clients. When updates are received, <code>OnCastedStatusUpdate</code> / <code>OnReceivedStatusUpdate</code> delegates are broadcast.</p>
+    <p>Status updates use event ordering to prevent duplicate or out-of-order processing on clients. When updates are
+        received, <code>OnCastedStatusUpdate</code> / <code>OnReceivedStatusUpdate</code> delegates are broadcast.</p>
 
     <hr>
 
@@ -309,20 +526,49 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>OnAttributeChanged</code></td><td><code>FGameplayTag AttributeTag, FStatAttribute NewValue</code></td><td>Attribute value changed</td></tr>
-            <tr><td><code>OnCastedStatusTagChanged</code></td><td><code>FGameplayTag StatusTag, bool bAdded</code></td><td>Casted tag added/removed</td></tr>
-            <tr><td><code>OnReceivedStatusTagChanged</code></td><td><code>FGameplayTag StatusTag, bool bAdded</code></td><td>Received tag added/removed</td></tr>
-            <tr><td><code>OnCastedStatusSet</code></td><td><code>FStatusSetData Data</code></td><td>Casted status lifecycle (Added/Removed)</td></tr>
-            <tr><td><code>OnReceivedStatusSet</code></td><td><code>FStatusSetData Data</code></td><td>Received status lifecycle (Added/Removed)</td></tr>
-            <tr><td><code>OnCastedStatusUpdate</code></td><td><code>FStatusUpdateData Data</code></td><td>Casted status delta event</td></tr>
-            <tr><td><code>OnReceivedStatusUpdate</code></td><td><code>FStatusUpdateData Data</code></td><td>Received status delta event</td></tr>
+            <tr>
+                <td><code>OnAttributeChanged</code></td>
+                <td><code>FGameplayTag AttributeTag, FStatAttribute NewValue</code></td>
+                <td>Attribute value changed</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusTagChanged</code></td>
+                <td><code>FGameplayTag StatusTag, bool bAdded</code></td>
+                <td>Casted tag added/removed</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusTagChanged</code></td>
+                <td><code>FGameplayTag StatusTag, bool bAdded</code></td>
+                <td>Received tag added/removed</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusSet</code></td>
+                <td><code>FStatusSetData Data</code></td>
+                <td>Casted status lifecycle (Added/Removed)</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusSet</code></td>
+                <td><code>FStatusSetData Data</code></td>
+                <td>Received status lifecycle (Added/Removed)</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusUpdate</code></td>
+                <td><code>FStatusUpdateData Data</code></td>
+                <td>Casted status delta event</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusUpdate</code></td>
+                <td><code>FStatusUpdateData Data</code></td>
+                <td>Received status delta event</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="status-instances-and-replication">10. Status Instances and Replication</h2>
-    <p><code>FStatusInstance</code> is <strong>not directly replicated</strong>. Instances exist only on the server. Clients receive:</p>
+    <p><code>FStatusInstance</code> is <strong>not directly replicated</strong>. Instances exist only on the server.
+        Clients receive:</p>
 
     <table class="data-table">
         <thead>
@@ -332,26 +578,44 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Which statuses are active</td><td>StatusID, tag, timing data, stack count (via seeds)</td></tr>
-            <tr><td>Status tags for queries</td><td><code>FGameplayTagContainer</code> membership (via tag arrays)</td></tr>
-            <tr><td>Runtime mutations</td><td>Stack changes, refreshes, tuning (via updates)</td></tr>
-            <tr><td>Attribute effects</td><td>Final computed values (via attribute and modifier arrays)</td></tr>
+            <tr>
+                <td>Which statuses are active</td>
+                <td>StatusID, tag, timing data, stack count (via seeds)</td>
+            </tr>
+            <tr>
+                <td>Status tags for queries</td>
+                <td><code>FGameplayTagContainer</code> membership (via tag arrays)</td>
+            </tr>
+            <tr>
+                <td>Runtime mutations</td>
+                <td>Stack changes, refreshes, tuning (via updates)</td>
+            </tr>
+            <tr>
+                <td>Attribute effects</td>
+                <td>Final computed values (via attribute and modifier arrays)</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>This design avoids replicating the full <code>FStatusInstance</code> &mdash; only the minimal data needed for client-side UI, queries, and cosmetic logic.</p>
+    <p>This design avoids replicating the full <code>FStatusInstance</code> &mdash; only the minimal data needed for
+        client-side UI, queries, and cosmetic logic.</p>
 
     <hr>
 
     <h2 id="client-sync-retry">11. Client Sync Retry</h2>
 
-    <p>On <code>BeginPlay</code>, non-authority components schedule a retry timer to synchronize local attributes. This handles the race condition where replicated data may not be initialized when the component begins play on a late-joining client. Once all items are synchronized, the timer is cleared.</p>
+    <p>On <code>BeginPlay</code>, non-authority components schedule a retry timer to synchronize local attributes. This
+        handles the race condition where replicated data may not be initialized when the component begins play on a
+        late-joining client. Once all items are synchronized, the timer is cleared.</p>
 
     <hr>
 
     <h2 id="per-attribute-replication-opt-out">12. Per-Attribute Replication Opt-Out</h2>
 
-    <p>Each <code>FStatAttribute</code> carries a <code>bReplicated</code> flag (default <code>true</code>). Attributes with <code>bReplicated = false</code> are never sent to clients. The runtime API <code>SetEnableReplicated(AttributeTag, bReplicated)</code> allows toggling this at runtime.</p>
+    <p>Each <code>FStatAttribute</code> carries a <code>bReplicated</code> flag (default <code>true</code>). Attributes
+        with <code>bReplicated = false</code> are never sent to clients. The runtime API
+        <code>SetEnableReplicated(AttributeTag, bReplicated)</code> allows toggling this at runtime.
+    </p>
 
     <p>Use cases: internal timers, server-only scratch values, debug counters.</p>
 
@@ -367,15 +631,47 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Separate arrays per domain</strong></td><td>Each domain (attributes, modifiers, tags, seeds, updates) has different change frequency and payload size &mdash; separate arrays allow the delta serializer to optimize each independently</td></tr>
-            <tr><td><strong>No conditional replication</strong></td><td>All gameplay state is relevant to all connected clients (UI, queries, predictions)</td></tr>
-            <tr><td><strong>Per-item callbacks</strong></td><td>Per-item add/change/remove callbacks provide finer granularity vs monolithic OnRep</td></tr>
-            <tr><td><strong>Separate casted/received tag arrays</strong></td><td>Different gameplay meaning, independent lifecycle, separate delegate bindings</td></tr>
-            <tr><td><strong>Seed + Update split</strong></td><td>Seeds (lifecycle) are few and long-lived; updates (deltas) are frequent and transient &mdash; different replication profiles</td></tr>
-            <tr><td><strong>Event ordering</strong></td><td>Prevents duplicate/out-of-order update processing on clients without needing sequence ACKs</td></tr>
-            <tr><td><strong>bReplicated per-attribute opt-out</strong></td><td>Saves bandwidth for server-only scratch values without requiring separate non-replicated storage</td></tr>
-            <tr><td><strong>Client recomputes from full modifier set</strong></td><td>Clients recompute attribute Max from full modifier set rather than applying individual modifier deltas &mdash; guarantees consistency</td></tr>
-            <tr><td><strong>Status instances not replicated</strong></td><td>Variable blobs, PC counters, object pools are server-only execution state &mdash; clients only need observable results</td></tr>
+            <tr>
+                <td><strong>Separate arrays per domain</strong></td>
+                <td>Each domain (attributes, modifiers, tags, seeds, updates) has different change frequency and payload
+                    size &mdash; separate arrays allow the delta serializer to optimize each independently</td>
+            </tr>
+            <tr>
+                <td><strong>No conditional replication</strong></td>
+                <td>All gameplay state is relevant to all connected clients (UI, queries, predictions)</td>
+            </tr>
+            <tr>
+                <td><strong>Per-item callbacks</strong></td>
+                <td>Per-item add/change/remove callbacks provide finer granularity vs monolithic OnRep</td>
+            </tr>
+            <tr>
+                <td><strong>Separate casted/received tag arrays</strong></td>
+                <td>Different gameplay meaning, independent lifecycle, separate delegate bindings</td>
+            </tr>
+            <tr>
+                <td><strong>Seed + Update split</strong></td>
+                <td>Seeds (lifecycle) are few and long-lived; updates (deltas) are frequent and transient &mdash;
+                    different replication profiles</td>
+            </tr>
+            <tr>
+                <td><strong>Event ordering</strong></td>
+                <td>Prevents duplicate/out-of-order update processing on clients without needing sequence ACKs</td>
+            </tr>
+            <tr>
+                <td><strong>bReplicated per-attribute opt-out</strong></td>
+                <td>Saves bandwidth for server-only scratch values without requiring separate non-replicated storage
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Client recomputes from full modifier set</strong></td>
+                <td>Clients recompute attribute Max from full modifier set rather than applying individual modifier
+                    deltas &mdash; guarantees consistency</td>
+            </tr>
+            <tr>
+                <td><strong>Status instances not replicated</strong></td>
+                <td>Variable blobs, PC counters, object pools are server-only execution state &mdash; clients only need
+                    observable results</td>
+            </tr>
         </tbody>
     </table>
 
@@ -391,12 +687,30 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>02 &mdash; Attribute System</td><td>Attributes being replicated</td></tr>
-            <tr><td>03 &mdash; Modifier System</td><td>Modifiers being replicated</td></tr>
-            <tr><td>05 &mdash; Status Instance</td><td>Server-side instances (not replicated directly)</td></tr>
-            <tr><td>10 &mdash; Component System</td><td>Component that owns the replicated arrays</td></tr>
-            <tr><td>18 &mdash; Cosmetic Cue Routing</td><td>Separate cosmetic replication channel</td></tr>
-            <tr><td>21 &mdash; Network Cue Relay</td><td>NetCueRelay actor replication</td></tr>
+            <tr>
+                <td>02 &mdash; Attribute System</td>
+                <td>Attributes being replicated</td>
+            </tr>
+            <tr>
+                <td>03 &mdash; Modifier System</td>
+                <td>Modifiers being replicated</td>
+            </tr>
+            <tr>
+                <td>05 &mdash; Status Instance</td>
+                <td>Server-side instances (not replicated directly)</td>
+            </tr>
+            <tr>
+                <td>10 &mdash; Component System</td>
+                <td>Component that owns the replicated arrays</td>
+            </tr>
+            <tr>
+                <td>18 &mdash; Cosmetic Cue Routing</td>
+                <td>Separate cosmetic replication channel</td>
+            </tr>
+            <tr>
+                <td>21 &mdash; Network Cue Relay</td>
+                <td>NetCueRelay actor replication</td>
+            </tr>
         </tbody>
     </table>
 

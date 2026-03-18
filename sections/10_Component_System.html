@@ -4,7 +4,16 @@
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
         <p><strong>Stats_X v1.404</strong> &mdash; UStatsX_StatsComponentBase<br>
-        Per-actor component that owns attributes, modifiers, thresholds, status tracking, interceptors, and damage mitigation &mdash; the primary gameplay-facing interface of the plugin.</p>
+            Per-actor component that owns attributes, modifiers, thresholds, status tracking, interceptors, and damage
+            mitigation &mdash; the primary gameplay-facing interface of the plugin.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Component_System.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -33,7 +42,9 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p><code>UStatsX_StatsComponentBase</code> is the <strong>single point of contact</strong> between the Stats_X runtime and the gameplay actor. Every actor that participates in the stat/status system attaches one instance of this component (or a Blueprint subclass).</p>
+    <p><code>UStatsX_StatsComponentBase</code> is the <strong>single point of contact</strong> between the Stats_X
+        runtime and the gameplay actor. Every actor that participates in the stat/status system attaches one instance of
+        this component (or a Blueprint subclass).</p>
 
     <h3>Key design decisions:</h3>
     <table class="data-table">
@@ -44,11 +55,28 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Does not tick</strong></td><td>All status ticking is driven by <code>UStatsX_WorldSubsystem</code></td></tr>
-            <tr><td><strong>Replicated by default</strong></td><td>Six <code>FastArraySerializer</code> properties replicate gameplay state</td></tr>
-            <tr><td><strong>Blueprintable</strong></td><td>Game teams subclass to override <code>Mitigation_CustomFormula</code> and add project-specific logic</td></tr>
-            <tr><td><strong>Server-authoritative</strong></td><td>Modifiers, attributes, and status execution are server-only. Clients receive replicated state</td></tr>
-            <tr><td><strong>Tag-driven</strong></td><td>All APIs use <code>FGameplayTag</code> for attribute, modifier, status, and event identification</td></tr>
+            <tr>
+                <td><strong>Does not tick</strong></td>
+                <td>All status ticking is driven by <code>UStatsX_WorldSubsystem</code></td>
+            </tr>
+            <tr>
+                <td><strong>Replicated by default</strong></td>
+                <td>Six <code>FastArraySerializer</code> properties replicate gameplay state</td>
+            </tr>
+            <tr>
+                <td><strong>Blueprintable</strong></td>
+                <td>Game teams subclass to override <code>Mitigation_CustomFormula</code> and add project-specific logic
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Server-authoritative</strong></td>
+                <td>Modifiers, attributes, and status execution are server-only. Clients receive replicated state</td>
+            </tr>
+            <tr>
+                <td><strong>Tag-driven</strong></td>
+                <td>All APIs use <code>FGameplayTag</code> for attribute, modifier, status, and event identification
+                </td>
+            </tr>
         </tbody>
     </table>
 
@@ -70,14 +98,17 @@
         ├── Interceptors     (Caster-scope + Target-scope registries)
         └── Damage Mitigation (Flat, Percentage, Diminishing, ExpDecay, Custom)</code></pre>
     </div>
-    <p>The component implements <code>IStatsXComponentProvider</code>, returning <code>this</code> directly. This interface allows objects in status object pools to resolve their associated component without expensive <code>Cast&lt;&gt;</code> operations.</p>
+    <p>The component implements <code>IStatsXComponentProvider</code>, returning <code>this</code> directly. This
+        interface allows objects in status object pools to resolve their associated component without expensive
+        <code>Cast&lt;&gt;</code> operations.</p>
 
     <hr>
 
     <h2 id="lifecycle">3. Lifecycle</h2>
 
     <h3>Construction</h3>
-    <p>The component is replicated by default and does not tick. All status ticking is driven by the world subsystem.</p>
+    <p>The component is replicated by default and does not tick. All status ticking is driven by the world subsystem.
+    </p>
 
     <h3>BeginPlay</h3>
     <ol>
@@ -99,15 +130,18 @@
     </ol>
 
     <h3>GC Integration</h3>
-    <p>The component overrides <code>AddReferencedObjects()</code> to manually add interceptor <code>UObject</code> references to the GC collector, since interceptor registrations are stored in non-UPROPERTY maps.</p>
+    <p>The component overrides <code>AddReferencedObjects()</code> to manually add interceptor <code>UObject</code>
+        references to the GC collector, since interceptor registrations are stored in non-UPROPERTY maps.</p>
 
     <hr>
 
     <h2 id="subsystem-pointers">4. Subsystem Pointers</h2>
-    <p>The component caches pointers to two subsystems at <code>BeginPlay</code> &mdash; <strong>do not access before BeginPlay</strong>:</p>
+    <p>The component caches pointers to two subsystems at <code>BeginPlay</code> &mdash; <strong>do not access before
+            BeginPlay</strong>:</p>
     <ul>
         <li><code>StatsXGameInstanceSubsystem</code> &mdash; provides <code>GenerateStatusID()</code></li>
-        <li><code>StatsXWorldSubsystem</code> &mdash; provides <code>ExecuteStatus()</code>, pool access, and the event system</li>
+        <li><code>StatsXWorldSubsystem</code> &mdash; provides <code>ExecuteStatus()</code>, pool access, and the event
+            system</li>
     </ul>
 
     <hr>
@@ -115,7 +149,8 @@
     <h2 id="attributes-section">5. Attributes Section</h2>
 
     <h3>Storage</h3>
-    <p>Attributes are stored in a tag-driven map. Each attribute is a triplet: <code>Current</code>, <code>Max</code>, <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).</p>
+    <p>Attributes are stored in a tag-driven map. Each attribute is a triplet: <code>Current</code>, <code>Max</code>,
+        <code>Base</code> + flags (<code>bOverflows</code>, <code>bReplicated</code>).</p>
 
     <h3>Initialisation API</h3>
     <table class="data-table">
@@ -126,12 +161,23 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>InitializeAttribute()</code></td><td>Full control: Current, Max, Base, bOverflows, bReplicated</td></tr>
-            <tr><td><code>InitializeResourceAttribute()</code></td><td>Resource preset: Current and Max are independent (Health, Mana)</td></tr>
-            <tr><td><code>InitializeStatAttribute()</code></td><td>Stat preset: Current = Max = Value (Speed, Armor)</td></tr>
+            <tr>
+                <td><code>InitializeAttribute()</code></td>
+                <td>Full control: Current, Max, Base, bOverflows, bReplicated</td>
+            </tr>
+            <tr>
+                <td><code>InitializeResourceAttribute()</code></td>
+                <td>Resource preset: Current and Max are independent (Health, Mana)</td>
+            </tr>
+            <tr>
+                <td><code>InitializeStatAttribute()</code></td>
+                <td>Stat preset: Current = Max = Value (Speed, Armor)</td>
+            </tr>
         </tbody>
     </table>
-    <p>All three validate that the tag is a child of <code>StatsX.Attribute</code>. <code>InitializeResourceAttribute</code> enforces <code>StatsX.Attribute.Resource</code>, <code>InitializeStatAttribute</code> enforces <code>StatsX.Attribute.Stat</code>.</p>
+    <p>All three validate that the tag is a child of <code>StatsX.Attribute</code>.
+        <code>InitializeResourceAttribute</code> enforces <code>StatsX.Attribute.Resource</code>,
+        <code>InitializeStatAttribute</code> enforces <code>StatsX.Attribute.Stat</code>.</p>
 
     <h3>Modification API</h3>
     <table class="data-table">
@@ -142,10 +188,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>ModifyAttribute(Tag, SubTag, Delta, Causer)</code></td><td>Adds delta to existing value. Returns actual change after clamping</td></tr>
-            <tr><td><code>SetAttribute(Tag, SubTag, NewValue, Causer)</code></td><td>Overwrites value directly</td></tr>
-            <tr><td><code>SetEnableOverflows(Tag, bool)</code></td><td>Toggles overflow mode at runtime</td></tr>
-            <tr><td><code>SetEnableReplicated(Tag, bool)</code></td><td>Toggles per-attribute replication</td></tr>
+            <tr>
+                <td><code>ModifyAttribute(Tag, SubTag, Delta, Causer)</code></td>
+                <td>Adds delta to existing value. Returns actual change after clamping</td>
+            </tr>
+            <tr>
+                <td><code>SetAttribute(Tag, SubTag, NewValue, Causer)</code></td>
+                <td>Overwrites value directly</td>
+            </tr>
+            <tr>
+                <td><code>SetEnableOverflows(Tag, bool)</code></td>
+                <td>Toggles overflow mode at runtime</td>
+            </tr>
+            <tr>
+                <td><code>SetEnableReplicated(Tag, bool)</code></td>
+                <td>Toggles per-attribute replication</td>
+            </tr>
         </tbody>
     </table>
     <p>Both <code>ModifyAttribute</code> and <code>SetAttribute</code> trigger:</p>
@@ -165,15 +223,29 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetAttributeValue(Tag)</code></td><td>Full <code>FStatAttribute</code> struct</td></tr>
-            <tr><td><code>GetSubAttributeValue(Tag, SubTag)</code></td><td>Single <code>float</code> (Current, Max, or Base)</td></tr>
-            <tr><td><code>HasAttribute(Tag)</code></td><td><code>bool</code></td></tr>
-            <tr><td><code>RemoveAttribute(Tag)</code></td><td>Removes from map + replication</td></tr>
+            <tr>
+                <td><code>GetAttributeValue(Tag)</code></td>
+                <td>Full <code>FStatAttribute</code> struct</td>
+            </tr>
+            <tr>
+                <td><code>GetSubAttributeValue(Tag, SubTag)</code></td>
+                <td>Single <code>float</code> (Current, Max, or Base)</td>
+            </tr>
+            <tr>
+                <td><code>HasAttribute(Tag)</code></td>
+                <td><code>bool</code></td>
+            </tr>
+            <tr>
+                <td><code>RemoveAttribute(Tag)</code></td>
+                <td>Removes from map + replication</td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Replication Support</h3>
-    <p>Attributes are replicated via <code>FastArraySerializer</code>. The system uses internal index caches for efficient O(1) lookup during add/remove/update operations. Client-side sync is handled via <code>SynchronizeLocalAttributes()</code>, with retry support for late-joiner scenarios.</p>
+    <p>Attributes are replicated via <code>FastArraySerializer</code>. The system uses internal index caches for
+        efficient O(1) lookup during add/remove/update operations. Client-side sync is handled via
+        <code>SynchronizeLocalAttributes()</code>, with retry support for late-joiner scenarios.</p>
 
     <hr>
 
@@ -191,7 +263,8 @@
     float AdditiveValue,
     float MultiplicativeValue = 1.0f);</code></pre>
     </div>
-    <p>Returns a unique <code>InstanceID</code> for the created modifier. The modifier is added to the replicated modifier array and the affected attribute is marked dirty for recalculation.</p>
+    <p>Returns a unique <code>InstanceID</code> for the created modifier. The modifier is added to the replicated
+        modifier array and the affected attribute is marked dirty for recalculation.</p>
 
     <h3>Removal API</h3>
     <table class="data-table">
@@ -203,11 +276,31 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RemoveModifierByID(InstanceID)</code></td><td>Exact match</td><td><code>bool</code></td></tr>
-            <tr><td><code>RemoveModifiersByOwner(OwnerID)</code></td><td>All matching OwnerID</td><td>Count removed</td></tr>
-            <tr><td><code>RemoveModifiersBySource(SourceTag)</code></td><td>All matching SourceTag</td><td>Count removed</td></tr>
-            <tr><td><code>RemoveModifiersByAttribute(AttributeTag)</code></td><td>All on attribute</td><td>Count removed</td></tr>
-            <tr><td><code>RemoveModifiersWithFilters(Count, ID, Owner, Source, Attr)</code></td><td>Combined filter</td><td>Count removed</td></tr>
+            <tr>
+                <td><code>RemoveModifierByID(InstanceID)</code></td>
+                <td>Exact match</td>
+                <td><code>bool</code></td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByOwner(OwnerID)</code></td>
+                <td>All matching OwnerID</td>
+                <td>Count removed</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersBySource(SourceTag)</code></td>
+                <td>All matching SourceTag</td>
+                <td>Count removed</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByAttribute(AttributeTag)</code></td>
+                <td>All on attribute</td>
+                <td>Count removed</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersWithFilters(Count, ID, Owner, Source, Attr)</code></td>
+                <td>Combined filter</td>
+                <td>Count removed</td>
+            </tr>
         </tbody>
     </table>
 
@@ -220,15 +313,29 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetModifiersForAttribute(Tag)</code></td><td><code>TArray&lt;FStatModifier&gt;</code></td></tr>
-            <tr><td><code>GetModifiersByOwner(OwnerID)</code></td><td><code>TArray&lt;FStatModifier&gt;</code></td></tr>
-            <tr><td><code>GetModifiersBySource(SourceTag)</code></td><td><code>TArray&lt;FStatModifier&gt;</code></td></tr>
-            <tr><td><code>GetModifierCount()</code></td><td><code>int32</code></td></tr>
+            <tr>
+                <td><code>GetModifiersForAttribute(Tag)</code></td>
+                <td><code>TArray&lt;FStatModifier&gt;</code></td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersByOwner(OwnerID)</code></td>
+                <td><code>TArray&lt;FStatModifier&gt;</code></td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersBySource(SourceTag)</code></td>
+                <td><code>TArray&lt;FStatModifier&gt;</code></td>
+            </tr>
+            <tr>
+                <td><code>GetModifierCount()</code></td>
+                <td><code>int32</code></td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Recalculation</h3>
-    <p>When modifiers are added or removed, affected attributes are marked dirty. The recalculation pipeline computes the final Max value using additive and multiplicative modifiers, then clamps Current to the valid range (unless overflow is enabled).</p>
+    <p>When modifiers are added or removed, affected attributes are marked dirty. The recalculation pipeline computes
+        the final Max value using additive and multiplicative modifiers, then clamps Current to the valid range (unless
+        overflow is enabled).</p>
 
     <hr>
 
@@ -245,10 +352,12 @@ void  ClearAllThresholds();
 void  ClearThresholdsForAttribute(FGameplayTag AttributeTag);
 bool  HasActiveThresholds() const;</code></pre>
     </div>
-    <p><code>AddAttributeThreshold</code> returns a unique handle. The threshold fires <code>OnAttributeThresholdReached</code> when the monitored sub-attribute crosses the configured value.</p>
+    <p><code>AddAttributeThreshold</code> returns a unique handle. The threshold fires
+        <code>OnAttributeThresholdReached</code> when the monitored sub-attribute crosses the configured value.</p>
 
     <h3>Check Flow</h3>
-    <p>Whenever an attribute is modified, the system checks all active thresholds for that attribute and broadcasts the <code>OnAttributeThresholdReached</code> event for any that have been crossed.</p>
+    <p>Whenever an attribute is modified, the system checks all active thresholds for that attribute and broadcasts the
+        <code>OnAttributeThresholdReached</code> event for any that have been crossed.</p>
 
     <h3>Event Signature</h3>
     <div class="code-block">
@@ -267,7 +376,8 @@ bool  HasActiveThresholds() const;</code></pre>
     <hr>
 
     <h2 id="status-tracking">8. Status Tracking</h2>
-    <p>The component maintains <strong>dual-sided tracking</strong> &mdash; statuses this actor has <strong>casted</strong> and statuses it has <strong>received</strong>.</p>
+    <p>The component maintains <strong>dual-sided tracking</strong> &mdash; statuses this actor has
+        <strong>casted</strong> and statuses it has <strong>received</strong>.</p>
 
     <h3>Query API</h3>
     <table class="data-table">
@@ -278,21 +388,46 @@ bool  HasActiveThresholds() const;</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>HasCastedStatus(Tag)</code></td><td>Hierarchical</td></tr>
-            <tr><td><code>HasReceivedStatus(Tag)</code></td><td>Hierarchical</td></tr>
-            <tr><td><code>HasExactCastedStatus(Tag)</code></td><td>Exact</td></tr>
-            <tr><td><code>HasExactReceivedStatus(Tag)</code></td><td>Exact</td></tr>
-            <tr><td><code>HasAnyCastedStatus(Tags)</code></td><td>Any match</td></tr>
-            <tr><td><code>HasAnyReceivedStatus(Tags)</code></td><td>Any match</td></tr>
-            <tr><td><code>HasAllCastedStatus(Tags)</code></td><td>All match</td></tr>
-            <tr><td><code>HasAllReceivedStatus(Tags)</code></td><td>All match</td></tr>
+            <tr>
+                <td><code>HasCastedStatus(Tag)</code></td>
+                <td>Hierarchical</td>
+            </tr>
+            <tr>
+                <td><code>HasReceivedStatus(Tag)</code></td>
+                <td>Hierarchical</td>
+            </tr>
+            <tr>
+                <td><code>HasExactCastedStatus(Tag)</code></td>
+                <td>Exact</td>
+            </tr>
+            <tr>
+                <td><code>HasExactReceivedStatus(Tag)</code></td>
+                <td>Exact</td>
+            </tr>
+            <tr>
+                <td><code>HasAnyCastedStatus(Tags)</code></td>
+                <td>Any match</td>
+            </tr>
+            <tr>
+                <td><code>HasAnyReceivedStatus(Tags)</code></td>
+                <td>Any match</td>
+            </tr>
+            <tr>
+                <td><code>HasAllCastedStatus(Tags)</code></td>
+                <td>All match</td>
+            </tr>
+            <tr>
+                <td><code>HasAllReceivedStatus(Tags)</code></td>
+                <td>All match</td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Replicated Status Data</h3>
     <p>Status tracking is replicated via FastArraySerializer in two streams:</p>
     <ul>
-        <li><strong>Seeds</strong> &mdash; full snapshot on status add/remove (StackCount, StartTime, MaxDuration, TickInterval, MaxIterations)</li>
+        <li><strong>Seeds</strong> &mdash; full snapshot on status add/remove (StackCount, StartTime, MaxDuration,
+            TickInterval, MaxIterations)</li>
         <li><strong>Updates</strong> &mdash; incremental delta stream for stack/refresh/runtime tuning changes</li>
     </ul>
     <p>Dedup watermarks prevent duplicate processing of replicated events.</p>
@@ -326,7 +461,9 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     AActor* TargetActor,
     const TArray&lt;FForgeVariableOverride&gt;&amp; Overrides);</code></pre>
     </div>
-    <p>Resolves the StatusDefinition asset, pre-generates a StatusID, and either executes immediately (if the asset is loaded) or triggers an async load. The StatusID is returned immediately in both cases, allowing callers to track the status before execution begins.</p>
+    <p>Resolves the StatusDefinition asset, pre-generates a StatusID, and either executes immediately (if the asset is
+        loaded) or triggers an async load. The StatusID is returned immediately in both cases, allowing callers to track
+        the status before execution begins.</p>
 
     <h3>CastStatusSync</h3>
     <div class="code-block">
@@ -341,7 +478,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     </div>
     <div class="info-box warning">
         <div class="info-title">&#9888;&#65039; Warning</div>
-        <p>Synchronous loading may stall the game thread. Prefer <code>CastStatusAsync</code> for non-critical paths.</p>
+        <p>Synchronous loading may stall the game thread. Prefer <code>CastStatusAsync</code> for non-critical paths.
+        </p>
     </div>
 
     <h3>Status Removal</h3>
@@ -353,13 +491,27 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RemoveAllCastedStatuses(bOnEnd)</code></td><td>All casted by this component</td></tr>
-            <tr><td><code>RemoveAllReceivedStatuses(bOnEnd)</code></td><td>All received by this component</td></tr>
-            <tr><td><code>RemoveCastedStatusesByTag(Tag, bOnEnd)</code></td><td>Exact tag match, casted</td></tr>
-            <tr><td><code>RemoveReceivedStatusesByTag(Tag, bOnEnd)</code></td><td>Exact tag match, received</td></tr>
+            <tr>
+                <td><code>RemoveAllCastedStatuses(bOnEnd)</code></td>
+                <td>All casted by this component</td>
+            </tr>
+            <tr>
+                <td><code>RemoveAllReceivedStatuses(bOnEnd)</code></td>
+                <td>All received by this component</td>
+            </tr>
+            <tr>
+                <td><code>RemoveCastedStatusesByTag(Tag, bOnEnd)</code></td>
+                <td>Exact tag match, casted</td>
+            </tr>
+            <tr>
+                <td><code>RemoveReceivedStatusesByTag(Tag, bOnEnd)</code></td>
+                <td>Exact tag match, received</td>
+            </tr>
         </tbody>
     </table>
-    <p>All removal methods delegate to <code>WorldSubsystem-&gt;RemoveStatus()</code>. The <code>bExecuteOnEndEvent</code> flag controls whether the <code>OnEnd</code> event block is dispatched before termination.</p>
+    <p>All removal methods delegate to <code>WorldSubsystem-&gt;RemoveStatus()</code>. The
+        <code>bExecuteOnEndEvent</code> flag controls whether the <code>OnEnd</code> event block is dispatched before
+        termination.</p>
 
     <hr>
 
@@ -375,10 +527,22 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>NotifyCastedStatus(StatusID, PoolIndex)</code></td><td>This component casted a status that became an instance</td></tr>
-            <tr><td><code>NotifyReceivedStatus(StatusID, PoolIndex)</code></td><td>This component received a status that became an instance</td></tr>
-            <tr><td><code>NotifyStatusRemoved(StatusID, bWasCaster)</code></td><td>An instance involving this component was removed</td></tr>
-            <tr><td><code>NotifyStatusUpdated(UpdateData, bWasCaster)</code></td><td>Non-deducible runtime update (stack/refresh/tuning)</td></tr>
+            <tr>
+                <td><code>NotifyCastedStatus(StatusID, PoolIndex)</code></td>
+                <td>This component casted a status that became an instance</td>
+            </tr>
+            <tr>
+                <td><code>NotifyReceivedStatus(StatusID, PoolIndex)</code></td>
+                <td>This component received a status that became an instance</td>
+            </tr>
+            <tr>
+                <td><code>NotifyStatusRemoved(StatusID, bWasCaster)</code></td>
+                <td>An instance involving this component was removed</td>
+            </tr>
+            <tr>
+                <td><code>NotifyStatusUpdated(UpdateData, bWasCaster)</code></td>
+                <td>Non-deducible runtime update (stack/refresh/tuning)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -391,19 +555,39 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>OnCastedStatusSet</code></td><td>Casted status lifecycle boundary (add/remove)</td></tr>
-            <tr><td><code>OnReceivedStatusSet</code></td><td>Received status lifecycle boundary (add/remove)</td></tr>
-            <tr><td><code>OnCastedStatusUpdate</code></td><td>Casted status delta update</td></tr>
-            <tr><td><code>OnReceivedStatusUpdate</code></td><td>Received status delta update</td></tr>
-            <tr><td><code>OnCastedStatusTagChanged</code></td><td>Casted tag added/removed</td></tr>
-            <tr><td><code>OnReceivedStatusTagChanged</code></td><td>Received tag added/removed</td></tr>
+            <tr>
+                <td><code>OnCastedStatusSet</code></td>
+                <td>Casted status lifecycle boundary (add/remove)</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusSet</code></td>
+                <td>Received status lifecycle boundary (add/remove)</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusUpdate</code></td>
+                <td>Casted status delta update</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusUpdate</code></td>
+                <td>Received status delta update</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusTagChanged</code></td>
+                <td>Casted tag added/removed</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusTagChanged</code></td>
+                <td>Received tag added/removed</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="interceptor-section">11. Interceptor Section</h2>
-    <p>Each component manages <strong>two independent interceptor registries</strong> &mdash; one for Caster-scope events, one for Target-scope events. The system maintains efficient registries for interceptor lookup and dispatch.</p>
+    <p>Each component manages <strong>two independent interceptor registries</strong> &mdash; one for Caster-scope
+        events, one for Target-scope events. The system maintains efficient registries for interceptor lookup and
+        dispatch.</p>
 
     <h3>Registration API</h3>
     <div class="code-block">
@@ -419,7 +603,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     UStatsX_StatsComponentBase* SourceComponent,
     int64 SourceStatusID = 0);</code></pre>
     </div>
-    <p>Returns a handle for later unregistration. The <code>SourceStatusID</code> parameter allows automatic cleanup when the registering status instance terminates.</p>
+    <p>Returns a handle for later unregistration. The <code>SourceStatusID</code> parameter allows automatic cleanup
+        when the registering status instance terminates.</p>
 
     <h3>Unregistration API</h3>
     <table class="data-table">
@@ -430,15 +615,28 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>UnregisterInterceptor(Handle)</code></td><td>Single interceptor</td></tr>
-            <tr><td><code>UnregisterInterceptorsForEvent(Tag, Scope)</code></td><td>All for event+scope</td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromSource(Component)</code></td><td>All from source component</td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromStatus(StatusID)</code></td><td>All from source status</td></tr>
+            <tr>
+                <td><code>UnregisterInterceptor(Handle)</code></td>
+                <td>Single interceptor</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterInterceptorsForEvent(Tag, Scope)</code></td>
+                <td>All for event+scope</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromSource(Component)</code></td>
+                <td>All from source component</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromStatus(StatusID)</code></td>
+                <td>All from source status</td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Reentrancy Safety</h3>
-    <p>When interceptors are being dispatched, removal requests are <strong>deferred</strong> to avoid iterator invalidation. After dispatch completes, all deferred removals are flushed.</p>
+    <p>When interceptors are being dispatched, removal requests are <strong>deferred</strong> to avoid iterator
+        invalidation. After dispatch completes, all deferred removals are flushed.</p>
 
     <h3>Dispatch API</h3>
     <div class="code-block">
@@ -451,7 +649,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     EInterceptorScope Scope,
     EInterceptorEventPhase Phase);</code></pre>
     </div>
-    <p>Returns <code>false</code> if any interceptor halted execution. The system uses an event cache for O(1) early exit when no interceptors are registered for the requested events.</p>
+    <p>Returns <code>false</code> if any interceptor halted execution. The system uses an event cache for O(1) early
+        exit when no interceptors are registered for the requested events.</p>
 
     <hr>
 
@@ -464,7 +663,9 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     FGameplayTag EventTag,
     const TArray&lt;FForgeVariableOverride&gt;&amp; Payload);</code></pre>
     </div>
-    <p>Sends a Forge event using the component's owner actor as scope. Only status instances waiting on the same event tag + scope actor are resumed. The optional <code>Payload</code> is auto-applied as variable overrides on <code>WaitForEvent</code> resume.</p>
+    <p>Sends a Forge event using the component's owner actor as scope. Only status instances waiting on the same event
+        tag + scope actor are resumed. The optional <code>Payload</code> is auto-applied as variable overrides on
+        <code>WaitForEvent</code> resume.</p>
     <p>Returns the number of listeners that were resumed.</p>
 
     <hr>
@@ -473,7 +674,8 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
     <p>The component provides four built-in mitigation formulas plus a Blueprint-overridable custom formula.</p>
 
     <h3>Resistance Mapping</h3>
-    <p>A tag-driven map associates damage types with resistance attribute tags. All built-in formulas use this mapping to resolve which attributes reduce incoming damage.</p>
+    <p>A tag-driven map associates damage types with resistance attribute tags. All built-in formulas use this mapping
+        to resolve which attributes reduce incoming damage.</p>
 
     <h3>Built-In Formulas</h3>
     <table class="data-table">
@@ -485,15 +687,32 @@ bool StatusUpdateHasMaxIterations(UpdateData);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Mitigation_XFlat()</code></td><td><code>Delta - &Sigma;ResistanceValues</code></td><td>Flat reduction</td></tr>
-            <tr><td><code>Mitigation_XPercentage()</code></td><td><code>Delta &times; (1 - &Sigma;Resistance/100)</code></td><td>Percentage reduction</td></tr>
-            <tr><td><code>Mitigation_XDiminishing()</code></td><td><code>Delta &times; ScaleFactor / (ScaleFactor + &Sigma;Resistance)</code></td><td>Diminishing returns</td></tr>
-            <tr><td><code>Mitigation_XExponentialDecay()</code></td><td><code>Delta &times; e^(-&Sigma;Resistance/ScaleFactor)</code></td><td>Exponential decay</td></tr>
+            <tr>
+                <td><code>Mitigation_XFlat()</code></td>
+                <td><code>Delta - &Sigma;ResistanceValues</code></td>
+                <td>Flat reduction</td>
+            </tr>
+            <tr>
+                <td><code>Mitigation_XPercentage()</code></td>
+                <td><code>Delta &times; (1 - &Sigma;Resistance/100)</code></td>
+                <td>Percentage reduction</td>
+            </tr>
+            <tr>
+                <td><code>Mitigation_XDiminishing()</code></td>
+                <td><code>Delta &times; ScaleFactor / (ScaleFactor + &Sigma;Resistance)</code></td>
+                <td>Diminishing returns</td>
+            </tr>
+            <tr>
+                <td><code>Mitigation_XExponentialDecay()</code></td>
+                <td><code>Delta &times; e^(-&Sigma;Resistance/ScaleFactor)</code></td>
+                <td>Exponential decay</td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Scale Factors</h3>
-    <p>Diminishing and exponential decay formulas use configurable scale factors that are <code>EditAnywhere</code> / <code>BlueprintReadWrite</code> &mdash; tunable per-actor.</p>
+    <p>Diminishing and exponential decay formulas use configurable scale factors that are <code>EditAnywhere</code> /
+        <code>BlueprintReadWrite</code> &mdash; tunable per-actor.</p>
 
     <h3>Custom Formula (Blueprint Override)</h3>
     <div class="code-block">
@@ -511,7 +730,8 @@ float Mitigation_CustomFormula(
     FGameplayTag StatusTag,
     int64 StatusID);</code></pre>
     </div>
-    <p>Full context is provided &mdash; the Blueprint implementation has access to the exact status, caster, damage types, and target attribute being modified.</p>
+    <p>Full context is provided &mdash; the Blueprint implementation has access to the exact status, caster, damage
+        types, and target attribute being modified.</p>
 
     <hr>
 
@@ -526,18 +746,37 @@ float Mitigation_CustomFormula(
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>ReplicatedAttributes</code></td><td>Attribute values (per-attribute replication flag)</td></tr>
-            <tr><td><code>ReplicatedModifiers</code></td><td>Active modifiers</td></tr>
-            <tr><td><code>ReplicatedCastedTags</code></td><td>Casted status tags</td></tr>
-            <tr><td><code>ReplicatedReceivedTags</code></td><td>Received status tags</td></tr>
-            <tr><td><code>ReplicatedStatusSeeds</code></td><td>Status lifecycle snapshots</td></tr>
-            <tr><td><code>ReplicatedStatusUpdates</code></td><td>Status delta stream</td></tr>
+            <tr>
+                <td><code>ReplicatedAttributes</code></td>
+                <td>Attribute values (per-attribute replication flag)</td>
+            </tr>
+            <tr>
+                <td><code>ReplicatedModifiers</code></td>
+                <td>Active modifiers</td>
+            </tr>
+            <tr>
+                <td><code>ReplicatedCastedTags</code></td>
+                <td>Casted status tags</td>
+            </tr>
+            <tr>
+                <td><code>ReplicatedReceivedTags</code></td>
+                <td>Received status tags</td>
+            </tr>
+            <tr>
+                <td><code>ReplicatedStatusSeeds</code></td>
+                <td>Status lifecycle snapshots</td>
+            </tr>
+            <tr>
+                <td><code>ReplicatedStatusUpdates</code></td>
+                <td>Status delta stream</td>
+            </tr>
         </tbody>
     </table>
     <p>All six use <code>FastArraySerializer</code> for delta-compressed replication.</p>
 
     <h3>Client Sync Retry</h3>
-    <p>Non-authority clients schedule periodic sync retries to handle late-joiner scenarios where the initial replication burst may be incomplete.</p>
+    <p>Non-authority clients schedule periodic sync retries to handle late-joiner scenarios where the initial
+        replication burst may be incomplete.</p>
 
     <hr>
 
@@ -552,7 +791,8 @@ bool bDebugReplication = false;
 bool DebugAttributeChanges = false;
 bool DebugModifiers = false;</code></pre>
     </div>
-    <p>All are <code>EditAnywhere</code> / <code>BlueprintReadWrite</code> &mdash; toggleable per-component instance in the editor Details panel.</p>
+    <p>All are <code>EditAnywhere</code> / <code>BlueprintReadWrite</code> &mdash; toggleable per-component instance in
+        the editor Details panel.</p>
 
     <hr>
 
@@ -568,7 +808,9 @@ public:
     virtual UStatsX_StatsComponentBase* GetStatsComponentChecked(bool&amp; bOutIsValid);
 };</code></pre>
     </div>
-    <p><strong>Purpose:</strong> Objects that need to provide access to their associated component can implement this interface. This avoids <code>Cast&lt;&gt;</code> runtime cost &mdash; a simple interface call resolves the component reference.</p>
+    <p><strong>Purpose:</strong> Objects that need to provide access to their associated component can implement this
+        interface. This avoids <code>Cast&lt;&gt;</code> runtime cost &mdash; a simple interface call resolves the
+        component reference.</p>
     <p><code>UStatsX_StatsComponentBase</code> itself implements this interface, returning <code>this</code>.</p>
 
     <hr>
@@ -585,14 +827,46 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>OnAttributeChanged</code></td><td><code>(AttributeTag, NewValue)</code></td><td>Any attribute modification</td></tr>
-            <tr><td><code>OnAttributeThresholdReached</code></td><td><code>(AttributeTag, SubAttributeTag, OldValue, NewValue, Handle, Causer)</code></td><td>Threshold crossed</td></tr>
-            <tr><td><code>OnCastedStatusTagChanged</code></td><td><code>(StatusTag, bAdded)</code></td><td>Casted tag added/removed</td></tr>
-            <tr><td><code>OnReceivedStatusTagChanged</code></td><td><code>(StatusTag, bAdded)</code></td><td>Received tag added/removed</td></tr>
-            <tr><td><code>OnCastedStatusSet</code></td><td><code>(FStatusSetData)</code></td><td>Casted status lifecycle boundary</td></tr>
-            <tr><td><code>OnReceivedStatusSet</code></td><td><code>(FStatusSetData)</code></td><td>Received status lifecycle boundary</td></tr>
-            <tr><td><code>OnCastedStatusUpdate</code></td><td><code>(FStatusUpdateData)</code></td><td>Casted status delta update</td></tr>
-            <tr><td><code>OnReceivedStatusUpdate</code></td><td><code>(FStatusUpdateData)</code></td><td>Received status delta update</td></tr>
+            <tr>
+                <td><code>OnAttributeChanged</code></td>
+                <td><code>(AttributeTag, NewValue)</code></td>
+                <td>Any attribute modification</td>
+            </tr>
+            <tr>
+                <td><code>OnAttributeThresholdReached</code></td>
+                <td><code>(AttributeTag, SubAttributeTag, OldValue, NewValue, Handle, Causer)</code></td>
+                <td>Threshold crossed</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusTagChanged</code></td>
+                <td><code>(StatusTag, bAdded)</code></td>
+                <td>Casted tag added/removed</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusTagChanged</code></td>
+                <td><code>(StatusTag, bAdded)</code></td>
+                <td>Received tag added/removed</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusSet</code></td>
+                <td><code>(FStatusSetData)</code></td>
+                <td>Casted status lifecycle boundary</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusSet</code></td>
+                <td><code>(FStatusSetData)</code></td>
+                <td>Received status lifecycle boundary</td>
+            </tr>
+            <tr>
+                <td><code>OnCastedStatusUpdate</code></td>
+                <td><code>(FStatusUpdateData)</code></td>
+                <td>Casted status delta update</td>
+            </tr>
+            <tr>
+                <td><code>OnReceivedStatusUpdate</code></td>
+                <td><code>(FStatusUpdateData)</code></td>
+                <td>Received status delta update</td>
+            </tr>
         </tbody>
     </table>
 
@@ -605,17 +879,50 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>InitializeAttribute()</code></td><td>Initialization</td></tr>
-            <tr><td><code>InitializeResourceAttribute()</code></td><td>Initialization</td></tr>
-            <tr><td><code>InitializeStatAttribute()</code></td><td>Initialization</td></tr>
-            <tr><td><code>RemoveAttribute()</code></td><td>Management</td></tr>
-            <tr><td><code>ModifyAttribute()</code></td><td>Setter</td></tr>
-            <tr><td><code>SetAttribute()</code></td><td>Setter</td></tr>
-            <tr><td><code>SetEnableOverflows()</code></td><td>Setter</td></tr>
-            <tr><td><code>SetEnableReplicated()</code></td><td>Setter</td></tr>
-            <tr><td><code>GetAttributeValue()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetSubAttributeValue()</code></td><td>Getter</td></tr>
-            <tr><td><code>HasAttribute()</code></td><td>Query</td></tr>
+            <tr>
+                <td><code>InitializeAttribute()</code></td>
+                <td>Initialization</td>
+            </tr>
+            <tr>
+                <td><code>InitializeResourceAttribute()</code></td>
+                <td>Initialization</td>
+            </tr>
+            <tr>
+                <td><code>InitializeStatAttribute()</code></td>
+                <td>Initialization</td>
+            </tr>
+            <tr>
+                <td><code>RemoveAttribute()</code></td>
+                <td>Management</td>
+            </tr>
+            <tr>
+                <td><code>ModifyAttribute()</code></td>
+                <td>Setter</td>
+            </tr>
+            <tr>
+                <td><code>SetAttribute()</code></td>
+                <td>Setter</td>
+            </tr>
+            <tr>
+                <td><code>SetEnableOverflows()</code></td>
+                <td>Setter</td>
+            </tr>
+            <tr>
+                <td><code>SetEnableReplicated()</code></td>
+                <td>Setter</td>
+            </tr>
+            <tr>
+                <td><code>GetAttributeValue()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetSubAttributeValue()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>HasAttribute()</code></td>
+                <td>Query</td>
+            </tr>
         </tbody>
     </table>
 
@@ -628,16 +935,46 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>AddModifier()</code></td><td>Application</td></tr>
-            <tr><td><code>RemoveModifierByID()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveModifiersByOwner()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveModifiersBySource()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveModifiersByAttribute()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveModifiersWithFilters()</code></td><td>Removal</td></tr>
-            <tr><td><code>GetModifiersForAttribute()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetModifiersByOwner()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetModifiersBySource()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetModifierCount()</code></td><td>Getter</td></tr>
+            <tr>
+                <td><code>AddModifier()</code></td>
+                <td>Application</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifierByID()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByOwner()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersBySource()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByAttribute()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersWithFilters()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersForAttribute()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersByOwner()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersBySource()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetModifierCount()</code></td>
+                <td>Getter</td>
+            </tr>
         </tbody>
     </table>
 
@@ -650,10 +987,22 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>AddAttributeThreshold()</code></td><td>Registration</td></tr>
-            <tr><td><code>RemoveAttributeThreshold()</code></td><td>Removal</td></tr>
-            <tr><td><code>ClearAllThresholds()</code></td><td>Bulk removal</td></tr>
-            <tr><td><code>ClearThresholdsForAttribute()</code></td><td>Filtered removal</td></tr>
+            <tr>
+                <td><code>AddAttributeThreshold()</code></td>
+                <td>Registration</td>
+            </tr>
+            <tr>
+                <td><code>RemoveAttributeThreshold()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>ClearAllThresholds()</code></td>
+                <td>Bulk removal</td>
+            </tr>
+            <tr>
+                <td><code>ClearThresholdsForAttribute()</code></td>
+                <td>Filtered removal</td>
+            </tr>
         </tbody>
     </table>
 
@@ -666,15 +1015,42 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>CastStatusAsync()</code></td><td>Execution</td></tr>
-            <tr><td><code>CastStatusSync()</code></td><td>Execution</td></tr>
-            <tr><td><code>RemoveAllCastedStatuses()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveAllReceivedStatuses()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveCastedStatusesByTag()</code></td><td>Removal</td></tr>
-            <tr><td><code>RemoveReceivedStatusesByTag()</code></td><td>Removal</td></tr>
-            <tr><td><code>GetStatusData()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetStatusTagFromHandle()</code></td><td>Getter</td></tr>
-            <tr><td><code>GetStatusInstanceRemainingTime()</code></td><td>Client utility</td></tr>
+            <tr>
+                <td><code>CastStatusAsync()</code></td>
+                <td>Execution</td>
+            </tr>
+            <tr>
+                <td><code>CastStatusSync()</code></td>
+                <td>Execution</td>
+            </tr>
+            <tr>
+                <td><code>RemoveAllCastedStatuses()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveAllReceivedStatuses()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveCastedStatusesByTag()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>RemoveReceivedStatusesByTag()</code></td>
+                <td>Removal</td>
+            </tr>
+            <tr>
+                <td><code>GetStatusData()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetStatusTagFromHandle()</code></td>
+                <td>Getter</td>
+            </tr>
+            <tr>
+                <td><code>GetStatusInstanceRemainingTime()</code></td>
+                <td>Client utility</td>
+            </tr>
         </tbody>
     </table>
 
@@ -687,14 +1063,38 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>HasCastedStatus()</code></td><td>Hierarchical</td></tr>
-            <tr><td><code>HasReceivedStatus()</code></td><td>Hierarchical</td></tr>
-            <tr><td><code>HasExactCastedStatus()</code></td><td>Exact</td></tr>
-            <tr><td><code>HasExactReceivedStatus()</code></td><td>Exact</td></tr>
-            <tr><td><code>HasAnyCastedStatus()</code></td><td>Any</td></tr>
-            <tr><td><code>HasAnyReceivedStatus()</code></td><td>Any</td></tr>
-            <tr><td><code>HasAllCastedStatus()</code></td><td>All</td></tr>
-            <tr><td><code>HasAllReceivedStatus()</code></td><td>All</td></tr>
+            <tr>
+                <td><code>HasCastedStatus()</code></td>
+                <td>Hierarchical</td>
+            </tr>
+            <tr>
+                <td><code>HasReceivedStatus()</code></td>
+                <td>Hierarchical</td>
+            </tr>
+            <tr>
+                <td><code>HasExactCastedStatus()</code></td>
+                <td>Exact</td>
+            </tr>
+            <tr>
+                <td><code>HasExactReceivedStatus()</code></td>
+                <td>Exact</td>
+            </tr>
+            <tr>
+                <td><code>HasAnyCastedStatus()</code></td>
+                <td>Any</td>
+            </tr>
+            <tr>
+                <td><code>HasAnyReceivedStatus()</code></td>
+                <td>Any</td>
+            </tr>
+            <tr>
+                <td><code>HasAllCastedStatus()</code></td>
+                <td>All</td>
+            </tr>
+            <tr>
+                <td><code>HasAllReceivedStatus()</code></td>
+                <td>All</td>
+            </tr>
         </tbody>
     </table>
 
@@ -707,15 +1107,42 @@ public:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>RegisterInterceptor()</code></td><td>C++</td></tr>
-            <tr><td><code>UnregisterInterceptor()</code></td><td>BlueprintCallable</td></tr>
-            <tr><td><code>UnregisterInterceptorsForEvent()</code></td><td>BlueprintCallable</td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromSource()</code></td><td>BlueprintCallable</td></tr>
-            <tr><td><code>UnregisterAllInterceptorsFromStatus()</code></td><td>C++</td></tr>
-            <tr><td><code>HasInterceptorsForEvents()</code></td><td>C++</td></tr>
-            <tr><td><code>GetInterceptorCountForEvent()</code></td><td>BlueprintCallable</td></tr>
-            <tr><td><code>BroadcastToScope()</code></td><td>C++</td></tr>
-            <tr><td><code>SendForgeEvent()</code></td><td>BlueprintCallable</td></tr>
+            <tr>
+                <td><code>RegisterInterceptor()</code></td>
+                <td>C++</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterInterceptor()</code></td>
+                <td>BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterInterceptorsForEvent()</code></td>
+                <td>BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromSource()</code></td>
+                <td>BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><code>UnregisterAllInterceptorsFromStatus()</code></td>
+                <td>C++</td>
+            </tr>
+            <tr>
+                <td><code>HasInterceptorsForEvents()</code></td>
+                <td>C++</td>
+            </tr>
+            <tr>
+                <td><code>GetInterceptorCountForEvent()</code></td>
+                <td>BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><code>BroadcastToScope()</code></td>
+                <td>C++</td>
+            </tr>
+            <tr>
+                <td><code>SendForgeEvent()</code></td>
+                <td>BlueprintCallable</td>
+            </tr>
         </tbody>
     </table>
 

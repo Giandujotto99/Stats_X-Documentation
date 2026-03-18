@@ -3,8 +3,18 @@
 
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVariableHeader, VariableBlob, ForgeVariableAccess, OP_SetVariable / OP_GetVariable<br>
-        Typed, tag-addressed variable storage within status instances &mdash; supporting runtime read/write from both handlers and external consumers.</p>
+        <p><strong>Stats_X v1.404</strong> &mdash; FForgeVariableHeader, VariableBlob, ForgeVariableAccess,
+            OP_SetVariable / OP_GetVariable<br>
+            Typed, tag-addressed variable storage within status instances &mdash; supporting runtime read/write from
+            both handlers and external consumers.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Stats_X_Variable_System.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -26,7 +36,9 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p>The Variable System provides <strong>typed, tag-addressed, per-instance persistent storage</strong> for status logic. Variables are the primary way for status bytecode to maintain mutable state across ticks, suspensions, and event callbacks.</p>
+    <p>The Variable System provides <strong>typed, tag-addressed, per-instance persistent storage</strong> for status
+        logic. Variables are the primary way for status bytecode to maintain mutable state across ticks, suspensions,
+        and event callbacks.</p>
 
     <table class="data-table">
         <thead>
@@ -36,13 +48,35 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Optimized binary storage</strong></td><td>All variables packed into a single blob &mdash; cache-friendly with minimal indirection</td></tr>
-            <tr><td><strong>Compiler-resolved offsets</strong></td><td>Blob offsets are computed at compile time and baked into instructions &mdash; no runtime tag lookups in the hot path</td></tr>
-            <tr><td><strong>Tag-based access for external consumers</strong></td><td>Interceptors and Custom Logics use <code>FindVariable()</code> for tag-based runtime access</td></tr>
-            <tr><td><strong>Typed field descriptors</strong></td><td>24 supported field types with size validation and pool indirection</td></tr>
-            <tr><td><strong>Container modes</strong></td><td>Single (scalar), Array, Set &mdash; arrays/sets use handle indirection into a separate pool</td></tr>
-            <tr><td><strong>Automatic initialization</strong></td><td>Variables are initialized automatically from compiled defaults when a status begins execution</td></tr>
-            <tr><td><strong>Object indirection</strong></td><td>UObject* references are managed safely with GC integration</td></tr>
+            <tr>
+                <td><strong>Optimized binary storage</strong></td>
+                <td>All variables packed into a single blob &mdash; cache-friendly with minimal indirection</td>
+            </tr>
+            <tr>
+                <td><strong>Compiler-resolved offsets</strong></td>
+                <td>Blob offsets are computed at compile time and baked into instructions &mdash; no runtime tag lookups
+                    in the hot path</td>
+            </tr>
+            <tr>
+                <td><strong>Tag-based access for external consumers</strong></td>
+                <td>Interceptors and Custom Logics use <code>FindVariable()</code> for tag-based runtime access</td>
+            </tr>
+            <tr>
+                <td><strong>Typed field descriptors</strong></td>
+                <td>24 supported field types with size validation and pool indirection</td>
+            </tr>
+            <tr>
+                <td><strong>Container modes</strong></td>
+                <td>Single (scalar), Array, Set &mdash; arrays/sets use handle indirection into a separate pool</td>
+            </tr>
+            <tr>
+                <td><strong>Automatic initialization</strong></td>
+                <td>Variables are initialized automatically from compiled defaults when a status begins execution</td>
+            </tr>
+            <tr>
+                <td><strong>Object indirection</strong></td>
+                <td>UObject* references are managed safely with GC integration</td>
+            </tr>
         </tbody>
     </table>
 
@@ -77,7 +111,9 @@
     (compiler offset)    (compiler offset)   (tag-based lookup)</code></pre>
     </div>
 
-    <p>Variables are stored in an optimized binary format and initialized automatically when a status begins execution. Handlers use compiler-resolved offsets for maximum performance, while external consumers (interceptors, custom logics) use tag-based lookup.</p>
+    <p>Variables are stored in an optimized binary format and initialized automatically when a status begins execution.
+        Handlers use compiler-resolved offsets for maximum performance, while external consumers (interceptors, custom
+        logics) use tag-based lookup.</p>
 
     <hr>
 
@@ -94,27 +130,111 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Float</code></td><td><code>float</code></td><td>Standard float</td></tr>
-            <tr><td><code>Int32</code></td><td><code>int32</code></td><td>Standard integer</td></tr>
-            <tr><td><code>Bool</code></td><td><code>uint8</code></td><td>Stored as byte</td></tr>
-            <tr><td><code>GameplayTag</code></td><td><code>FGameplayTag</code></td><td>Tag value</td></tr>
-            <tr><td><code>Object</code></td><td><code>UObject*</code></td><td>Pool-managed reference</td></tr>
-            <tr><td><code>Enum</code></td><td><code>uint8</code></td><td>Byte-sized enum</td></tr>
-            <tr><td><code>String</code></td><td><code>FString</code></td><td>Pool-managed</td></tr>
-            <tr><td><code>Class</code></td><td><code>UClass*</code></td><td>Pool-managed reference</td></tr>
-            <tr><td><code>Name</code></td><td><code>FName</code></td><td>Unreal name</td></tr>
-            <tr><td><code>Text</code></td><td><code>FText</code></td><td>Pool-managed</td></tr>
-            <tr><td><code>Byte</code></td><td><code>uint8</code></td><td>Unsigned byte</td></tr>
-            <tr><td><code>Int64</code></td><td><code>int64</code></td><td>64-bit integer</td></tr>
-            <tr><td><code>Double</code></td><td><code>double</code></td><td>Double precision float</td></tr>
-            <tr><td><code>Vector</code></td><td><code>FVector</code></td><td>3D vector</td></tr>
-            <tr><td><code>Rotator</code></td><td><code>FRotator</code></td><td>3D rotation</td></tr>
-            <tr><td><code>Transform</code></td><td><code>FTransform</code></td><td>Full transform</td></tr>
-            <tr><td><code>LinearColor</code></td><td><code>FLinearColor</code></td><td>RGBA color</td></tr>
-            <tr><td><code>SoftObject</code></td><td><code>TSoftObjectPtr</code></td><td>Soft reference</td></tr>
-            <tr><td><code>SoftClass</code></td><td><code>TSoftClassPtr</code></td><td>Soft class reference</td></tr>
-            <tr><td><code>Struct</code></td><td>Custom</td><td>User-defined struct with deep-copy support</td></tr>
-            <tr><td><code>GameplayTagContainer</code></td><td>inline</td><td>Inline tag collection</td></tr>
+            <tr>
+                <td><code>Float</code></td>
+                <td><code>float</code></td>
+                <td>Standard float</td>
+            </tr>
+            <tr>
+                <td><code>Int32</code></td>
+                <td><code>int32</code></td>
+                <td>Standard integer</td>
+            </tr>
+            <tr>
+                <td><code>Bool</code></td>
+                <td><code>uint8</code></td>
+                <td>Stored as byte</td>
+            </tr>
+            <tr>
+                <td><code>GameplayTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Tag value</td>
+            </tr>
+            <tr>
+                <td><code>Object</code></td>
+                <td><code>UObject*</code></td>
+                <td>Pool-managed reference</td>
+            </tr>
+            <tr>
+                <td><code>Enum</code></td>
+                <td><code>uint8</code></td>
+                <td>Byte-sized enum</td>
+            </tr>
+            <tr>
+                <td><code>String</code></td>
+                <td><code>FString</code></td>
+                <td>Pool-managed</td>
+            </tr>
+            <tr>
+                <td><code>Class</code></td>
+                <td><code>UClass*</code></td>
+                <td>Pool-managed reference</td>
+            </tr>
+            <tr>
+                <td><code>Name</code></td>
+                <td><code>FName</code></td>
+                <td>Unreal name</td>
+            </tr>
+            <tr>
+                <td><code>Text</code></td>
+                <td><code>FText</code></td>
+                <td>Pool-managed</td>
+            </tr>
+            <tr>
+                <td><code>Byte</code></td>
+                <td><code>uint8</code></td>
+                <td>Unsigned byte</td>
+            </tr>
+            <tr>
+                <td><code>Int64</code></td>
+                <td><code>int64</code></td>
+                <td>64-bit integer</td>
+            </tr>
+            <tr>
+                <td><code>Double</code></td>
+                <td><code>double</code></td>
+                <td>Double precision float</td>
+            </tr>
+            <tr>
+                <td><code>Vector</code></td>
+                <td><code>FVector</code></td>
+                <td>3D vector</td>
+            </tr>
+            <tr>
+                <td><code>Rotator</code></td>
+                <td><code>FRotator</code></td>
+                <td>3D rotation</td>
+            </tr>
+            <tr>
+                <td><code>Transform</code></td>
+                <td><code>FTransform</code></td>
+                <td>Full transform</td>
+            </tr>
+            <tr>
+                <td><code>LinearColor</code></td>
+                <td><code>FLinearColor</code></td>
+                <td>RGBA color</td>
+            </tr>
+            <tr>
+                <td><code>SoftObject</code></td>
+                <td><code>TSoftObjectPtr</code></td>
+                <td>Soft reference</td>
+            </tr>
+            <tr>
+                <td><code>SoftClass</code></td>
+                <td><code>TSoftClassPtr</code></td>
+                <td>Soft class reference</td>
+            </tr>
+            <tr>
+                <td><code>Struct</code></td>
+                <td>Custom</td>
+                <td>User-defined struct with deep-copy support</td>
+            </tr>
+            <tr>
+                <td><code>GameplayTagContainer</code></td>
+                <td>inline</td>
+                <td>Inline tag collection</td>
+            </tr>
         </tbody>
     </table>
 
@@ -124,7 +244,8 @@
 
     <h2 id="forgevariableaccess">4. ForgeVariableAccess Helper</h2>
 
-    <p>Stateless template functions used by <strong>interceptors</strong> and <strong>custom logics</strong> for tag-based variable access at runtime.</p>
+    <p>Stateless template functions used by <strong>interceptors</strong> and <strong>custom logics</strong> for
+        tag-based variable access at runtime.</p>
 
     <h3>ReadVariable</h3>
     <div class="code-block">
@@ -136,7 +257,8 @@ bool ReadVariable(const UPDA_StatusDefinition* Definition, const TArray&lt;uint8
     const FGameplayTag&amp; VariableTag, uint8 ExpectedFieldType, T&amp; OutValue);</code></pre>
     </div>
 
-    <p>Looks up a variable by tag, validates the type, and copies the value out. Returns <code>false</code> if the variable is not found or the type does not match.</p>
+    <p>Looks up a variable by tag, validates the type, and copies the value out. Returns <code>false</code> if the
+        variable is not found or the type does not match.</p>
 
     <h3>WriteVariable</h3>
     <div class="code-block">
@@ -148,7 +270,8 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
     const FGameplayTag&amp; VariableTag, uint8 ExpectedFieldType, const T&amp; Value);</code></pre>
     </div>
 
-    <p>Looks up a variable by tag, validates the type, and writes the value. Returns <code>false</code> if the variable is not found or the type does not match.</p>
+    <p>Looks up a variable by tag, validates the type, and writes the value. Returns <code>false</code> if the variable
+        is not found or the type does not match.</p>
 
     <h3>GetVariableBlob</h3>
     <div class="code-block">
@@ -157,7 +280,8 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
         </div>
         <pre><code>inline TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp; Context);</code></pre>
     </div>
-    <p>Selects the appropriate blob: <strong>Instance</strong> blob for persistent statuses, <strong>Context</strong> blob for transient/inline execution.</p>
+    <p>Selects the appropriate blob: <strong>Instance</strong> blob for persistent statuses, <strong>Context</strong>
+        blob for transient/inline execution.</p>
 
     <h3>ForgeFieldSizeHelpers</h3>
     <table class="data-table">
@@ -168,16 +292,26 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GetScalarFieldSize(uint8 FieldType)</code></td><td>Returns byte size for a single scalar element</td></tr>
-            <tr><td><code>GetExpectedVariableSize(const FForgeVariableHeader&amp;)</code></td><td>Full blob footprint including containers and TagContainers</td></tr>
-            <tr><td><code>IsObjectFieldType(uint8 FieldType)</code></td><td>Returns true for Object or Class types</td></tr>
+            <tr>
+                <td><code>GetScalarFieldSize(uint8 FieldType)</code></td>
+                <td>Returns byte size for a single scalar element</td>
+            </tr>
+            <tr>
+                <td><code>GetExpectedVariableSize(const FForgeVariableHeader&amp;)</code></td>
+                <td>Full blob footprint including containers and TagContainers</td>
+            </tr>
+            <tr>
+                <td><code>IsObjectFieldType(uint8 FieldType)</code></td>
+                <td>Returns true for Object or Class types</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="container-variables">5. Container Variables (Array / Set)</h2>
-    <p>Array and Set variables use <strong>handle indirection</strong> rather than storing data directly in the blob. The blob stores only a handle, while the actual data lives in pool-managed slots.</p>
+    <p>Array and Set variables use <strong>handle indirection</strong> rather than storing data directly in the blob.
+        The blob stores only a handle, while the actual data lives in pool-managed slots.</p>
 
     <h3>Container Modes</h3>
     <table class="data-table">
@@ -188,9 +322,18 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
             </tr>
         </thead>
         <tbody>
-            <tr><td>Single</td><td>Scalar value</td></tr>
-            <tr><td>Array</td><td>Ordered, dynamic growth</td></tr>
-            <tr><td>Set</td><td>Unordered, dynamic growth</td></tr>
+            <tr>
+                <td>Single</td>
+                <td>Scalar value</td>
+            </tr>
+            <tr>
+                <td>Array</td>
+                <td>Ordered, dynamic growth</td>
+            </tr>
+            <tr>
+                <td>Set</td>
+                <td>Unordered, dynamic growth</td>
+            </tr>
         </tbody>
     </table>
 
@@ -205,16 +348,29 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
             </tr>
         </thead>
         <tbody>
-            <tr><td>306</td><td><code>OP_ArrayAdd</code></td><td>Append element to array</td></tr>
-            <tr><td>307</td><td><code>OP_ArrayGetAt</code></td><td>Read element by index</td></tr>
-            <tr><td>308</td><td><code>OP_ArrayLength</code></td><td>Get element count</td></tr>
+            <tr>
+                <td>306</td>
+                <td><code>OP_ArrayAdd</code></td>
+                <td>Append element to array</td>
+            </tr>
+            <tr>
+                <td>307</td>
+                <td><code>OP_ArrayGetAt</code></td>
+                <td>Read element by index</td>
+            </tr>
+            <tr>
+                <td>308</td>
+                <td><code>OP_ArrayLength</code></td>
+                <td>Get element count</td>
+            </tr>
         </tbody>
     </table>
 
     <hr>
 
     <h2 id="object-indirection">6. Object Indirection</h2>
-    <p>Object references are managed safely with GC integration. UObject* values are stored via pool indirection, ensuring Unreal's garbage collector can track all references properly.</p>
+    <p>Object references are managed safely with GC integration. UObject* values are stored via pool indirection,
+        ensuring Unreal's garbage collector can track all references properly.</p>
 
     <h3>Why Indirection?</h3>
     <table class="data-table">
@@ -225,9 +381,18 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>GC safety</strong></td><td>Pool arrays are UPROPERTY &mdash; Unreal tracks references</td></tr>
-            <tr><td><strong>Compression</strong></td><td>Reduced memory footprint per variable</td></tr>
-            <tr><td><strong>Cross-domain remapping</strong></td><td>Context-to-Instance migration remaps through callbacks</td></tr>
+            <tr>
+                <td><strong>GC safety</strong></td>
+                <td>Pool arrays are UPROPERTY &mdash; Unreal tracks references</td>
+            </tr>
+            <tr>
+                <td><strong>Compression</strong></td>
+                <td>Reduced memory footprint per variable</td>
+            </tr>
+            <tr>
+                <td><strong>Cross-domain remapping</strong></td>
+                <td>Context-to-Instance migration remaps through callbacks</td>
+            </tr>
         </tbody>
     </table>
 
@@ -240,8 +405,14 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
             </tr>
         </thead>
         <tbody>
-            <tr><td>Instance exists</td><td><code>InstanceObjectPool</code></td></tr>
-            <tr><td>Transient/inline</td><td><code>ContextObjectStack</code></td></tr>
+            <tr>
+                <td>Instance exists</td>
+                <td><code>InstanceObjectPool</code></td>
+            </tr>
+            <tr>
+                <td>Transient/inline</td>
+                <td><code>ContextObjectStack</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -249,7 +420,9 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
 
     <h2 id="struct-variables">7. Struct Variables</h2>
 
-    <p>Struct-typed variables use pre-computed layout descriptors for efficient cross-domain copying. The system supports nested structs and handles complex fields (Object/Class references within structs) automatically via deep-copy with object pool remapping.</p>
+    <p>Struct-typed variables use pre-computed layout descriptors for efficient cross-domain copying. The system
+        supports nested structs and handles complex fields (Object/Class references within structs) automatically via
+        deep-copy with object pool remapping.</p>
 
     <p><strong>Key characteristics:</strong></p>
     <ul>
@@ -262,7 +435,8 @@ bool WriteVariable(const UPDA_StatusDefinition* Definition, TArray&lt;uint8&gt;&
 
     <h2 id="variable-overrides">8. Variable Overrides</h2>
 
-    <p>Variable overrides allow callers to customize initial variable values when casting a status. See <strong>Section 15 &mdash; Variable Overrides</strong> for full documentation.</p>
+    <p>Variable overrides allow callers to customize initial variable values when casting a status. See <strong>Section
+            15 &mdash; Variable Overrides</strong> for full documentation.</p>
 
     <h3>FForgeVariableOverride</h3>
     <div class="code-block">
@@ -318,15 +492,26 @@ static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>FForgeVMContext::VariableBlob</code></td><td>VM context (transient)</td><td>Single execution frame</td><td>Inline/transient execution, before instance migration</td></tr>
-            <tr><td><code>FStatusInstance::VariableBlob</code></td><td>Pool instance (persistent)</td><td>Instance lifetime</td><td>Persistent status variables across ticks and suspensions</td></tr>
+            <tr>
+                <td><code>FForgeVMContext::VariableBlob</code></td>
+                <td>VM context (transient)</td>
+                <td>Single execution frame</td>
+                <td>Inline/transient execution, before instance migration</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstance::VariableBlob</code></td>
+                <td>Pool instance (persistent)</td>
+                <td>Instance lifetime</td>
+                <td>Persistent status variables across ticks and suspensions</td>
+            </tr>
         </tbody>
     </table>
 
     <p><strong>Flow:</strong></p>
     <ol>
         <li><strong>ExecuteStatus</strong> initializes <code>Context.VariableBlob</code></li>
-        <li>If the status acquires a pool instance, variables are migrated to <code>Instance-&gt;VariableBlob</code></li>
+        <li>If the status acquires a pool instance, variables are migrated to <code>Instance-&gt;VariableBlob</code>
+        </li>
         <li>All subsequent reads/writes target the instance blob</li>
         <li>On context reset, the transient blob is zeroed but capacity is preserved</li>
     </ol>
@@ -345,8 +530,16 @@ static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code>
             </tr>
         </thead>
         <tbody>
-            <tr><td>304</td><td><code>OP_SetVariable</code></td><td><code>Nodes_Variables::SetVariable</code></td></tr>
-            <tr><td>305</td><td><code>OP_GetVariable</code></td><td><code>Nodes_Variables::GetVariable</code></td></tr>
+            <tr>
+                <td>304</td>
+                <td><code>OP_SetVariable</code></td>
+                <td><code>Nodes_Variables::SetVariable</code></td>
+            </tr>
+            <tr>
+                <td>305</td>
+                <td><code>OP_GetVariable</code></td>
+                <td><code>Nodes_Variables::GetVariable</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -359,10 +552,24 @@ static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>ReadVariable&lt;T&gt;</code></td><td><code>bool ReadVariable(const UPDA_StatusDefinition*, const TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, T&amp; OutValue)</code></td></tr>
-            <tr><td><code>WriteVariable&lt;T&gt;</code></td><td><code>bool WriteVariable(const UPDA_StatusDefinition*, TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, const T&amp; Value)</code></td></tr>
-            <tr><td><code>GetVariableBlob</code></td><td><code>TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp;)</code></td></tr>
-            <tr><td><code>GetVariableBlobConst</code></td><td><code>const TArray&lt;uint8&gt;&amp; GetVariableBlobConst(const FForgeVMContext&amp;)</code></td></tr>
+            <tr>
+                <td><code>ReadVariable&lt;T&gt;</code></td>
+                <td><code>bool ReadVariable(const UPDA_StatusDefinition*, const TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, T&amp; OutValue)</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>WriteVariable&lt;T&gt;</code></td>
+                <td><code>bool WriteVariable(const UPDA_StatusDefinition*, TArray&lt;uint8&gt;&amp;, const FGameplayTag&amp;, uint8 ExpectedFieldType, const T&amp; Value)</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>GetVariableBlob</code></td>
+                <td><code>TArray&lt;uint8&gt;&amp; GetVariableBlob(FForgeVMContext&amp;)</code></td>
+            </tr>
+            <tr>
+                <td><code>GetVariableBlobConst</code></td>
+                <td><code>const TArray&lt;uint8&gt;&amp; GetVariableBlobConst(const FForgeVMContext&amp;)</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -375,20 +582,62 @@ static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>MakeFloat</code></td><td><code>float</code></td></tr>
-            <tr><td><code>MakeInt32</code></td><td><code>int32</code></td></tr>
-            <tr><td><code>MakeBool</code></td><td><code>bool</code></td></tr>
-            <tr><td><code>MakeByte</code></td><td><code>uint8</code></td></tr>
-            <tr><td><code>MakeInt64</code></td><td><code>int64</code></td></tr>
-            <tr><td><code>MakeDouble</code></td><td><code>double</code></td></tr>
-            <tr><td><code>MakeVector</code></td><td><code>FVector</code></td></tr>
-            <tr><td><code>MakeRotator</code></td><td><code>FRotator</code></td></tr>
-            <tr><td><code>MakeTransform</code></td><td><code>FTransform</code></td></tr>
-            <tr><td><code>MakeLinearColor</code></td><td><code>FLinearColor</code></td></tr>
-            <tr><td><code>MakeGameplayTag</code></td><td><code>FGameplayTag</code></td></tr>
-            <tr><td><code>MakeName</code></td><td><code>FName</code></td></tr>
-            <tr><td><code>MakeObject</code></td><td><code>UObject*</code></td></tr>
-            <tr><td><code>MakeClass</code></td><td><code>UClass*</code></td></tr>
+            <tr>
+                <td><code>MakeFloat</code></td>
+                <td><code>float</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeInt32</code></td>
+                <td><code>int32</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeBool</code></td>
+                <td><code>bool</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeByte</code></td>
+                <td><code>uint8</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeInt64</code></td>
+                <td><code>int64</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeDouble</code></td>
+                <td><code>double</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeVector</code></td>
+                <td><code>FVector</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeRotator</code></td>
+                <td><code>FRotator</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeTransform</code></td>
+                <td><code>FTransform</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeLinearColor</code></td>
+                <td><code>FLinearColor</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeGameplayTag</code></td>
+                <td><code>FGameplayTag</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeName</code></td>
+                <td><code>FName</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeObject</code></td>
+                <td><code>UObject*</code></td>
+            </tr>
+            <tr>
+                <td><code>MakeClass</code></td>
+                <td><code>UClass*</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -401,10 +650,22 @@ static FForgeVariableOverride MakeClass(FGameplayTag Tag, UClass* Value);</code>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>FForgeVariableHeader</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
-            <tr><td><code>FForgeStructDescriptor</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
-            <tr><td><code>FForgeStructFieldMeta</code></td><td><code>Public/Data/StatusDefinition.h</code></td></tr>
-            <tr><td><code>FForgeVariableOverride</code></td><td><code>Public/Data/StatsXTypes.h</code></td></tr>
+            <tr>
+                <td><code>FForgeVariableHeader</code></td>
+                <td><code>Public/Data/StatusDefinition.h</code></td>
+            </tr>
+            <tr>
+                <td><code>FForgeStructDescriptor</code></td>
+                <td><code>Public/Data/StatusDefinition.h</code></td>
+            </tr>
+            <tr>
+                <td><code>FForgeStructFieldMeta</code></td>
+                <td><code>Public/Data/StatusDefinition.h</code></td>
+            </tr>
+            <tr>
+                <td><code>FForgeVariableOverride</code></td>
+                <td><code>Public/Data/StatsXTypes.h</code></td>
+            </tr>
         </tbody>
     </table>
 

@@ -1,10 +1,19 @@
 <section id="forge-vm" class="tutorial-section">
     <h1>ForgeVM</h1>
-    
+
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
         <p><strong>Stats_X v1.404</strong> &mdash; Forge Virtual Machine<br>
-        Singleton bytecode executor with flat handler dispatch, single global context, and handler-driven instance lifecycle.</p>
+            Singleton bytecode executor with flat handler dispatch, single global context, and handler-driven instance
+            lifecycle.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/ForgeVM__Native_Speed.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -32,7 +41,8 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p>ForgeVM is not a general-purpose scripting engine &mdash; it is a <strong>tight, deterministic bytecode executor</strong> purpose-built for the Status lifecycle. Every design choice serves three goals:</p>
+    <p>ForgeVM is not a general-purpose scripting engine &mdash; it is a <strong>tight, deterministic bytecode
+            executor</strong> purpose-built for the Status lifecycle. Every design choice serves three goals:</p>
 
     <table class="data-table">
         <thead>
@@ -57,7 +67,10 @@
         </tbody>
     </table>
 
-    <p>The VM itself is <strong>stateless between executions</strong>: it owns no persistent data about any running status. All persistence lives in <code>FStatusInstance</code> (pool-managed) and the compiled <code>UPDA_StatusDefinition</code> (asset-managed).</p>
+    <p>The VM itself is <strong>stateless between executions</strong>: it owns no persistent data about any running
+        status. All persistence lives in <code>FStatusInstance</code> (pool-managed) and the compiled
+        <code>UPDA_StatusDefinition</code> (asset-managed).
+    </p>
 
     <hr>
 
@@ -85,8 +98,10 @@
     </div>
 
     <ul>
-        <li><strong>One instance, one context, one handler table</strong> &mdash; there is no VM-per-world or VM-per-component.</li>
-        <li>Construction pre-allocates the handler table with 65&nbsp;536 entries (one per possible 16-bit OpCode), each initialised to a safe <code>UnregisteredHandler</code> stub.</li>
+        <li><strong>One instance, one context, one handler table</strong> &mdash; there is no VM-per-world or
+            VM-per-component.</li>
+        <li>Construction pre-allocates the handler table with 65&nbsp;536 entries (one per possible 16-bit OpCode), each
+            initialised to a safe <code>UnregisteredHandler</code> stub.</li>
         <li>Context stacks are pre-reserved at construction to minimise runtime allocations:</li>
     </ul>
 
@@ -132,7 +147,8 @@
     <hr>
 
     <h2 id="global-context-model">3. Global Context Model</h2>
-    <p>The VM operates through a <strong>single <code>FForgeVMContext</code></strong> that is reset and repopulated at the start of every <code>ExecuteStatus()</code> or <code>ResumeInstance()</code> call.</p>
+    <p>The VM operates through a <strong>single <code>FForgeVMContext</code></strong> that is reset and repopulated at
+        the start of every <code>ExecuteStatus()</code> or <code>ResumeInstance()</code> call.</p>
 
     <div class="code-block">
         <div class="code-header">
@@ -156,10 +172,16 @@
       └──── Execute() ◄───────┘</code></pre>
     </div>
 
-    <p>Key principle: <strong>the context is transient</strong>. After <code>Execute()</code> returns, any data that must survive is migrated to <code>FStatusInstance</code> by the handler that promoted the execution to an instance.</p>
+    <p>Key principle: <strong>the context is transient</strong>. After <code>Execute()</code> returns, any data that
+        must survive is migrated to <code>FStatusInstance</code> by the handler that promoted the execution to an
+        instance.</p>
 
     <h3>Component Caching</h3>
-    <p>During context setup the VM performs <code>FindComponentByClass&lt;UStatsX_StatsComponentBase&gt;()</code> on both Caster and Target actors <strong>once</strong>, caching the result in <code>GlobalContext.CasterComponent</code> / <code>GlobalContext.TargetComponent</code>. Handlers never repeat this lookup.</p>
+    <p>During context setup the VM performs <code>FindComponentByClass&lt;UStatsX_StatsComponentBase&gt;()</code> on
+        both Caster and Target actors <strong>once</strong>, caching the result in
+        <code>GlobalContext.CasterComponent</code> / <code>GlobalContext.TargetComponent</code>. Handlers never repeat
+        this lookup.
+    </p>
 
     <hr>
 
@@ -215,10 +237,14 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
         <pre><code>void RegisterHandler(uint16 OpCode, FForgeNodeFunc HandlerFunc);</code></pre>
     </div>
 
-    <p>Handlers are registered at module startup via <code>RegisterBuiltInHandlers()</code> and supplemented by <code>ForgeNodeRegistry_Runtime</code>. Invalid OpCodes fall through to <code>UnregisteredHandler</code> which returns <code>EForgeExecutionResult::Error</code>.</p>
+    <p>Handlers are registered at module startup via <code>RegisterBuiltInHandlers()</code> and supplemented by
+        <code>ForgeNodeRegistry_Runtime</code>. Invalid OpCodes fall through to <code>UnregisteredHandler</code> which
+        returns <code>EForgeExecutionResult::Error</code>.
+    </p>
 
     <h3>Dispatch Cost</h3>
-    <p>For user/built-in OpCodes the dispatch is a <strong>single indexed array dereference followed by an indirect function call</strong> &mdash; no virtual table, no map lookup, no string comparison.</p>
+    <p>For user/built-in OpCodes the dispatch is a <strong>single indexed array dereference followed by an indirect
+            function call</strong> &mdash; no virtual table, no map lookup, no string comparison.</p>
 
     <div class="code-block">
         <div class="code-header">
@@ -229,7 +255,8 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
   └─ OpCode ≥ 32  →  PC++; Handlers[OpCode](Ctx, Instr) // one dereference</code></pre>
     </div>
 
-    <p>Note: for user handlers, <code>PC</code> is incremented <strong>before</strong> the handler call. System ops manage their own PC advancement.</p>
+    <p>Note: for user handlers, <code>PC</code> is incremented <strong>before</strong> the handler call. System ops
+        manage their own PC advancement.</p>
 
     <hr>
 
@@ -247,7 +274,9 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
     const TArray&lt;FForgeVariableOverride&gt;* Overrides = nullptr);</code></pre>
     </div>
 
-    <p>This is the <strong>entry point for all new status execution</strong>. The StatusID is pre-generated by <code>UStatsX_GameInstanceSubsystem</code> and passed in &mdash; the VM does not allocate IDs.</p>
+    <p>This is the <strong>entry point for all new status execution</strong>. The StatusID is pre-generated by
+        <code>UStatsX_GameInstanceSubsystem</code> and passed in &mdash; the VM does not allocate IDs.
+    </p>
 
     <h3>Execution Sequence</h3>
 
@@ -277,7 +306,11 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
     </div>
 
     <h3>Key Insight &mdash; Handler-Driven Lifecycle</h3>
-    <p>The VM <strong>never creates a pool instance</strong>. The <code>OP_Start</code> handler (or any handler in the graph) decides whether the status should become a tracked instance. If it does, the handler calls <code>Pool.Acquire()</code> and sets <code>GlobalContext.Instance</code>. If no handler promotes the execution, it runs as a fire-and-forget inline computation.</p>
+    <p>The VM <strong>never creates a pool instance</strong>. The <code>OP_Start</code> handler (or any handler in the
+        graph) decides whether the status should become a tracked instance. If it does, the handler calls
+        <code>Pool.Acquire()</code> and sets <code>GlobalContext.Instance</code>. If no handler promotes the execution,
+        it runs as a fire-and-forget inline computation.
+    </p>
 
     <hr>
 
@@ -292,7 +325,8 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
     int32 OverridePC = INDEX_NONE);</code></pre>
     </div>
 
-    <p>Called by the pool tick (<code>StatsX_WorldSubsystem</code>) when a suspended instance's timer expires or its scheduled tick interval fires.</p>
+    <p>Called by the pool tick (<code>StatsX_WorldSubsystem</code>) when a suspended instance's timer expires or its
+        scheduled tick interval fires.</p>
 
     <h3>Execution Sequence</h3>
 
@@ -319,7 +353,12 @@ typedef EForgeExecutionResult(*FForgeNodeFunc)(
     </div>
 
     <h3>OverridePC &mdash; Event Handler Interrupts</h3>
-    <p>When an async event fires (e.g., a Gameplay Event trigger), the pool tick calls <code>ResumeInstance(Instance, EventHandlerPC)</code> instead of resuming from <code>SavedPC</code>. This runs the event handler as an "interrupt" &mdash; the primary async node's <code>SavedPC</code> and <code>SuspendTimer</code> remain untouched. The event handler terminates with <code>OP_EndAsyncEvent</code>, which re-suspends the instance with <code>bWaitingForAsyncEvents = true</code>.</p>
+    <p>When an async event fires (e.g., a Gameplay Event trigger), the pool tick calls
+        <code>ResumeInstance(Instance, EventHandlerPC)</code> instead of resuming from <code>SavedPC</code>. This runs
+        the event handler as an "interrupt" &mdash; the primary async node's <code>SavedPC</code> and
+        <code>SuspendTimer</code> remain untouched. The event handler terminates with <code>OP_EndAsyncEvent</code>,
+        which re-suspends the instance with <code>bWaitingForAsyncEvents = true</code>.
+    </p>
 
     <hr>
 
@@ -343,7 +382,8 @@ return Completed   // Fell off the end of bytecode</code></pre>
     </div>
 
     <ul>
-        <li>The 10&nbsp;000 instruction limit is a hard safety net. It is counted <strong>per Execute() call</strong>, not per frame.</li>
+        <li>The 10&nbsp;000 instruction limit is a hard safety net. It is counted <strong>per Execute() call</strong>,
+            not per frame.</li>
         <li>A single <code>Execute()</code> call handles the entire run-to-completion or run-to-suspension path.</li>
     </ul>
 
@@ -361,7 +401,8 @@ Dispatch:
   OpCode ≥ 32  →  PC++; Handlers[OpCode](Context, Instr)</code></pre>
     </div>
 
-    <p>The PC pre-increment for user handlers means most handlers never need to touch <code>PC</code>. Only flow-control handlers (Jump, Branch, Loop) set it explicitly.</p>
+    <p>The PC pre-increment for user handlers means most handlers never need to touch <code>PC</code>. Only flow-control
+        handlers (Jump, Branch, Loop) set it explicitly.</p>
 
     <hr>
 
@@ -378,19 +419,71 @@ Dispatch:
             </tr>
         </thead>
         <tbody>
-            <tr><td>0</td><td><code>OP_Start</code></td><td>Entry point marker &mdash; increments PC</td></tr>
-            <tr><td>1</td><td><code>OP_Jump</code></td><td>Unconditional jump to <code>Data0[24..39]</code></td></tr>
-            <tr><td>2</td><td><code>OP_JumpIfFalse</code></td><td>Reads bool from source; jumps to <code>Data0[24..39]</code> if false</td></tr>
-            <tr><td>3</td><td><code>OP_JumpTable</code></td><td>Switch dispatch: reads int32, scans <code>ContinueData</code> slots for match &rarr; jump</td></tr>
-            <tr><td>4</td><td><code>OP_Nop</code></td><td>No operation &mdash; increments PC</td></tr>
-            <tr><td>5</td><td><code>OP_BeginBlock</code></td><td>Pushes <code>FForgeFlowBlock</code> onto <code>FlowBlockStack</code></td></tr>
-            <tr><td>6</td><td><code>OP_EndBlock</code></td><td>Pops flow block, resets <code>TimeSinceLastTick</code> to &ndash;1, jumps to flow node</td></tr>
-            <tr><td>7</td><td><code>OP_ContinueData</code></td><td>Pure data slot &mdash; never executed directly (skipped by preceding handler)</td></tr>
-            <tr><td>8</td><td><code>OP_BeginEventBlock</code></td><td>Marker for event/function block start &mdash; increments PC</td></tr>
-            <tr><td>9</td><td><code>OP_EndEventBlock</code></td><td>End of event/function block &mdash; copies return values, pops call frame</td></tr>
-            <tr><td>10</td><td><code>OP_CallFunction</code></td><td>Captures args, pushes call frame, jumps to target block</td></tr>
-            <tr><td>11</td><td><code>OP_EndAsyncEvent</code></td><td>End of async event handler &mdash; re-suspends instance</td></tr>
-            <tr><td>12&ndash;31</td><td>&mdash;</td><td>Reserved for future system use</td></tr>
+            <tr>
+                <td>0</td>
+                <td><code>OP_Start</code></td>
+                <td>Entry point marker &mdash; increments PC</td>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td><code>OP_Jump</code></td>
+                <td>Unconditional jump to <code>Data0[24..39]</code></td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td><code>OP_JumpIfFalse</code></td>
+                <td>Reads bool from source; jumps to <code>Data0[24..39]</code> if false</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td><code>OP_JumpTable</code></td>
+                <td>Switch dispatch: reads int32, scans <code>ContinueData</code> slots for match &rarr; jump</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td><code>OP_Nop</code></td>
+                <td>No operation &mdash; increments PC</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td><code>OP_BeginBlock</code></td>
+                <td>Pushes <code>FForgeFlowBlock</code> onto <code>FlowBlockStack</code></td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td><code>OP_EndBlock</code></td>
+                <td>Pops flow block, resets <code>TimeSinceLastTick</code> to &ndash;1, jumps to flow node</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td><code>OP_ContinueData</code></td>
+                <td>Pure data slot &mdash; never executed directly (skipped by preceding handler)</td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td><code>OP_BeginEventBlock</code></td>
+                <td>Marker for event/function block start &mdash; increments PC</td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td><code>OP_EndEventBlock</code></td>
+                <td>End of event/function block &mdash; copies return values, pops call frame</td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td><code>OP_CallFunction</code></td>
+                <td>Captures args, pushes call frame, jumps to target block</td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td><code>OP_EndAsyncEvent</code></td>
+                <td>End of async event handler &mdash; re-suspends instance</td>
+            </tr>
+            <tr>
+                <td>12&ndash;31</td>
+                <td>&mdash;</td>
+                <td>Reserved for future system use</td>
+            </tr>
         </tbody>
     </table>
 
@@ -469,7 +562,10 @@ Instance-&gt;TimeSinceLastTick = -1.f
 
 PC = FlowNodeIdx   // Jump back to flow node for next decision</code></pre>
     </div>
-    <p>This sentinel reset prevents misinterpretation when async child completions flow through inline to a parent's <code>EndBlock</code> &mdash; without it, the parent would see a positive <code>TimeSinceLastTick</code> and treat the re-entry as a pool tick.</p>
+    <p>This sentinel reset prevents misinterpretation when async child completions flow through inline to a parent's
+        <code>EndBlock</code> &mdash; without it, the parent would see a positive <code>TimeSinceLastTick</code> and
+        treat the re-entry as a pool tick.
+    </p>
 
     <h4>OP_EndEventBlock (9)</h4>
     <p>Handles function return values and call-frame cleanup:</p>
@@ -533,7 +629,8 @@ PC = TargetIndex</code></pre>
 Instance-&gt;SetWaitingForAsyncEvents(true)
 return Suspended</code></pre>
     </div>
-    <p>Used exclusively by async event handlers that were entered via <code>OverridePC</code>. The handler must not corrupt the primary async node's <code>SavedPC</code> or <code>SuspendTimer</code>.</p>
+    <p>Used exclusively by async event handlers that were entered via <code>OverridePC</code>. The handler must not
+        corrupt the primary async node's <code>SavedPC</code> or <code>SuspendTimer</code>.</p>
 
     <hr>
 
@@ -548,7 +645,9 @@ return Suspended</code></pre>
         <pre><code>Allocate VariableBlob (Definition-&gt;VariableBlobSize bytes)
 Copy raw defaults from Pool_StructData via VariableDefaultsHeaderIndex</code></pre>
     </div>
-    <p>This copies the flat byte block compiled by the editor, which contains correct scalar values but uses <strong>pool indices</strong> for Object/Class references and may contain stale tag bytes.</p>
+    <p>This copies the flat byte block compiled by the editor, which contains correct scalar values but uses
+        <strong>pool indices</strong> for Object/Class references and may contain stale tag bytes.
+    </p>
 
     <h3>Pass 2 &mdash; Pool-Backed Fixup</h3>
     <p>Iterate all <code>FForgeVariableHeader</code> entries:</p>
@@ -562,15 +661,20 @@ Copy raw defaults from Pool_StructData via VariableDefaultsHeaderIndex</code></p
         <tbody>
             <tr>
                 <td><strong>Object / Class</strong> (scalar)</td>
-                <td>Read <code>uint16</code> pool index from blob &rarr; resolve to <code>UObject*</code> via <code>Pool_Objects</code>/<code>Pool_Classes</code> &rarr; allocate into <code>ContextObjectStack</code> &rarr; write new <code>uint16</code> context index back into blob</td>
+                <td>Read <code>uint16</code> pool index from blob &rarr; resolve to <code>UObject*</code> via
+                    <code>Pool_Objects</code>/<code>Pool_Classes</code> &rarr; allocate into
+                    <code>ContextObjectStack</code> &rarr; write new <code>uint16</code> context index back into blob
+                </td>
             </tr>
             <tr>
                 <td><strong>GameplayTag</strong> (scalar)</td>
-                <td>Reconstruct from <code>Pool_Tags[DefaultValuePoolIndex]</code> &rarr; <code>Memcpy</code> into blob</td>
+                <td>Reconstruct from <code>Pool_Tags[DefaultValuePoolIndex]</code> &rarr; <code>Memcpy</code> into blob
+                </td>
             </tr>
             <tr>
                 <td><strong>GameplayTagContainer</strong></td>
-                <td>Reconstruct from <code>Pool_ArraysHeaders</code> &rarr; copy up to <code>Header.Count</code> tags from <code>Pool_Tags</code> &rarr; write count prefix + tag array into blob</td>
+                <td>Reconstruct from <code>Pool_ArraysHeaders</code> &rarr; copy up to <code>Header.Count</code> tags
+                    from <code>Pool_Tags</code> &rarr; write count prefix + tag array into blob</td>
             </tr>
             <tr>
                 <td><strong>Array / Set containers</strong></td>
@@ -599,7 +703,9 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
     <hr>
 
     <h2 id="variable-overrides">10. Variable Overrides</h2>
-    <p>After default initialisation and before <code>Execute()</code>, runtime overrides are applied via <code>ApplyVariableOverrides()</code>.</p>
+    <p>After default initialisation and before <code>Execute()</code>, runtime overrides are applied via
+        <code>ApplyVariableOverrides()</code>.
+    </p>
 
     <div class="code-block">
         <div class="code-header">
@@ -636,29 +742,91 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td>Float</td><td>1</td><td>4 bytes</td></tr>
-            <tr><td>Int32</td><td>2</td><td>4 bytes</td></tr>
-            <tr><td>Bool</td><td>3</td><td>1 byte</td></tr>
-            <tr><td>GameplayTag</td><td>4</td><td><code>sizeof(FGameplayTag)</code></td></tr>
-            <tr><td>Object</td><td>5</td><td>Via <code>AllocContextObject</code></td></tr>
-            <tr><td>Enum</td><td>6</td><td>4 bytes</td></tr>
-            <tr><td>Class</td><td>8</td><td>Via <code>AllocContextObject</code></td></tr>
-            <tr><td>Name</td><td>9</td><td><code>sizeof(FName)</code></td></tr>
-            <tr><td>Byte</td><td>11</td><td>1 byte</td></tr>
-            <tr><td>Int64</td><td>12</td><td>8 bytes</td></tr>
-            <tr><td>Double</td><td>13</td><td>8 bytes</td></tr>
-            <tr><td>Vector</td><td>14</td><td><code>sizeof(FVector)</code></td></tr>
-            <tr><td>Rotator</td><td>15</td><td><code>sizeof(FRotator)</code></td></tr>
-            <tr><td>Transform</td><td>16</td><td><code>sizeof(FTransform)</code></td></tr>
-            <tr><td>LinearColor</td><td>17</td><td><code>sizeof(FLinearColor)</code></td></tr>
+            <tr>
+                <td>Float</td>
+                <td>1</td>
+                <td>4 bytes</td>
+            </tr>
+            <tr>
+                <td>Int32</td>
+                <td>2</td>
+                <td>4 bytes</td>
+            </tr>
+            <tr>
+                <td>Bool</td>
+                <td>3</td>
+                <td>1 byte</td>
+            </tr>
+            <tr>
+                <td>GameplayTag</td>
+                <td>4</td>
+                <td><code>sizeof(FGameplayTag)</code></td>
+            </tr>
+            <tr>
+                <td>Object</td>
+                <td>5</td>
+                <td>Via <code>AllocContextObject</code></td>
+            </tr>
+            <tr>
+                <td>Enum</td>
+                <td>6</td>
+                <td>4 bytes</td>
+            </tr>
+            <tr>
+                <td>Class</td>
+                <td>8</td>
+                <td>Via <code>AllocContextObject</code></td>
+            </tr>
+            <tr>
+                <td>Name</td>
+                <td>9</td>
+                <td><code>sizeof(FName)</code></td>
+            </tr>
+            <tr>
+                <td>Byte</td>
+                <td>11</td>
+                <td>1 byte</td>
+            </tr>
+            <tr>
+                <td>Int64</td>
+                <td>12</td>
+                <td>8 bytes</td>
+            </tr>
+            <tr>
+                <td>Double</td>
+                <td>13</td>
+                <td>8 bytes</td>
+            </tr>
+            <tr>
+                <td>Vector</td>
+                <td>14</td>
+                <td><code>sizeof(FVector)</code></td>
+            </tr>
+            <tr>
+                <td>Rotator</td>
+                <td>15</td>
+                <td><code>sizeof(FRotator)</code></td>
+            </tr>
+            <tr>
+                <td>Transform</td>
+                <td>16</td>
+                <td><code>sizeof(FTransform)</code></td>
+            </tr>
+            <tr>
+                <td>LinearColor</td>
+                <td>17</td>
+                <td><code>sizeof(FLinearColor)</code></td>
+            </tr>
         </tbody>
     </table>
-    <p><strong>Array/Set variables cannot be overridden</strong> &mdash; the blob holds a <code>uint16</code> handle; overwriting it would corrupt the array pool mapping.</p>
+    <p><strong>Array/Set variables cannot be overridden</strong> &mdash; the blob holds a <code>uint16</code> handle;
+        overwriting it would corrupt the array pool mapping.</p>
 
     <hr>
 
     <h2 id="nested-execution">11. Nested Execution</h2>
-    <p>A handler may call <code>ExecuteStatus()</code> during its own execution (e.g., applying a secondary status as a reaction). The VM supports this via a <strong>thread_local depth counter and context save/restore</strong>.</p>
+    <p>A handler may call <code>ExecuteStatus()</code> during its own execution (e.g., applying a secondary status as a
+        reaction). The VM supports this via a <strong>thread_local depth counter and context save/restore</strong>.</p>
 
     <div class="code-block">
         <div class="code-header">
@@ -687,7 +855,8 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
   └─ Handler_A continues with original context intact</code></pre>
     </div>
 
-    <p>The save/restore is a <strong>full value copy</strong> of <code>FForgeVMContext</code>, including all transient stacks. This is safe because:</p>
+    <p>The save/restore is a <strong>full value copy</strong> of <code>FForgeVMContext</code>, including all transient
+        stacks. This is safe because:</p>
     <ul>
         <li>The inner execution completely replaces the context</li>
         <li>On return, <code>MoveTemp</code> restores the original without redundant copies</li>
@@ -697,7 +866,9 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
     <hr>
 
     <h2 id="function-call-abi">12. Function Call ABI</h2>
-    <p>ForgeVM supports <strong>intra-definition function calls</strong> via <code>OP_CallFunction</code> / <code>OP_EndEventBlock</code>.</p>
+    <p>ForgeVM supports <strong>intra-definition function calls</strong> via <code>OP_CallFunction</code> /
+        <code>OP_EndEventBlock</code>.
+    </p>
 
     <h3>Call Frame Structure</h3>
     <div class="code-block">
@@ -714,17 +885,22 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
     </div>
 
     <h3>Argument Capture</h3>
-    <p>Arguments are described by <code>FForgeFunctionIODescriptor</code> &rarr; <code>FForgeFunctionIOEntry</code> arrays. Each entry specifies:</p>
+    <p>Arguments are described by <code>FForgeFunctionIODescriptor</code> &rarr; <code>FForgeFunctionIOEntry</code>
+        arrays. Each entry specifies:</p>
     <ul>
         <li><code>FieldType</code> &mdash; the data type</li>
         <li><code>Source</code> &mdash; where to read (Literal, Context, Instance, CallFrame)</li>
         <li><code>Payload</code> &mdash; pool index or byte offset</li>
     </ul>
 
-    <p><code>CaptureFunctionArg()</code> copies each argument value into <code>FunctionArgSlots</code> / <code>FunctionArgBlob</code> / <code>FunctionArgObjectPool</code>. Inside the callee, arguments are accessed via <code>EForgeDataSource::CallFrame</code>.</p>
+    <p><code>CaptureFunctionArg()</code> copies each argument value into <code>FunctionArgSlots</code> /
+        <code>FunctionArgBlob</code> / <code>FunctionArgObjectPool</code>. Inside the callee, arguments are accessed via
+        <code>EForgeDataSource::CallFrame</code>.
+    </p>
 
     <h3>Return Value Copy</h3>
-    <p><code>OP_EndEventBlock</code> copies return values from the callee's output locations to the caller's target locations:</p>
+    <p><code>OP_EndEventBlock</code> copies return values from the callee's output locations to the caller's target
+        locations:</p>
     <ol>
         <li>Validate return descriptor exists and range is valid</li>
         <li>Validate output-target descriptor exists and range is valid</li>
@@ -732,7 +908,10 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
         <li>Assert per-entry type match: <code>SourceEntry.FieldType == TargetEntry.FieldType</code></li>
         <li><code>CopyFunctionReturnValue()</code> for each slot</li>
     </ol>
-    <p>On <strong>any</strong> validation error, the call frame is <strong>always cleaned up</strong> (ArgSlots/ArgBlob/ObjectPool truncated to snapshot sizes) to keep the stack consistent &mdash; then <code>Error</code> is returned.</p>
+    <p>On <strong>any</strong> validation error, the call frame is <strong>always cleaned up</strong>
+        (ArgSlots/ArgBlob/ObjectPool truncated to snapshot sizes) to keep the stack consistent &mdash; then
+        <code>Error</code> is returned.
+    </p>
 
     <h3>Stack Depth Limit</h3>
     <div class="code-block">
@@ -746,7 +925,8 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
     <h3>Suspend/Resume Across Function Boundaries</h3>
     <p>When execution suspends inside a function call:</p>
     <ul>
-        <li><code>PersistFunctionStateToInstance()</code> saves the entire call stack, arg slots, arg blob, and object pool into the instance</li>
+        <li><code>PersistFunctionStateToInstance()</code> saves the entire call stack, arg slots, arg blob, and object
+            pool into the instance</li>
         <li>On <code>ResumeInstance()</code>, <code>LoadFunctionStateFromInstance()</code> restores them</li>
         <li>Execution resumes at the exact instruction within the callee</li>
     </ul>
@@ -762,15 +942,42 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>10&nbsp;000 instruction limit</strong></td><td>Prevents infinite loops from blocking the game thread</td></tr>
-            <tr><td><strong>32-frame call stack limit</strong></td><td>Prevents infinite recursion in function calls</td></tr>
-            <tr><td><strong><code>UnregisteredHandler</code> stub</strong></td><td>All 65&nbsp;536 handler slots default to a safe error handler</td></tr>
-            <tr><td><strong>Null Definition guards</strong></td><td>Every entry point validates Definition pointer</td></tr>
-            <tr><td><strong>Descriptor range validation</strong></td><td>Function I/O descriptors are bounds-checked before access</td></tr>
-            <tr><td><strong>Type match validation</strong></td><td>Return value copies verify <code>FieldType</code> equality per entry</td></tr>
-            <tr><td><strong>Editor-only override size checks</strong></td><td><code>WITH_EDITOR</code> builds validate override byte sizes match expected type sizes</td></tr>
-            <tr><td><strong>Nested execution isolation</strong></td><td>Thread-local depth counter + context save/restore</td></tr>
-            <tr><td><strong>EndBlock sentinel reset</strong></td><td><code>TimeSinceLastTick = -1</code> prevents async completion misinterpretation</td></tr>
+            <tr>
+                <td><strong>10&nbsp;000 instruction limit</strong></td>
+                <td>Prevents infinite loops from blocking the game thread</td>
+            </tr>
+            <tr>
+                <td><strong>32-frame call stack limit</strong></td>
+                <td>Prevents infinite recursion in function calls</td>
+            </tr>
+            <tr>
+                <td><strong><code>UnregisteredHandler</code> stub</strong></td>
+                <td>All 65&nbsp;536 handler slots default to a safe error handler</td>
+            </tr>
+            <tr>
+                <td><strong>Null Definition guards</strong></td>
+                <td>Every entry point validates Definition pointer</td>
+            </tr>
+            <tr>
+                <td><strong>Descriptor range validation</strong></td>
+                <td>Function I/O descriptors are bounds-checked before access</td>
+            </tr>
+            <tr>
+                <td><strong>Type match validation</strong></td>
+                <td>Return value copies verify <code>FieldType</code> equality per entry</td>
+            </tr>
+            <tr>
+                <td><strong>Editor-only override size checks</strong></td>
+                <td><code>WITH_EDITOR</code> builds validate override byte sizes match expected type sizes</td>
+            </tr>
+            <tr>
+                <td><strong>Nested execution isolation</strong></td>
+                <td>Thread-local depth counter + context save/restore</td>
+            </tr>
+            <tr>
+                <td><strong>EndBlock sentinel reset</strong></td>
+                <td><code>TimeSinceLastTick = -1</code> prevents async completion misinterpretation</td>
+            </tr>
         </tbody>
     </table>
 
@@ -787,12 +994,25 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StatsX.VM.Resume</code></td><td><code>STAT_StatsXVMResume</code></td><td><code>ResumeInstance()</code></td></tr>
-            <tr><td><code>StatsX.VM.Execute</code></td><td><code>STAT_StatsXVMExecute</code></td><td><code>Execute()</code></td></tr>
-            <tr><td><code>StatsX.VM.ExecuteStep</code></td><td><code>STAT_StatsXVMExecuteStep</code></td><td><code>ExecuteStep()</code></td></tr>
+            <tr>
+                <td><code>StatsX.VM.Resume</code></td>
+                <td><code>STAT_StatsXVMResume</code></td>
+                <td><code>ResumeInstance()</code></td>
+            </tr>
+            <tr>
+                <td><code>StatsX.VM.Execute</code></td>
+                <td><code>STAT_StatsXVMExecute</code></td>
+                <td><code>Execute()</code></td>
+            </tr>
+            <tr>
+                <td><code>StatsX.VM.ExecuteStep</code></td>
+                <td><code>STAT_StatsXVMExecuteStep</code></td>
+                <td><code>ExecuteStep()</code></td>
+            </tr>
         </tbody>
     </table>
-    <p>These are available in the UE5 profiler under the <code>StatsX</code> category for per-frame and per-instance cost analysis.</p>
+    <p>These are available in the UE5 profiler under the <code>StatsX</code> category for per-frame and per-instance
+        cost analysis.</p>
 
     <hr>
 
@@ -863,8 +1083,16 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>GlobalContext</code></td><td><code>FForgeVMContext</code></td><td>Single reusable execution context</td></tr>
-            <tr><td><code>Handlers</code></td><td><code>TArray&lt;FForgeNodeFunc&gt;</code></td><td>65&nbsp;536-entry flat dispatch table</td></tr>
+            <tr>
+                <td><code>GlobalContext</code></td>
+                <td><code>FForgeVMContext</code></td>
+                <td>Single reusable execution context</td>
+            </tr>
+            <tr>
+                <td><code>Handlers</code></td>
+                <td><code>TArray&lt;FForgeNodeFunc&gt;</code></td>
+                <td>65&nbsp;536-entry flat dispatch table</td>
+            </tr>
         </tbody>
     </table>
 
@@ -878,15 +1106,51 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Get()</code></td><td><code>static FForgeVM&amp;</code></td><td>Meyer's singleton accessor</td></tr>
-            <tr><td><code>ExecuteStatus()</code></td><td><code>(...) &rarr; EForgeExecutionResult</code></td><td>Execute a status definition inline</td></tr>
-            <tr><td><code>ResumeInstance()</code></td><td><code>(FStatusInstance*, int32 OverridePC) &rarr; EForgeExecutionResult</code></td><td>Resume a suspended instance</td></tr>
-            <tr><td><code>Execute()</code></td><td><code>() &rarr; EForgeExecutionResult</code></td><td>Run GlobalContext to completion/suspension</td></tr>
-            <tr><td><code>ExecuteStep()</code></td><td><code>() &rarr; EForgeExecutionResult</code></td><td>Execute single instruction (debug)</td></tr>
-            <tr><td><code>GetContext()</code></td><td><code>FForgeVMContext&amp;</code></td><td>Context access for handlers</td></tr>
-            <tr><td><code>RegisterHandler()</code></td><td><code>(uint16, FForgeNodeFunc) &rarr; void</code></td><td>Register handler for OpCode</td></tr>
-            <tr><td><code>RegisterBuiltInHandlers()</code></td><td><code>() &rarr; void</code></td><td>Module startup registration</td></tr>
-            <tr><td><code>Shutdown()</code></td><td><code>() &rarr; void</code></td><td>Reset all handlers to default</td></tr>
+            <tr>
+                <td><code>Get()</code></td>
+                <td><code>static FForgeVM&amp;</code></td>
+                <td>Meyer's singleton accessor</td>
+            </tr>
+            <tr>
+                <td><code>ExecuteStatus()</code></td>
+                <td><code>(...) &rarr; EForgeExecutionResult</code></td>
+                <td>Execute a status definition inline</td>
+            </tr>
+            <tr>
+                <td><code>ResumeInstance()</code></td>
+                <td><code>(FStatusInstance*, int32 OverridePC) &rarr; EForgeExecutionResult</code></td>
+                <td>Resume a suspended instance</td>
+            </tr>
+            <tr>
+                <td><code>Execute()</code></td>
+                <td><code>() &rarr; EForgeExecutionResult</code></td>
+                <td>Run GlobalContext to completion/suspension</td>
+            </tr>
+            <tr>
+                <td><code>ExecuteStep()</code></td>
+                <td><code>() &rarr; EForgeExecutionResult</code></td>
+                <td>Execute single instruction (debug)</td>
+            </tr>
+            <tr>
+                <td><code>GetContext()</code></td>
+                <td><code>FForgeVMContext&amp;</code></td>
+                <td>Context access for handlers</td>
+            </tr>
+            <tr>
+                <td><code>RegisterHandler()</code></td>
+                <td><code>(uint16, FForgeNodeFunc) &rarr; void</code></td>
+                <td>Register handler for OpCode</td>
+            </tr>
+            <tr>
+                <td><code>RegisterBuiltInHandlers()</code></td>
+                <td><code>() &rarr; void</code></td>
+                <td>Module startup registration</td>
+            </tr>
+            <tr>
+                <td><code>Shutdown()</code></td>
+                <td><code>() &rarr; void</code></td>
+                <td>Reset all handlers to default</td>
+            </tr>
         </tbody>
     </table>
 
@@ -899,11 +1163,26 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Continue</code></td><td>Proceed to next instruction</td></tr>
-            <tr><td><code>Completed</code></td><td>Execution finished (reached end or <code>OP_EndEventBlock</code> with empty stack)</td></tr>
-            <tr><td><code>Suspended</code></td><td>Async node requested suspension (Delay, WaitForEvent, etc.)</td></tr>
-            <tr><td><code>Aborted</code></td><td>Manual abort triggered</td></tr>
-            <tr><td><code>Error</code></td><td>Runtime error (see <code>Context.LastError</code>)</td></tr>
+            <tr>
+                <td><code>Continue</code></td>
+                <td>Proceed to next instruction</td>
+            </tr>
+            <tr>
+                <td><code>Completed</code></td>
+                <td>Execution finished (reached end or <code>OP_EndEventBlock</code> with empty stack)</td>
+            </tr>
+            <tr>
+                <td><code>Suspended</code></td>
+                <td>Async node requested suspension (Delay, WaitForEvent, etc.)</td>
+            </tr>
+            <tr>
+                <td><code>Aborted</code></td>
+                <td>Manual abort triggered</td>
+            </tr>
+            <tr>
+                <td><code>Error</code></td>
+                <td>Runtime error (see <code>Context.LastError</code>)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -916,6 +1195,7 @@ ResetTransientArrays()   // Keep only variable slots, reset transient count</cod
     FForgeVMContext&amp; Context,
     const FStatusInstruction&amp; Instr);</code></pre>
     </div>
-    <p>Stateless function pointer &mdash; no object, no vtable, no closure. Handlers read all data from the instruction payload and context.</p>
+    <p>Stateless function pointer &mdash; no object, no vtable, no closure. Handlers read all data from the instruction
+        payload and context.</p>
 
 </section>

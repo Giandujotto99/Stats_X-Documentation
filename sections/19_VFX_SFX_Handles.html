@@ -4,7 +4,15 @@
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
         <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7<br>
-        Handle-based registry for spawned Niagara particle systems and persistent audio components.</p>
+            Handle-based registry for spawned Niagara particle systems and persistent audio components.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/VFX_and_SFX_Handles.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -25,7 +33,11 @@
 
     <h2 id="vfx-sfx-overview">1. Overview</h2>
 
-    <p>Stats_X manages spawned Niagara particle systems and persistent audio components through a <strong>handle-based registry</strong> hosted on <code>UStatsX_WorldSubsystem</code>. Every VFX or SFX spawned by the ForgeVM receives a unique <code>int64</code> handle. The subsystem maps that handle to the spawned component, enabling later operations &mdash; update, stop, or destroy &mdash; to locate the component by handle alone, even across the network.</p>
+    <p>Stats_X manages spawned Niagara particle systems and persistent audio components through a <strong>handle-based
+            registry</strong> hosted on <code>UStatsX_WorldSubsystem</code>. Every VFX or SFX spawned by the ForgeVM
+        receives a unique <code>int64</code> handle. The subsystem maps that handle to the spawned component, enabling
+        later operations &mdash; update, stop, or destroy &mdash; to locate the component by handle alone, even across
+        the network.</p>
 
     <p>The handle layer sits between the ForgeVM opcode handlers and the Cosmetic Cue bus, ensuring that:</p>
 
@@ -39,7 +51,9 @@
 
     <h2 id="handle-allocation">2. Handle Allocation</h2>
 
-    <p>Handles are unique identifiers assigned automatically when spawning VFX/SFX. Both VFX and SFX use independent allocators. Handle <code>0</code> is reserved as the invalid sentinel; all API entry points early-return on invalid handles.</p>
+    <p>Handles are unique identifiers assigned automatically when spawning VFX/SFX. Both VFX and SFX use independent
+        allocators. Handle <code>0</code> is reserved as the invalid sentinel; all API entry points early-return on
+        invalid handles.</p>
 
     <table class="data-table">
         <thead>
@@ -50,9 +64,21 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Component type</td><td><code>UNiagaraComponent</code></td><td><code>UAudioComponent</code></td></tr>
-            <tr><td>Handle type</td><td><code>int64</code></td><td><code>int64</code></td></tr>
-            <tr><td>Invalid sentinel</td><td><code>0</code></td><td><code>0</code></td></tr>
+            <tr>
+                <td>Component type</td>
+                <td><code>UNiagaraComponent</code></td>
+                <td><code>UAudioComponent</code></td>
+            </tr>
+            <tr>
+                <td>Handle type</td>
+                <td><code>int64</code></td>
+                <td><code>int64</code></td>
+            </tr>
+            <tr>
+                <td>Invalid sentinel</td>
+                <td><code>0</code></td>
+                <td><code>0</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -82,7 +108,8 @@
         <pre><code>void RegisterLocalVFXComponent(int64 VFXHandle, UNiagaraComponent* Component)</code></pre>
     </div>
 
-    <p>Maps a handle to its spawned Niagara component. If <code>Component</code> is invalid, the entry is removed instead (defensive cleanup).</p>
+    <p>Maps a handle to its spawned Niagara component. If <code>Component</code> is invalid, the entry is removed
+        instead (defensive cleanup).</p>
 
     <h3>FindLocalVFXComponent</h3>
 
@@ -110,7 +137,8 @@
 
     <h2 id="sfx-handle-registry-api">4. SFX Handle Registry API</h2>
 
-    <p>The SFX registry is structurally identical to the VFX registry, substituting <code>UAudioComponent</code> for <code>UNiagaraComponent</code>.</p>
+    <p>The SFX registry is structurally identical to the VFX registry, substituting <code>UAudioComponent</code> for
+        <code>UNiagaraComponent</code>.</p>
 
     <table class="data-table">
         <thead>
@@ -120,16 +148,29 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>AllocateCosmeticSFXHandle</code></td><td><code>int64 AllocateCosmeticSFXHandle()</code></td></tr>
-            <tr><td><code>RegisterLocalSFXComponent</code></td><td><code>void RegisterLocalSFXComponent(int64 SFXHandle, UAudioComponent* Component)</code></td></tr>
-            <tr><td><code>FindLocalSFXComponent</code></td><td><code>UAudioComponent* FindLocalSFXComponent(int64 SFXHandle)</code></td></tr>
-            <tr><td><code>UnregisterLocalSFXComponent</code></td><td><code>void UnregisterLocalSFXComponent(int64 SFXHandle)</code></td></tr>
+            <tr>
+                <td><code>AllocateCosmeticSFXHandle</code></td>
+                <td><code>int64 AllocateCosmeticSFXHandle()</code></td>
+            </tr>
+            <tr>
+                <td><code>RegisterLocalSFXComponent</code></td>
+                <td><code>void RegisterLocalSFXComponent(int64 SFXHandle, UAudioComponent* Component)</code></td>
+            </tr>
+            <tr>
+                <td><code>FindLocalSFXComponent</code></td>
+                <td><code>UAudioComponent* FindLocalSFXComponent(int64 SFXHandle)</code></td>
+            </tr>
+            <tr>
+                <td><code>UnregisterLocalSFXComponent</code></td>
+                <td><code>void UnregisterLocalSFXComponent(int64 SFXHandle)</code></td>
+            </tr>
         </tbody>
     </table>
 
     <div class="info-box info">
         <div class="info-title">ℹ️ Note</div>
-        <p>SFX handles are only allocated when <code>EStatsXSFXPlaybackPolicy == Persistent</code>. Fire-and-forget sounds receive handle <code>0</code> and are not tracked.</p>
+        <p>SFX handles are only allocated when <code>EStatsXSFXPlaybackPolicy == Persistent</code>. Fire-and-forget
+            sounds receive handle <code>0</code> and are not tracked.</p>
     </div>
 
     <hr>
@@ -140,15 +181,20 @@
 
     <h3>OP_SpawnVFX</h3>
 
-    <p>Spawns a Niagara system at a world location and returns a handle for later control. The node accepts a Niagara system asset, transform, transform space, net delivery mode, and pool policy. On the server, a cosmetic cue is emitted so clients can spawn the effect locally.</p>
+    <p>Spawns a Niagara system at a world location and returns a handle for later control. The node accepts a Niagara
+        system asset, transform, transform space, net delivery mode, and pool policy. On the server, a cosmetic cue is
+        emitted so clients can spawn the effect locally.</p>
 
     <h3>OP_SpawnVFXAttachedtoActor</h3>
 
-    <p>Spawns a Niagara system attached to an actor socket. In addition to the standard VFX parameters, this node accepts a parent actor, socket name, and attach rule. If the named socket is not found, the handler logs a warning and falls back to the root component.</p>
+    <p>Spawns a Niagara system attached to an actor socket. In addition to the standard VFX parameters, this node
+        accepts a parent actor, socket name, and attach rule. If the named socket is not found, the handler logs a
+        warning and falls back to the root component.</p>
 
     <h3>OP_StopVFX</h3>
 
-    <p>Stops and deactivates a previously spawned Niagara system by handle. Accepts an optional blend-out time &mdash; if zero or near-zero, the effect is deactivated immediately; otherwise Niagara blends out naturally.</p>
+    <p>Stops and deactivates a previously spawned Niagara system by handle. Accepts an optional blend-out time &mdash;
+        if zero or near-zero, the effect is deactivated immediately; otherwise Niagara blends out naturally.</p>
 
     <h3>OP_UpdateVFX</h3>
 
@@ -168,8 +214,18 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>FireAndForget</code> (or <code>Auto</code>)</td><td>One-shot playback</td><td><code>0</code></td><td>No</td></tr>
-            <tr><td><code>Persistent</code></td><td>Tracked audio component</td><td>allocated</td><td>Yes</td></tr>
+            <tr>
+                <td><code>FireAndForget</code> (or <code>Auto</code>)</td>
+                <td>One-shot playback</td>
+                <td><code>0</code></td>
+                <td>No</td>
+            </tr>
+            <tr>
+                <td><code>Persistent</code></td>
+                <td>Tracked audio component</td>
+                <td>allocated</td>
+                <td>Yes</td>
+            </tr>
         </tbody>
     </table>
 
@@ -177,7 +233,8 @@
 
     <h3>OP_StopSFX</h3>
 
-    <p>Stops a persistent audio component by handle. Accepts an optional fade-out time &mdash; if zero or near-zero, the sound stops immediately; otherwise it fades out over the specified duration.</p>
+    <p>Stops a persistent audio component by handle. Accepts an optional fade-out time &mdash; if zero or near-zero, the
+        sound stops immediately; otherwise it fades out over the specified duration.</p>
 
     <hr>
 
@@ -193,9 +250,18 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>World</code></td><td>Input transform is already in world space.</td></tr>
-            <tr><td><code>TargetRelative</code></td><td>Input transform is relative to the target actor.</td></tr>
-            <tr><td><code>CasterRelative</code></td><td>Input transform is relative to the caster actor.</td></tr>
+            <tr>
+                <td><code>World</code></td>
+                <td>Input transform is already in world space.</td>
+            </tr>
+            <tr>
+                <td><code>TargetRelative</code></td>
+                <td>Input transform is relative to the target actor.</td>
+            </tr>
+            <tr>
+                <td><code>CasterRelative</code></td>
+                <td>Input transform is relative to the caster actor.</td>
+            </tr>
         </tbody>
     </table>
 
@@ -209,10 +275,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>KeepRelativeOffset</code></td><td>Input transform used as local offset relative to parent/socket.</td></tr>
-            <tr><td><code>KeepWorldTransform</code></td><td>Input transform treated as resolved world transform.</td></tr>
-            <tr><td><code>SnapToTargetIncludingScale</code></td><td>Snap everything to parent/socket; input ignored.</td></tr>
-            <tr><td><code>SnapToTargetNotIncludingScale</code></td><td>Snap location and rotation; preserve input scale.</td></tr>
+            <tr>
+                <td><code>KeepRelativeOffset</code></td>
+                <td>Input transform used as local offset relative to parent/socket.</td>
+            </tr>
+            <tr>
+                <td><code>KeepWorldTransform</code></td>
+                <td>Input transform treated as resolved world transform.</td>
+            </tr>
+            <tr>
+                <td><code>SnapToTargetIncludingScale</code></td>
+                <td>Snap everything to parent/socket; input ignored.</td>
+            </tr>
+            <tr>
+                <td><code>SnapToTargetNotIncludingScale</code></td>
+                <td>Snap location and rotation; preserve input scale.</td>
+            </tr>
         </tbody>
     </table>
 
@@ -226,9 +304,18 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Auto</code></td><td>Runtime default (currently maps to burst unreliable).</td></tr>
-            <tr><td><code>BurstUnreliable</code></td><td>Fire-and-forget multicast.</td></tr>
-            <tr><td><code>StateReliable</code></td><td>Reliable state-channel delivery with dedup.</td></tr>
+            <tr>
+                <td><code>Auto</code></td>
+                <td>Runtime default (currently maps to burst unreliable).</td>
+            </tr>
+            <tr>
+                <td><code>BurstUnreliable</code></td>
+                <td>Fire-and-forget multicast.</td>
+            </tr>
+            <tr>
+                <td><code>StateReliable</code></td>
+                <td>Reliable state-channel delivery with dedup.</td>
+            </tr>
         </tbody>
     </table>
 
@@ -242,9 +329,18 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Auto</code></td><td>Runtime default (currently maps to fire-and-forget).</td></tr>
-            <tr><td><code>FireAndForget</code></td><td>One-shot playback, no handle tracking.</td></tr>
-            <tr><td><code>Persistent</code></td><td>Spawns a tracked <code>UAudioComponent</code> with handle.</td></tr>
+            <tr>
+                <td><code>Auto</code></td>
+                <td>Runtime default (currently maps to fire-and-forget).</td>
+            </tr>
+            <tr>
+                <td><code>FireAndForget</code></td>
+                <td>One-shot playback, no handle tracking.</td>
+            </tr>
+            <tr>
+                <td><code>Persistent</code></td>
+                <td>Spawns a tracked <code>UAudioComponent</code> with handle.</td>
+            </tr>
         </tbody>
     </table>
 
@@ -258,10 +354,22 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>Auto</code></td><td>Maps to Niagara <code>AutoRelease</code>.</td></tr>
-            <tr><td><code>None</code></td><td>Disable Niagara pooling for this spawn.</td></tr>
-            <tr><td><code>AutoRelease</code></td><td>Pool with auto-release lifecycle.</td></tr>
-            <tr><td><code>ManualRelease</code></td><td>Pool with manual release.</td></tr>
+            <tr>
+                <td><code>Auto</code></td>
+                <td>Maps to Niagara <code>AutoRelease</code>.</td>
+            </tr>
+            <tr>
+                <td><code>None</code></td>
+                <td>Disable Niagara pooling for this spawn.</td>
+            </tr>
+            <tr>
+                <td><code>AutoRelease</code></td>
+                <td>Pool with auto-release lifecycle.</td>
+            </tr>
+            <tr>
+                <td><code>ManualRelease</code></td>
+                <td>Pool with manual release.</td>
+            </tr>
         </tbody>
     </table>
 
@@ -273,12 +381,15 @@
 
     <ol>
         <li><strong>Allocate</strong> &mdash; a unique handle is generated when spawning an effect.</li>
-        <li><strong>Register</strong> &mdash; the spawned component is associated with the handle in the local registry.</li>
+        <li><strong>Register</strong> &mdash; the spawned component is associated with the handle in the local registry.
+        </li>
         <li><strong>Use</strong> &mdash; subsequent operations (update, stop) reference the effect by handle.</li>
-        <li><strong>Unregister</strong> &mdash; when the effect is stopped or destroyed, the handle is removed from the registry.</li>
+        <li><strong>Unregister</strong> &mdash; when the effect is stopped or destroyed, the handle is removed from the
+            registry.</li>
     </ol>
 
-    <p>On the server, cosmetic cues carry the handle so that clients can independently spawn and register their own local component instances using the same handle identifier.</p>
+    <p>On the server, cosmetic cues carry the handle so that clients can independently spawn and register their own
+        local component instances using the same handle identifier.</p>
 
     <p>SFX lifecycle (Persistent) follows the same flow. Fire-and-forget sounds bypass the handle registry entirely.</p>
 
@@ -296,13 +407,35 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td>Dedicated server</td><td>No</td><td>Yes</td><td>No</td></tr>
-            <tr><td>Listen server</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-            <tr><td>Standalone</td><td>Yes</td><td>No</td><td>Yes</td></tr>
-            <tr><td>Client (from cue)</td><td>Yes</td><td>No</td><td>Yes</td></tr>
+            <tr>
+                <td>Dedicated server</td>
+                <td>No</td>
+                <td>Yes</td>
+                <td>No</td>
+            </tr>
+            <tr>
+                <td>Listen server</td>
+                <td>Yes</td>
+                <td>Yes</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Standalone</td>
+                <td>Yes</td>
+                <td>No</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Client (from cue)</td>
+                <td>Yes</td>
+                <td>No</td>
+                <td>Yes</td>
+            </tr>
         </tbody>
     </table>
 
-    <p>On a <strong>dedicated server</strong>, VFX/SFX opcodes only emit cosmetic cues &mdash; no Niagara or audio components are spawned. Clients receive the cues through the <code>NetCueRelay</code> and execute the spawn locally, registering the component in their own local handle registry.</p>
+    <p>On a <strong>dedicated server</strong>, VFX/SFX opcodes only emit cosmetic cues &mdash; no Niagara or audio
+        components are spawned. Clients receive the cues through the <code>NetCueRelay</code> and execute the spawn
+        locally, registering the component in their own local handle registry.</p>
 
 </section>

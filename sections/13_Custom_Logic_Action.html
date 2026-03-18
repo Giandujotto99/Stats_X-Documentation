@@ -1,10 +1,20 @@
 <section id="custom-logic-action" class="tutorial-section">
     <h1>Custom Logic &mdash; Action</h1>
-    
+
     <div class="info-box info">
         <div class="info-title">ℹ️ Version Info</div>
-        <p><strong>Stats_X v1.404</strong> &mdash; UForgeCustomAction, Asynchronous Execution, VM Suspension &amp; Resumption<br>
-        Manual-continuation action nodes for the ForgeVM &mdash; from fire-and-forget synchronous actions to long-lived async operations with loop chaining.</p>
+        <p><strong>Stats_X v1.404</strong> &mdash; UForgeCustomAction, Asynchronous Execution, VM Suspension &amp;
+            Resumption<br>
+            Manual-continuation action nodes for the ForgeVM &mdash; from fire-and-forget synchronous actions to
+            long-lived async operations with loop chaining.</p>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Custom_Actions.mp4"
+                type="video/mp4">
+        </video>
     </div>
 
     <hr>
@@ -28,7 +38,9 @@
     <hr>
 
     <h2 id="design-philosophy">1. Design Philosophy</h2>
-    <p>Action nodes are the <strong>mutating primitives</strong> of the ForgeVM. Unlike checks (synchronous, read-only), actions can modify game state and, critically, <strong>suspend the VM</strong> to wait for asynchronous operations.</p>
+    <p>Action nodes are the <strong>mutating primitives</strong> of the ForgeVM. Unlike checks (synchronous, read-only),
+        actions can modify game state and, critically, <strong>suspend the VM</strong> to wait for asynchronous
+        operations.</p>
 
     <table class="data-table">
         <thead>
@@ -38,12 +50,34 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Async by default</strong></td><td>Actions may start long-running operations (montages, delays, network calls); the VM must not spin-wait</td></tr>
-            <tr><td><strong>Manual continuation</strong></td><td><code>EndAction()</code> is the developer's responsibility &mdash; no timeout, no auto-resume</td></tr>
-            <tr><td><strong>Mutable context</strong></td><td>Actions may modify attributes, cast statuses, spawn actors &mdash; full write access</td></tr>
-            <tr><td><strong>GC-safe suspension</strong></td><td>Instance stored in <code>FStatusInstance::ActiveCustomLogic</code> (UPROPERTY) prevents collection during async gaps</td></tr>
-            <tr><td><strong>Loop support</strong></td><td><code>ChainableAction()</code> enables loop-body actions that signal continue/break per iteration</td></tr>
-            <tr><td><strong>Synchronous fast-path</strong></td><td>If <code>EndAction()</code> is called inside <code>Execute()</code>, the VM never suspends &mdash; zero-overhead continuation</td></tr>
+            <tr>
+                <td><strong>Async by default</strong></td>
+                <td>Actions may start long-running operations (montages, delays, network calls); the VM must not
+                    spin-wait</td>
+            </tr>
+            <tr>
+                <td><strong>Manual continuation</strong></td>
+                <td><code>EndAction()</code> is the developer's responsibility &mdash; no timeout, no auto-resume</td>
+            </tr>
+            <tr>
+                <td><strong>Mutable context</strong></td>
+                <td>Actions may modify attributes, cast statuses, spawn actors &mdash; full write access</td>
+            </tr>
+            <tr>
+                <td><strong>GC-safe suspension</strong></td>
+                <td>Instance stored in <code>FStatusInstance::ActiveCustomLogic</code> (UPROPERTY) prevents collection
+                    during async gaps</td>
+            </tr>
+            <tr>
+                <td><strong>Loop support</strong></td>
+                <td><code>ChainableAction()</code> enables loop-body actions that signal continue/break per iteration
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Synchronous fast-path</strong></td>
+                <td>If <code>EndAction()</code> is called inside <code>Execute()</code>, the VM never suspends &mdash;
+                    zero-overhead continuation</td>
+            </tr>
         </tbody>
     </table>
 
@@ -64,7 +98,8 @@
               └── User subclasses   (Blueprint or C++)</code></pre>
     </div>
 
-    <p><code>UForgeCustomAction</code> inherits all context setup, variable access, ForgeParam injection, and lifecycle hooks from <code>UForgeCustomLogicBase</code>. See document 12 for the shared base class details.</p>
+    <p><code>UForgeCustomAction</code> inherits all context setup, variable access, ForgeParam injection, and lifecycle
+        hooks from <code>UForgeCustomLogicBase</code>. See document 12 for the shared base class details.</p>
 
     <hr>
 
@@ -97,7 +132,8 @@ class STATS_X_API UForgeCustomAction : public UForgeCustomLogicBase</code></pre>
 void Execute();
 virtual void Execute_Implementation();  // Default: calls EndAction() immediately</code></pre>
     </div>
-    <p>Starts the action. The VM <strong>suspends</strong> after this returns unless <code>EndAction()</code> was called inside <code>Execute()</code> (synchronous fast-path).</p>
+    <p>Starts the action. The VM <strong>suspends</strong> after this returns unless <code>EndAction()</code> was called
+        inside <code>Execute()</code> (synchronous fast-path).</p>
 
     <h4>ChainableAction()</h4>
     <div class="code-block">
@@ -120,7 +156,8 @@ virtual bool ChainableAction_Implementation();  // Default: calls Execute(), ret
         <pre><code>UFUNCTION(BlueprintCallable, Category = "ForgeCustomLogic|Execution")
 void EndAction();</code></pre>
     </div>
-    <p>Signals the VM that the async action has completed. <strong>Must be called</strong> or the status remains suspended indefinitely. Delegates to <code>EndActionWithResult(true)</code>.</p>
+    <p>Signals the VM that the async action has completed. <strong>Must be called</strong> or the status remains
+        suspended indefinitely. Delegates to <code>EndActionWithResult(true)</code>.</p>
 
     <h4>EndActionWithResult(bool bSuccess)</h4>
     <div class="code-block">
@@ -130,7 +167,9 @@ void EndAction();</code></pre>
         <pre><code>UFUNCTION(BlueprintCallable, Category = "ForgeCustomLogic|Execution")
 void EndActionWithResult(bool bSuccess);</code></pre>
     </div>
-    <p>Signals completion with an explicit success/failure flag. Sets <code>bEndResult</code> for optional branching via <code>bLastConditionResult</code> on resume.</p>
+    <p>Signals completion with an explicit success/failure flag. Sets <code>bEndResult</code> for optional branching via
+        <code>bLastConditionResult</code> on resume.
+    </p>
 
     <h3>3.3 Internal State</h3>
 
@@ -143,9 +182,21 @@ void EndActionWithResult(bool bSuccess);</code></pre>
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>bIsExecuting</code></td><td><code>uint8 : 1</code></td><td>True between <code>MarkAsExecuting()</code> and <code>EndAction()</code></td></tr>
-            <tr><td><code>bEndResult</code></td><td><code>uint8 : 1</code></td><td>Success/failure result, default <code>true</code></td></tr>
-            <tr><td><code>CachedSubsystem</code></td><td><code>TWeakObjectPtr&lt;UStatsX_WorldSubsystem&gt;</code></td><td>Cached for resume signaling</td></tr>
+            <tr>
+                <td><code>bIsExecuting</code></td>
+                <td><code>uint8 : 1</code></td>
+                <td>True between <code>MarkAsExecuting()</code> and <code>EndAction()</code></td>
+            </tr>
+            <tr>
+                <td><code>bEndResult</code></td>
+                <td><code>uint8 : 1</code></td>
+                <td>Success/failure result, default <code>true</code></td>
+            </tr>
+            <tr>
+                <td><code>CachedSubsystem</code></td>
+                <td><code>TWeakObjectPtr&lt;UStatsX_WorldSubsystem&gt;</code></td>
+                <td>Cached for resume signaling</td>
+            </tr>
         </tbody>
     </table>
 
@@ -277,10 +328,19 @@ Data0[42+]:    ForgeParam fields (18 bits each, sequentially packed)
 
     <h3>4.3 Key Implementation Details</h3>
     <ul>
-        <li><strong>Instance requirement:</strong> Unlike checks, actions require a <code>FStatusInstance</code> because suspension/resume needs persistent state. If executing inline (no instance), the handler auto-registers one via <code>RegisterAsActiveInstance()</code>.</li>
-        <li><strong>ForgeParam start bit = 42:</strong> Same as OP_CustomCheck. Bits 0-23 are OpCode+flags, bits 24-39 are ClassIndex, bit 40 is bIsChainable, bit 41 is reserved.</li>
-        <li><strong>Synchronous fast-path:</strong> If <code>EndAction()</code> is called within <code>Execute()</code>, <code>IsExecuting()</code> returns false and the handler returns <code>Continue</code> without ever suspending. Zero suspension overhead for actions that complete immediately.</li>
-        <li><strong>Infinite suspend timer:</strong> <code>SuspendTimer = -1.f</code> means the instance never auto-resumes. Only <code>EndAction()</code> can trigger resumption by setting <code>SuspendTimer = 0.f</code>.</li>
+        <li><strong>Instance requirement:</strong> Unlike checks, actions require a <code>FStatusInstance</code> because
+            suspension/resume needs persistent state. If executing inline (no instance), the handler auto-registers one
+            via <code>RegisterAsActiveInstance()</code>.</li>
+        <li><strong>ForgeParam start bit = 42:</strong> Same as OP_CustomCheck. Bits 0-23 are OpCode+flags, bits 24-39
+            are ClassIndex, bit 40 is bIsChainable, bit 41 is reserved.</li>
+        <li><strong>Synchronous fast-path:</strong> If <code>EndAction()</code> is called within <code>Execute()</code>,
+            <code>IsExecuting()</code> returns false and the handler returns <code>Continue</code> without ever
+            suspending. Zero suspension overhead for actions that complete immediately.
+        </li>
+        <li><strong>Infinite suspend timer:</strong> <code>SuspendTimer = -1.f</code> means the instance never
+            auto-resumes. Only <code>EndAction()</code> can trigger resumption by setting
+            <code>SuspendTimer = 0.f</code>.
+        </li>
     </ul>
 
     <hr>
@@ -297,7 +357,9 @@ Data0[42+]:    ForgeParam fields (18 bits each, sequentially packed)
      ───────────────────────────────────────────────────
                    Same frame, no suspension</code></pre>
     </div>
-    <p>The default <code>Execute_Implementation()</code> does exactly this &mdash; calls <code>EndAction()</code> immediately. Subclasses that perform only immediate state changes (e.g., set a variable, apply a modifier) should follow this pattern.</p>
+    <p>The default <code>Execute_Implementation()</code> does exactly this &mdash; calls <code>EndAction()</code>
+        immediately. Subclasses that perform only immediate state changes (e.g., set a variable, apply a modifier)
+        should follow this pattern.</p>
 
     <h3>5.2 Asynchronous (Suspension)</h3>
     <p>When <code>Execute()</code> returns without calling <code>EndAction()</code>:</p>
@@ -310,7 +372,9 @@ Data0[42+]:    ForgeParam fields (18 bits each, sequentially packed)
 Frame N+K:  Callback → EndAction() → SuspendTimer=0, State=Active
 Frame N+K+1: Pool tick → ShouldResume() → ResumeInstance(SavedPC)</code></pre>
     </div>
-    <p>The VM is <strong>fully suspended</strong> during the async gap &mdash; no polling, no busy-wait. Resumption is triggered by the <code>EndAction()</code> call modifying instance state, which the pool detects on the next tick.</p>
+    <p>The VM is <strong>fully suspended</strong> during the async gap &mdash; no polling, no busy-wait. Resumption is
+        triggered by the <code>EndAction()</code> call modifying instance state, which the pool detects on the next
+        tick.</p>
 
     <hr>
 
@@ -364,7 +428,10 @@ FORCEINLINE bool ShouldResume() const
     return State == EStatusInstanceState::Suspended &amp;&amp; SuspendTimer &lt;= 0.f;
 }</code></pre>
     </div>
-    <p>On the next pool tick, the instance is detected as ready to resume. The pool calls <code>ForgeVM::ResumeInstance()</code> with the saved PC, and execution continues from the instruction after the action.</p>
+    <p>On the next pool tick, the instance is detected as ready to resume. The pool calls
+        <code>ForgeVM::ResumeInstance()</code> with the saved PC, and execution continues from the instruction after the
+        action.
+    </p>
 
     <h3>6.4 Instance State Transitions</h3>
     <div class="code-block">
@@ -383,8 +450,10 @@ FORCEINLINE bool ShouldResume() const
     <hr>
 
     <h2 id="gc-protection">7. GC Protection</h2>
-    <p>Async actions can live across multiple frames. Without GC protection, the UObject would be collected between <code>Execute()</code> and <code>EndAction()</code>.</p>
-    
+    <p>Async actions can live across multiple frames. Without GC protection, the UObject would be collected between
+        <code>Execute()</code> and <code>EndAction()</code>.
+    </p>
+
     <div class="code-block">
         <div class="code-header">
             <span class="code-lang">Structure</span>
@@ -404,10 +473,26 @@ FORCEINLINE bool ShouldResume() const
             </tr>
         </thead>
         <tbody>
-            <tr><td>Before Execute</td><td><code>= Action</code> (set by handler)</td><td>Yes</td></tr>
-            <tr><td>During async work</td><td>Points to Action</td><td>Yes</td></tr>
-            <tr><td>EndAction() called</td><td><code>= nullptr</code> (cleared by EndAction)</td><td>N/A &mdash; action cleanup complete</td></tr>
-            <tr><td>After EndAction()</td><td><code>nullptr</code></td><td>GC can reclaim</td></tr>
+            <tr>
+                <td>Before Execute</td>
+                <td><code>= Action</code> (set by handler)</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>During async work</td>
+                <td>Points to Action</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>EndAction() called</td>
+                <td><code>= nullptr</code> (cleared by EndAction)</td>
+                <td>N/A &mdash; action cleanup complete</td>
+            </tr>
+            <tr>
+                <td>After EndAction()</td>
+                <td><code>nullptr</code></td>
+                <td>GC can reclaim</td>
+            </tr>
         </tbody>
     </table>
 
@@ -427,8 +512,18 @@ FORCEINLINE bool ShouldResume() const
             </tr>
         </thead>
         <tbody>
-            <tr><td>Standard (<code>bIsChainable = false</code>)</td><td><code>Execute()</code></td><td>void</td><td>Suspends if EndAction not called</td></tr>
-            <tr><td>Chainable (<code>bIsChainable = true</code>)</td><td><code>ChainableAction()</code></td><td>bool</td><td><code>true</code> &rarr; continue loop, <code>false</code> &rarr; exit loop</td></tr>
+            <tr>
+                <td>Standard (<code>bIsChainable = false</code>)</td>
+                <td><code>Execute()</code></td>
+                <td>void</td>
+                <td>Suspends if EndAction not called</td>
+            </tr>
+            <tr>
+                <td>Chainable (<code>bIsChainable = true</code>)</td>
+                <td><code>ChainableAction()</code></td>
+                <td>bool</td>
+                <td><code>true</code> &rarr; continue loop, <code>false</code> &rarr; exit loop</td>
+            </tr>
         </tbody>
     </table>
 
@@ -442,7 +537,10 @@ FORCEINLINE bool ShouldResume() const
   ├─ ChainableAction() returns false → Cleanup, exit loop, return Continue
   └─ Default implementation: calls Execute(), returns true</code></pre>
     </div>
-    <p>When <code>ChainableAction()</code> returns <code>false</code>, the handler performs full cleanup (Cleanup, ClearContext, nullify ActiveCustomLogic) and continues VM execution past the loop, effectively acting as a <code>break</code>.</p>
+    <p>When <code>ChainableAction()</code> returns <code>false</code>, the handler performs full cleanup (Cleanup,
+        ClearContext, nullify ActiveCustomLogic) and continues VM execution past the loop, effectively acting as a
+        <code>break</code>.
+    </p>
 
     <h3>8.3 Usage Example</h3>
     <div class="code-block">
@@ -481,10 +579,11 @@ private:
         </div>
         <pre><code>void EndActionWithResult(bool bSuccess);</code></pre>
     </div>
-    
+
     <ul>
         <li>Sets <code>bEndResult = bSuccess</code> on the action instance</li>
-        <li>The result is available for downstream branching via <code>bLastConditionResult</code> when the VM reads it on resume</li>
+        <li>The result is available for downstream branching via <code>bLastConditionResult</code> when the VM reads it
+            on resume</li>
         <li><code>EndAction()</code> is simply <code>EndActionWithResult(true)</code></li>
     </ul>
 
@@ -498,7 +597,9 @@ private:
     <hr>
 
     <h2 id="inline-execution-fallback">10. Inline Execution Fallback</h2>
-    <p>When <code>OP_CustomAction</code> fires during <strong>inline execution</strong> (no active <code>FStatusInstance</code>), the handler creates one on demand:</p>
+    <p>When <code>OP_CustomAction</code> fires during <strong>inline execution</strong> (no active
+        <code>FStatusInstance</code>), the handler creates one on demand:
+    </p>
 
     <div class="code-block">
         <div class="code-header">
@@ -511,7 +612,8 @@ private:
     // Context.Instance is now set by RegisterAsActiveInstance
 }</code></pre>
     </div>
-    <p>This ensures actions can always suspend/resume, even when called from contexts that don't normally have a persistent instance. The pool manages the newly created instance like any other.</p>
+    <p>This ensures actions can always suspend/resume, even when called from contexts that don't normally have a
+        persistent instance. The pool manages the newly created instance like any other.</p>
 
     <hr>
 
@@ -525,12 +627,30 @@ private:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>StatsX.CustomLogic.ExecuteAction</code></td><td>Full OP_CustomAction handler</td></tr>
-            <tr><td><code>StatsX.CustomLogic.MarkAsExecuting</code></td><td><code>MarkAsExecuting()</code> &mdash; state setup before Execute</td></tr>
-            <tr><td><code>StatsX.CustomLogic.EndAction</code></td><td><code>EndActionWithResult()</code> &mdash; resumption signal</td></tr>
-            <tr><td><code>StatsX.CustomLogic.SetupContext</code></td><td>Context injection (inherited from base)</td></tr>
-            <tr><td><code>StatsX.CustomLogic.ClearContext</code></td><td>Context cleanup (inherited from base)</td></tr>
-            <tr><td><code>StatsX.CustomLogic.InjectForgeParams</code></td><td>Property injection (inherited from base)</td></tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.ExecuteAction</code></td>
+                <td>Full OP_CustomAction handler</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.MarkAsExecuting</code></td>
+                <td><code>MarkAsExecuting()</code> &mdash; state setup before Execute</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.EndAction</code></td>
+                <td><code>EndActionWithResult()</code> &mdash; resumption signal</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.SetupContext</code></td>
+                <td>Context injection (inherited from base)</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.ClearContext</code></td>
+                <td>Context cleanup (inherited from base)</td>
+            </tr>
+            <tr>
+                <td><code>StatsX.CustomLogic.InjectForgeParams</code></td>
+                <td>Property injection (inherited from base)</td>
+            </tr>
         </tbody>
     </table>
 
@@ -548,17 +668,42 @@ private:
             </tr>
         </thead>
         <tbody>
-            <tr><td><strong>Execution</strong></td><td><code>Execute</code></td><td><code>void Execute()</code> &mdash; BlueprintNativeEvent</td></tr>
-            <tr><td><strong>Execution</strong></td><td><code>ChainableAction</code></td><td><code>bool ChainableAction()</code> &mdash; BlueprintNativeEvent</td></tr>
-            <tr><td><strong>Continuation</strong></td><td><code>EndAction</code></td><td><code>void EndAction()</code> &mdash; BlueprintCallable</td></tr>
-            <tr><td><strong>Continuation</strong></td><td><code>EndActionWithResult</code></td><td><code>void EndActionWithResult(bool bSuccess)</code> &mdash; BlueprintCallable</td></tr>
-            <tr><td><strong>State</strong></td><td><code>IsExecuting</code></td><td><code>bool IsExecuting() const</code> &mdash; BlueprintPure</td></tr>
-            <tr><td><strong>System</strong></td><td><code>MarkAsExecuting</code></td><td><code>void MarkAsExecuting(UStatsX_WorldSubsystem*)</code></td></tr>
+            <tr>
+                <td><strong>Execution</strong></td>
+                <td><code>Execute</code></td>
+                <td><code>void Execute()</code> &mdash; BlueprintNativeEvent</td>
+            </tr>
+            <tr>
+                <td><strong>Execution</strong></td>
+                <td><code>ChainableAction</code></td>
+                <td><code>bool ChainableAction()</code> &mdash; BlueprintNativeEvent</td>
+            </tr>
+            <tr>
+                <td><strong>Continuation</strong></td>
+                <td><code>EndAction</code></td>
+                <td><code>void EndAction()</code> &mdash; BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><strong>Continuation</strong></td>
+                <td><code>EndActionWithResult</code></td>
+                <td><code>void EndActionWithResult(bool bSuccess)</code> &mdash; BlueprintCallable</td>
+            </tr>
+            <tr>
+                <td><strong>State</strong></td>
+                <td><code>IsExecuting</code></td>
+                <td><code>bool IsExecuting() const</code> &mdash; BlueprintPure</td>
+            </tr>
+            <tr>
+                <td><strong>System</strong></td>
+                <td><code>MarkAsExecuting</code></td>
+                <td><code>void MarkAsExecuting(UStatsX_WorldSubsystem*)</code></td>
+            </tr>
         </tbody>
     </table>
 
     <h3>Inherited from UForgeCustomLogicBase</h3>
-    <p>See <a href="#custom-logic-check" data-section="custom-logic-check">12 &mdash; Custom Logic &mdash; Check</a> for:</p>
+    <p>See <a href="#custom-logic-check" data-section="custom-logic-check">12 &mdash; Custom Logic &mdash; Check</a>
+        for:</p>
     <ul>
         <li>Context accessors (GetCasterActor, GetTargetActor, etc.)</li>
         <li>Variable accessors (GetVariable*, SetVariable*)</li>
@@ -576,7 +721,11 @@ private:
             </tr>
         </thead>
         <tbody>
-            <tr><td>256</td><td><code>OP_CustomAction</code></td><td><code>Nodes_CustomLogic::ExecuteCustomAction</code></td></tr>
+            <tr>
+                <td>256</td>
+                <td><code>OP_CustomAction</code></td>
+                <td><code>Nodes_CustomLogic::ExecuteCustomAction</code></td>
+            </tr>
         </tbody>
     </table>
 
@@ -590,10 +739,26 @@ private:
             </tr>
         </thead>
         <tbody>
-            <tr><td><code>FStatusInstance::ActiveCustomLogic</code></td><td><code>TObjectPtr&lt;UForgeCustomLogicBase&gt;</code></td><td>GC protection during async gap</td></tr>
-            <tr><td><code>FStatusInstance::SavedPC</code></td><td><code>int32</code></td><td>PC to resume from after EndAction</td></tr>
-            <tr><td><code>FStatusInstance::SuspendTimer</code></td><td><code>float</code></td><td><code>-1.f</code> = infinite wait; <code>0.f</code> = ready to resume</td></tr>
-            <tr><td><code>FStatusInstance::State</code></td><td><code>EStatusInstanceState</code></td><td><code>Suspended</code> during async; <code>Active</code> after EndAction</td></tr>
+            <tr>
+                <td><code>FStatusInstance::ActiveCustomLogic</code></td>
+                <td><code>TObjectPtr&lt;UForgeCustomLogicBase&gt;</code></td>
+                <td>GC protection during async gap</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstance::SavedPC</code></td>
+                <td><code>int32</code></td>
+                <td>PC to resume from after EndAction</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstance::SuspendTimer</code></td>
+                <td><code>float</code></td>
+                <td><code>-1.f</code> = infinite wait; <code>0.f</code> = ready to resume</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstance::State</code></td>
+                <td><code>EStatusInstanceState</code></td>
+                <td><code>Suspended</code> during async; <code>Active</code> after EndAction</td>
+            </tr>
         </tbody>
     </table>
 
