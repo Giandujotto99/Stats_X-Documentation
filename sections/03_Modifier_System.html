@@ -1,74 +1,81 @@
 <section id="modifier-system" class="tutorial-section">
-                    <h1>Modifier System</h1>
-                    
-                    <div class="info-box info">
-                        <div class="info-title">ℹ️ Version Info</div>
-                        <p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7</p>
-                    </div>
+    <h1>Modifier System</h1>
 
-                    <hr>
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7</p>
+    </div>
 
-                    <h2>Table of Contents</h2>
-                    <ol>
-                        <li><a href="#overview">Overview</a></li>
-                        <li><a href="#fstatmodifier-struct">FStatModifier Struct</a></li>
-                        <li><a href="#recalculation-formula">Recalculation Formula</a></li>
-                        <li><a href="#recalculation-behavior-by-attribute-category">Recalculation Behavior by Attribute Category</a></li>
-                        <li><a href="#identification-model">Identification Model</a></li>
-                        <li><a href="#application-api">Application API</a></li>
-                        <li><a href="#removal-api">Removal API</a></li>
-                        <li><a href="#filtered-removal">Filtered Removal</a></li>
-                        <li><a href="#query-api">Query API</a></li>
-                        <li><a href="#dirty-flag-and-recalculation-pipeline">Dirty Flag &amp; Recalculation Pipeline</a></li>
-                        <li><a href="#index-caches">Index Caches</a></li>
-                        <li><a href="#replication">Replication</a></li>
-                        <li><a href="#authority-model">Authority Model</a></li>
-                        <li><a href="#vm-integration">VM Integration</a></li>
-                        <li><a href="#lifecycle-binding">Lifecycle Binding</a></li>
-                        <li><a href="#performance-characteristics">Performance Characteristics</a></li>
-                        <li><a href="#best-practices">Best Practices</a></li>
-                    </ol>
+    <hr>
 
-                    <hr>
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#fstatmodifier-struct">FStatModifier Struct</a></li>
+        <li><a href="#recalculation-formula">Recalculation Formula</a></li>
+        <li><a href="#recalculation-behavior-by-attribute-category">Recalculation Behavior by Attribute Category</a>
+        </li>
+        <li><a href="#identification-model">Identification Model</a></li>
+        <li><a href="#application-api">Application API</a></li>
+        <li><a href="#removal-api">Removal API</a></li>
+        <li><a href="#filtered-removal">Filtered Removal</a></li>
+        <li><a href="#query-api">Query API</a></li>
+        <li><a href="#dirty-flag-and-recalculation-pipeline">Dirty Flag &amp; Recalculation Pipeline</a></li>
+        <li><a href="#index-caches">Index Caches</a></li>
+        <li><a href="#replication">Replication</a></li>
+        <li><a href="#authority-model">Authority Model</a></li>
+        <li><a href="#vm-integration">VM Integration</a></li>
+        <li><a href="#lifecycle-binding">Lifecycle Binding</a></li>
+        <li><a href="#performance-characteristics">Performance Characteristics</a></li>
+        <li><a href="#best-practices">Best Practices</a></li>
+    </ol>
 
-                    <h2 id="overview">Overview</h2>
-                    <p>Modifiers are <strong>runtime-applied adjustments</strong> to an attribute's <code>Max</code> value. They represent buffs, debuffs, equipment bonuses, auras, and any other gameplay effect that should alter an attribute without touching its <code>Base</code> value.</p>
-                    
-                    <p>The system is designed around three core requirements:</p>
+    <hr>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Requirement</th>
-                                <th>Implementation</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Non-destructive</strong></td>
-                                <td>Modifiers affect <code>Max</code> only. <code>Base</code> is never touched. Removing all modifiers restores the original stat</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Batch-friendly</strong></td>
-                                <td>A status effect can add multiple modifiers; removing the status removes all of them in one call via <code>OwnerID</code></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Network-transparent</strong></td>
-                                <td>Modifiers replicate via <code>FFastArraySerializer</code> — clients see the full modifier stack and can compute derived values locally</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h2 id="overview">Overview</h2>
+    <p>Modifiers are <strong>runtime-applied adjustments</strong> to an attribute's <code>Max</code> value. They
+        represent buffs, debuffs, equipment bonuses, auras, and any other gameplay effect that should alter an attribute
+        without touching its <code>Base</code> value.</p>
 
-                    <hr>
+    <p>The system is designed around three core requirements:</p>
 
-                    <h2 id="fstatmodifier-struct">FStatModifier Struct</h2>
-                    <p><strong>Source:</strong> <code>Data/StatsXTypes.h</code></p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Requirement</th>
+                <th>Implementation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Non-destructive</strong></td>
+                <td>Modifiers affect <code>Max</code> only. <code>Base</code> is never touched. Removing all modifiers
+                    restores the original stat</td>
+            </tr>
+            <tr>
+                <td><strong>Batch-friendly</strong></td>
+                <td>A status effect can add multiple modifiers; removing the status removes all of them in one call via
+                    <code>OwnerID</code>
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Network-transparent</strong></td>
+                <td>Modifiers replicate via <code>FFastArraySerializer</code> — clients see the full modifier stack and
+                    can compute derived values locally</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>USTRUCT(BlueprintType)
+    <hr>
+
+    <h2 id="fstatmodifier-struct">FStatModifier Struct</h2>
+    <p><strong>Source:</strong> <code>Data/StatsXTypes.h</code></p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT(BlueprintType)
 struct STATS_X_API FStatModifier
 {
     UPROPERTY(BlueprintReadOnly)
@@ -89,70 +96,112 @@ struct STATS_X_API FStatModifier
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     float MultiplicativeValue = 1.f; // Multiplier: Max *= MultiplicativeValue
 };</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Field Descriptions</h3>
+    <h3>Field Descriptions</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Field</th>
-                                <th>Type</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>InstanceID</code></td><td><code>int32</code></td><td>Auto-generated unique ID returned by <code>AddModifier()</code>. Used for targeted removal</td></tr>
-                            <tr><td><code>OwnerID</code></td><td><code>int64</code></td><td>Grouping key. Typically the <code>StatusID</code> of the status that created this modifier. Enables batch removal when the status ends</td></tr>
-                            <tr><td><code>AttributeTag</code></td><td><code>FGameplayTag</code></td><td>The attribute this modifier affects (e.g., <code>StatsX.Attribute.Stat.Armor</code>)</td></tr>
-                            <tr><td><code>SourceTag</code></td><td><code>FGameplayTag</code></td><td>Classification tag for the modifier's origin (e.g., <code>StatsX.ModSource.Buff</code>, <code>StatsX.Status.FireResistanceAura</code>). Used for queries and filtered removal</td></tr>
-                            <tr><td><code>AdditiveValue</code></td><td><code>float</code></td><td>Flat value added to <code>Base</code> before multiplication. Default <code>0.0</code> = no additive effect</td></tr>
-                            <tr><td><code>MultiplicativeValue</code></td><td><code>float</code></td><td>Multiplier applied after additive sum. Default <code>1.0</code> = no multiplicative effect</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>InstanceID</code></td>
+                <td><code>int32</code></td>
+                <td>Auto-generated unique ID returned by <code>AddModifier()</code>. Used for targeted removal</td>
+            </tr>
+            <tr>
+                <td><code>OwnerID</code></td>
+                <td><code>int64</code></td>
+                <td>Grouping key. Typically the <code>StatusID</code> of the status that created this modifier. Enables
+                    batch removal when the status ends</td>
+            </tr>
+            <tr>
+                <td><code>AttributeTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>The attribute this modifier affects (e.g., <code>StatsX.Attribute.Stat.Armor</code>)</td>
+            </tr>
+            <tr>
+                <td><code>SourceTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Classification tag for the modifier's origin (e.g., <code>StatsX.ModSource.Buff</code>,
+                    <code>StatsX.Status.FireResistanceAura</code>). Used for queries and filtered removal
+                </td>
+            </tr>
+            <tr>
+                <td><code>AdditiveValue</code></td>
+                <td><code>float</code></td>
+                <td>Flat value added to <code>Base</code> before multiplication. Default <code>0.0</code> = no additive
+                    effect</td>
+            </tr>
+            <tr>
+                <td><code>MultiplicativeValue</code></td>
+                <td><code>float</code></td>
+                <td>Multiplier applied after additive sum. Default <code>1.0</code> = no multiplicative effect</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Utility Methods</h3>
+    <h3>Utility Methods</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Returns</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>HasEffect()</code></td><td><code>bool</code></td><td><code>true</code> if Additive ≠ 0 or Multiplicative ≠ 1.0</td></tr>
-                            <tr><td><code>IsAdditiveOnly()</code></td><td><code>bool</code></td><td><code>true</code> if only the additive component has an effect</td></tr>
-                            <tr><td><code>IsMultiplicativeOnly()</code></td><td><code>bool</code></td><td><code>true</code> if only the multiplicative component has an effect</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Returns</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>HasEffect()</code></td>
+                <td><code>bool</code></td>
+                <td><code>true</code> if Additive ≠ 0 or Multiplicative ≠ 1.0</td>
+            </tr>
+            <tr>
+                <td><code>IsAdditiveOnly()</code></td>
+                <td><code>bool</code></td>
+                <td><code>true</code> if only the additive component has an effect</td>
+            </tr>
+            <tr>
+                <td><code>IsMultiplicativeOnly()</code></td>
+                <td><code>bool</code></td>
+                <td><code>true</code> if only the multiplicative component has an effect</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="recalculation-formula">Recalculation Formula</h2>
-                    <p>When any modifier is added or removed, the affected attribute's <code>Max</code> is recalculated:</p>
+    <h2 id="recalculation-formula">Recalculation Formula</h2>
+    <p>When any modifier is added or removed, the affected attribute's <code>Max</code> is recalculated:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Formula</span>
-                        </div>
-                        <pre><code>Max = (Base + ΣAdditiveValue) × ΠMultiplicativeValue</code></pre>
-                    </div>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Formula</span>
+        </div>
+        <pre><code>Max = (Base + ΣAdditiveValue) × ΠMultiplicativeValue</code></pre>
+    </div>
 
-                    <p>Where:</p>
-                    <ul>
-                        <li><strong>ΣAdditiveValue</strong> — Sum of <code>AdditiveValue</code> across all modifiers targeting this attribute</li>
-                        <li><strong>ΠMultiplicativeValue</strong> — Product of <code>MultiplicativeValue</code> across all modifiers targeting this attribute</li>
-                    </ul>
+    <p>Where:</p>
+    <ul>
+        <li><strong>ΣAdditiveValue</strong> — Sum of <code>AdditiveValue</code> across all modifiers targeting this
+            attribute</li>
+        <li><strong>ΠMultiplicativeValue</strong> — Product of <code>MultiplicativeValue</code> across all modifiers
+            targeting this attribute</li>
+    </ul>
 
-                    <h3>Example</h3>
+    <h3>Example</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Example</span>
-                        </div>
-                        <pre><code>Base = 100 (Armor)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Example</span>
+        </div>
+        <pre><code>Base = 100 (Armor)
 
 Modifiers:
   [1] +20 Additive  (heavy shield)
@@ -164,15 +213,15 @@ Modifiers:
 ΠMultiplicative = 1.5 × 0.8 = 1.2
 
 Max = (100 + 30) × 1.2 = 156</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Implementation</h3>
+    <h3>Implementation</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void UStatsX_StatsComponentBase::RecalculateAttribute(FGameplayTag AttributeTag)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void UStatsX_StatsComponentBase::RecalculateAttribute(FGameplayTag AttributeTag)
 {
     float TotalAdditive = 0.0f;
     float TotalMultiplicative = 1.0f;
@@ -191,104 +240,109 @@ Max = (100 + 30) × 1.2 = 156</code></pre>
     const float NewMax = (Stat-&gt;Base + TotalAdditive) * TotalMultiplicative;
     // ... apply to attribute with clamping
 }</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="recalculation-behavior-by-attribute-category">Recalculation Behavior by Attribute Category</h2>
-                    <p>The recalculation applies differently depending on the attribute's tag hierarchy:</p>
+    <h2 id="recalculation-behavior-by-attribute-category">Recalculation Behavior by Attribute Category</h2>
+    <p>The recalculation applies differently depending on the attribute's tag hierarchy:</p>
 
-                    <h3>Stat Attributes (<code>StatsX.Attribute.Stat.*</code>)</h3>
-                    <p><code>Current</code> and <code>Max</code> are always synchronized:</p>
+    <h3>Stat Attributes (<code>StatsX.Attribute.Stat.*</code>)</h3>
+    <p><code>Current</code> and <code>Max</code> are always synchronized:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>if (AttributeTag.MatchesTag(StatsX_Attribute_Stat))
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (AttributeTag.MatchesTag(StatsX_Attribute_Stat))
 {
     Stat-&gt;Max = NewMax;
     Stat-&gt;Current = NewMax;  // Current mirrors Max
 }</code></pre>
-                    </div>
+    </div>
 
-                    <p>This means modifiers on Stat attributes directly change the usable value. A +50 Armor modifier immediately grants +50 effective armor.</p>
+    <p>This means modifiers on Stat attributes directly change the usable value. A +50 Armor modifier immediately grants
+        +50 effective armor.</p>
 
-                    <h3>Resource Attributes (<code>StatsX.Attribute.Resource.*</code>)</h3>
-                    <p><code>Current</code> remains independent — only <code>Max</code> changes:</p>
+    <h3>Resource Attributes (<code>StatsX.Attribute.Resource.*</code>)</h3>
+    <p><code>Current</code> remains independent — only <code>Max</code> changes:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>else  // Resource or other
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>else  // Resource or other
 {
     Stat-&gt;SetMax(NewMax);  // SetMax() auto-reclamps Current to [0, Max]
 }</code></pre>
-                    </div>
+    </div>
 
-                    <p>This means a +100 Max Health modifier increases the cap but does <strong>not</strong> heal. However, if the new <code>Max</code> is lower than <code>Current</code>, <code>Current</code> is clamped down automatically.</p>
+    <p>This means a +100 Max Health modifier increases the cap but does <strong>not</strong> heal. However, if the new
+        <code>Max</code> is lower than <code>Current</code>, <code>Current</code> is clamped down automatically.
+    </p>
 
-                    <h3>Summary</h3>
+    <h3>Summary</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Category</th>
-                                <th>Max Changes</th>
-                                <th>Current Changes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Stat</strong></td>
-                                <td>Yes — recalculated from formula</td>
-                                <td>Yes — set equal to Max</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Resource</strong></td>
-                                <td>Yes — recalculated from formula</td>
-                                <td>Only if Current &gt; new Max (clamped)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Max Changes</th>
+                <th>Current Changes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Stat</strong></td>
+                <td>Yes — recalculated from formula</td>
+                <td>Yes — set equal to Max</td>
+            </tr>
+            <tr>
+                <td><strong>Resource</strong></td>
+                <td>Yes — recalculated from formula</td>
+                <td>Only if Current &gt; new Max (clamped)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="identification-model">Identification Model</h2>
-                    <p>Each modifier carries two identification fields that serve different purposes:</p>
+    <h2 id="identification-model">Identification Model</h2>
+    <p>Each modifier carries two identification fields that serve different purposes:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Structure</span>
-                        </div>
-                        <pre><code>┌─────────────────────────────────────────────────────────────────┐
-│                     Modifier Identification                      │
-├──────────────────┬──────────────────────────────────────────────┤
-│   InstanceID     │  Unique per modifier. Auto-generated.        │
-│   (int32)        │  Used for: RemoveModifierByID()              │
-├──────────────────┼──────────────────────────────────────────────┤
-│   OwnerID        │  Shared by all modifiers from one source.    │
-│   (int64)        │  Typically = StatusID of creating status.    │
-│                  │  Used for: RemoveModifiersByOwner()           │
-├──────────────────┼──────────────────────────────────────────────┤
-│   SourceTag      │  Classification tag. Shared by category.     │
-│   (FGameplayTag) │  e.g., StatsX.ModSource.Buff                │
-│                  │  Used for: RemoveModifiersBySource()          │
-├──────────────────┼──────────────────────────────────────────────┤
-│   AttributeTag   │  Target attribute. Shared by attribute.      │
-│   (FGameplayTag) │  Used for: RemoveModifiersByAttribute()      │
-└──────────────────┴──────────────────────────────────────────────┘</code></pre>
-                    </div>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>
+┌────────────────────────────────────────────────────────────────────┐
+│                     Modifier Identification                  │
+├──────────────────┬─────────────────────────────────────────────────┤
+│   InstanceID     │  Unique per modifier. Auto-generated.     │
+│   (int32)        │  Used for: RemoveModifierByID()           │
+├──────────────────┼─────────────────────────────────────────────────┤
+│   OwnerID        │  Shared by all modifiers from one source. │
+│   (int64)        │  Typically = StatusID of creating status. │
+│                  │  Used for: RemoveModifiersByOwner()       │
+├──────────────────┼─────────────────────────────────────────────────┤
+│   SourceTag      │  Classification tag. Shared by category.  │
+│   (FGameplayTag) │  e.g., StatsX.ModSource.Buff              │
+│                  │  Used for: RemoveModifiersBySource()      │
+├──────────────────┼─────────────────────────────────────────────────┤
+│   AttributeTag   │  Target attribute. Shared by attribute.   │
+│   (FGameplayTag) │  Used for: RemoveModifiersByAttribute()   │
+└──────────────────┴─────────────────────────────────────────────────┘
+        </code></pre>
+    </div>
 
-                    <h3>ID Generation</h3>
-                    <p><code>InstanceID</code> is generated by a monotonic counter on the component:</p>
+    <h3>ID Generation</h3>
+    <p><code>InstanceID</code> is generated by a monotonic counter on the component:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>int32 NextModifierID = INT32_MIN + 1;
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>int32 NextModifierID = INT32_MIN + 1;
 
 FORCEINLINE int32 GenerateModifierID()
 {
@@ -297,25 +351,25 @@ FORCEINLINE int32 GenerateModifierID()
         NextModifierID = INT32_MIN + 1;  // Wrap-around
     return ID;
 }</code></pre>
-                    </div>
+    </div>
 
-                    <ul>
-                        <li>Range: <code>INT32_MIN + 1</code> to <code>INT32_MAX - 1</code> (~4.29 billion unique IDs before wrap)</li>
-                        <li>Per-component counter (not global)</li>
-                    </ul>
+    <ul>
+        <li>Range: <code>INT32_MIN + 1</code> to <code>INT32_MAX - 1</code> (~4.29 billion unique IDs before wrap)</li>
+        <li>Per-component counter (not global)</li>
+    </ul>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="application-api">Application API</h2>
+    <h2 id="application-api">Application API</h2>
 
-                    <h3>AddModifier</h3>
-                    <p>Adds a single modifier to the component. <strong>Server-only</strong> — clients cannot add modifiers.</p>
+    <h3>AddModifier</h3>
+    <p>Adds a single modifier to the component. <strong>Server-only</strong> — clients cannot add modifiers.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 int32 AddModifier(
     FGameplayTag AttributeTag,       // Target attribute
     FGameplayTag SourceTag,          // Origin classification
@@ -323,23 +377,23 @@ int32 AddModifier(
     float AdditiveValue,             // Flat bonus
     float MultiplicativeValue = 1.0f // Multiplier (default: no effect)
 );</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> <code>InstanceID</code> of the created modifier, or <code>-1</code> on failure.</p>
+    <p><strong>Returns:</strong> <code>InstanceID</code> of the created modifier, or <code>-1</code> on failure.</p>
 
-                    <p><strong>Failure conditions:</strong></p>
-                    <ul>
-                        <li>Invalid <code>AttributeTag</code></li>
-                        <li>Caller is not <code>ROLE_Authority</code> (server)</li>
-                    </ul>
+    <p><strong>Failure conditions:</strong></p>
+    <ul>
+        <li>Invalid <code>AttributeTag</code></li>
+        <li>Caller is not <code>ROLE_Authority</code> (server)</li>
+    </ul>
 
-                    <h3>Internal Flow</h3>
+    <h3>Internal Flow</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>AddModifier()
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>AddModifier()
   │
   ├─ Validate AttributeTag
   ├─ Check authority (server only)
@@ -352,80 +406,91 @@ int32 AddModifier(
   │    └─ ModifiersByAttribute[AttributeTag].Add(newIndex)
   └─ MarkAttributeDirty(AttributeTag)
        └─ RecalculateAttribute() → immediate recalc</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="removal-api">Removal API</h2>
-                    <p>All removal methods are <strong>server-only</strong> and return the number of modifiers removed (or <code>bool</code> for single removal). Every removal triggers cache rebuild and attribute recalculation for affected attributes.</p>
+    <h2 id="removal-api">Removal API</h2>
+    <p>All removal methods are <strong>server-only</strong> and return the number of modifiers removed (or
+        <code>bool</code> for single removal). Every removal triggers cache rebuild and attribute recalculation for
+        affected attributes.
+    </p>
 
-                    <h3>RemoveModifierByID</h3>
-                    <p>Removes a single modifier by its unique <code>InstanceID</code>.</p>
+    <h3>RemoveModifierByID</h3>
+    <p>Removes a single modifier by its unique <code>InstanceID</code>.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 bool RemoveModifierByID(int32 InstanceID);</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> <code>true</code> if found and removed.</p>
+    <p><strong>Returns:</strong> <code>true</code> if found and removed.</p>
 
-                    <h3>RemoveModifiersByOwner</h3>
-                    <p>Removes <strong>all</strong> modifiers sharing an <code>OwnerID</code>. This is the primary cleanup path when a status effect ends.</p>
+    <h3>RemoveModifiersByOwner</h3>
+    <p>Removes <strong>all</strong> modifiers sharing an <code>OwnerID</code>. This is the primary cleanup path when a
+        status effect ends.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 int32 RemoveModifiersByOwner(int64 OwnerID);</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> Number of modifiers removed.</p>
-                    <p><strong>Typical usage:</strong> When a status instance is terminated, the system calls <code>RemoveModifiersByOwner(StatusID)</code> to clean up all modifiers created by that status.</p>
+    <p><strong>Returns:</strong> Number of modifiers removed.</p>
+    <p><strong>Typical usage:</strong> When a status instance is terminated, the system calls
+        <code>RemoveModifiersByOwner(StatusID)</code> to clean up all modifiers created by that status.
+    </p>
 
-                    <h3>RemoveModifiersBySource</h3>
-                    <p>Removes all modifiers with a matching <code>SourceTag</code> (exact match).</p>
+    <h3>RemoveModifiersBySource</h3>
+    <p>Removes all modifiers with a matching <code>SourceTag</code> (exact match).</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 int32 RemoveModifiersBySource(FGameplayTag SourceTag);</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> Number of modifiers removed.</p>
-                    <p><strong>Use case:</strong> Remove all buff-type modifiers: <code>RemoveModifiersBySource(StatsX.ModSource.Buff)</code></p>
+    <p><strong>Returns:</strong> Number of modifiers removed.</p>
+    <p><strong>Use case:</strong> Remove all buff-type modifiers:
+        <code>RemoveModifiersBySource(StatsX.ModSource.Buff)</code>
+    </p>
 
-                    <h3>RemoveModifiersByAttribute</h3>
-                    <p>Removes all modifiers targeting a specific attribute.</p>
+    <h3>RemoveModifiersByAttribute</h3>
+    <p>Removes all modifiers targeting a specific attribute.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 int32 RemoveModifiersByAttribute(FGameplayTag AttributeTag);</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> Number of modifiers removed.</p>
-                    <p><strong>Use case:</strong> Strip all modifiers from Armor: <code>RemoveModifiersByAttribute(StatsX.Attribute.Stat.Armor)</code></p>
+    <p><strong>Returns:</strong> Number of modifiers removed.</p>
+    <p><strong>Use case:</strong> Strip all modifiers from Armor:
+        <code>RemoveModifiersByAttribute(StatsX.Attribute.Stat.Armor)</code>
+    </p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="filtered-removal">Filtered Removal</h2>
+    <h2 id="filtered-removal">Filtered Removal</h2>
 
-                    <h3>RemoveModifiersWithFilters</h3>
-                    <p>The most flexible removal method. Applies <strong>AND logic</strong> across multiple filter criteria — a modifier is only removed if it matches <strong>all</strong> active filters.</p>
+    <h3>RemoveModifiersWithFilters</h3>
+    <p>The most flexible removal method. Applies <strong>AND logic</strong> across multiple filter criteria — a modifier
+        is only removed if it matches <strong>all</strong> active filters.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 int32 RemoveModifiersWithFilters(
     int32 Count,               // Max removals (0 = unlimited)
     int32 InstanceID,          // Filter by InstanceID (INT32_MIN = disabled)
@@ -433,131 +498,149 @@ int32 RemoveModifiersWithFilters(
     FGameplayTag SourceTag,    // Filter by SourceTag (empty = disabled)
     FGameplayTag AttributeTag  // Filter by AttributeTag (empty = disabled)
 );</code></pre>
-                    </div>
+    </div>
 
-                    <p><strong>Returns:</strong> Number of modifiers removed.</p>
+    <p><strong>Returns:</strong> Number of modifiers removed.</p>
 
-                    <h3>Filter Activation Rules</h3>
+    <h3>Filter Activation Rules</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Filter</th>
-                                <th>Considered Active When</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>InstanceID</code></td><td><code>InstanceID &gt; INT32_MIN</code></td></tr>
-                            <tr><td><code>OwnerID</code></td><td><code>OwnerID != 0</code></td></tr>
-                            <tr><td><code>SourceTag</code></td><td><code>SourceTag.IsValid()</code></td></tr>
-                            <tr><td><code>AttributeTag</code></td><td><code>AttributeTag.IsValid()</code></td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Filter</th>
+                <th>Considered Active When</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>InstanceID</code></td>
+                <td><code>InstanceID &gt; INT32_MIN</code></td>
+            </tr>
+            <tr>
+                <td><code>OwnerID</code></td>
+                <td><code>OwnerID != 0</code></td>
+            </tr>
+            <tr>
+                <td><code>SourceTag</code></td>
+                <td><code>SourceTag.IsValid()</code></td>
+            </tr>
+            <tr>
+                <td><code>AttributeTag</code></td>
+                <td><code>AttributeTag.IsValid()</code></td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <p>If <strong>no</strong> filter is active, the call returns <code>0</code> immediately (safety guard).</p>
+    <p>If <strong>no</strong> filter is active, the call returns <code>0</code> immediately (safety guard).</p>
 
-                    <h3>Count Parameter</h3>
+    <h3>Count Parameter</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Value</th>
-                                <th>Behavior</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>0</code></td><td>Remove all matching modifiers</td></tr>
-                            <tr><td><code>N &gt; 0</code></td><td>Remove at most <code>N</code> matching modifiers (first found)</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Value</th>
+                <th>Behavior</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>0</code></td>
+                <td>Remove all matching modifiers</td>
+            </tr>
+            <tr>
+                <td><code>N &gt; 0</code></td>
+                <td>Remove at most <code>N</code> matching modifiers (first found)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Example</h3>
-                    <p>Remove the first 2 buff modifiers on Armor owned by status 42:</p>
+    <h3>Example</h3>
+    <p>Remove the first 2 buff modifiers on Armor owned by status 42:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>Component-&gt;RemoveModifiersWithFilters(
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>Component-&gt;RemoveModifiersWithFilters(
     2,                              // Count: max 2
     INT32_MIN,                      // InstanceID: disabled
     42,                             // OwnerID: status 42
     StatsX_ModSource_Buff,          // SourceTag: buffs only
     StatsX_Attribute_Stat_Armor     // AttributeTag: armor only
 );</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="query-api">Query API</h2>
-                    <p>All query methods are <code>const</code> and available on both server and client.</p>
+    <h2 id="query-api">Query API</h2>
+    <p>All query methods are <code>const</code> and available on both server and client.</p>
 
-                    <h3>GetModifiersForAttribute</h3>
-                    <p>Returns all active modifiers affecting a specific attribute.</p>
+    <h3>GetModifiersForAttribute</h3>
+    <p>Returns all active modifiers affecting a specific attribute.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 TArray&lt;FStatModifier&gt; GetModifiersForAttribute(FGameplayTag AttributeTag) const;</code></pre>
-                    </div>
+    </div>
 
-                    <h3>GetModifiersByOwner</h3>
-                    <p>Returns all modifiers created by a specific owner (e.g., a status instance).</p>
+    <h3>GetModifiersByOwner</h3>
+    <p>Returns all modifiers created by a specific owner (e.g., a status instance).</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 TArray&lt;FStatModifier&gt; GetModifiersByOwner(int64 OwnerID) const;</code></pre>
-                    </div>
+    </div>
 
-                    <h3>GetModifiersBySource</h3>
-                    <p>Returns all modifiers from a specific source category.</p>
+    <h3>GetModifiersBySource</h3>
+    <p>Returns all modifiers from a specific source category.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintCallable)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintCallable)
 TArray&lt;FStatModifier&gt; GetModifiersBySource(FGameplayTag SourceTag) const;</code></pre>
-                    </div>
+    </div>
 
-                    <h3>GetModifierCount</h3>
-                    <p>Returns the total number of active modifiers on the component.</p>
+    <h3>GetModifierCount</h3>
+    <p>Returns the total number of active modifiers on the component.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>UFUNCTION(BlueprintPure)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>UFUNCTION(BlueprintPure)
 int32 GetModifierCount() const;</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="dirty-flag-and-recalculation-pipeline">Dirty Flag &amp; Recalculation Pipeline</h2>
-                    <p>The modifier system uses a dirty flag pattern to batch and optimize recalculations.</p>
+    <h2 id="dirty-flag-and-recalculation-pipeline">Dirty Flag &amp; Recalculation Pipeline</h2>
+    <p>The modifier system uses a dirty flag pattern to batch and optimize recalculations.</p>
 
-                    <h3>Data Structures</h3>
+    <h3>Data Structures</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>// Set of attribute tags pending recalculation
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Set of attribute tags pending recalculation
 TSet&lt;FGameplayTag&gt; DirtyAttributes;</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Pipeline</h3>
+    <h3>Pipeline</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>Modifier Add/Remove
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>Modifier Add/Remove
   │
   ├─ MarkAttributeDirty(AttributeTag)
   │    ├─ DirtyAttributes.Add(AttributeTag)
@@ -577,60 +660,62 @@ RecalculateAttribute(AttributeTag)
   │    └─ Resource: SetMax(NewMax) → auto-clamp Current
   ├─ Replicate if bReplicated
   └─ Done</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Batch Removal Optimization</h3>
-                    <p>When removing multiple modifiers (e.g., <code>RemoveModifiersByOwner</code>), affected attributes are collected into a <code>TSet&lt;FGameplayTag&gt;</code> first, then each is recalculated once — regardless of how many modifiers were removed from that attribute.</p>
+    <h3>Batch Removal Optimization</h3>
+    <p>When removing multiple modifiers (e.g., <code>RemoveModifiersByOwner</code>), affected attributes are collected
+        into a <code>TSet&lt;FGameplayTag&gt;</code> first, then each is recalculated once — regardless of how many
+        modifiers were removed from that attribute.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>TSet&lt;FGameplayTag&gt; AffectedAttributes;
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TSet&lt;FGameplayTag&gt; AffectedAttributes;
 // ... remove loop collects tags ...
 for (const FGameplayTag&amp; Tag : AffectedAttributes)
 {
     MarkAttributeDirty(Tag);  // One recalc per attribute
 }</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="index-caches">Index Caches</h2>
-                    <p>Two cache structures accelerate modifier lookups:</p>
+    <h2 id="index-caches">Index Caches</h2>
+    <p>Two cache structures accelerate modifier lookups:</p>
 
-                    <h3>ModifierIDToIndex</h3>
+    <h3>ModifierIDToIndex</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>TMap&lt;int32, int32&gt; ModifierIDToIndex;
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TMap&lt;int32, int32&gt; ModifierIDToIndex;
 // Maps InstanceID → index in ReplicatedModifiers.Items array</code></pre>
-                    </div>
+    </div>
 
-                    <p>Enables O(1) lookup by <code>InstanceID</code>. Rebuilt after any removal.</p>
+    <p>Enables O(1) lookup by <code>InstanceID</code>. Rebuilt after any removal.</p>
 
-                    <h3>ModifiersByAttribute</h3>
+    <h3>ModifiersByAttribute</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>TMap&lt;FGameplayTag, TArray&lt;int32&gt;&gt; ModifiersByAttribute;
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>TMap&lt;FGameplayTag, TArray&lt;int32&gt;&gt; ModifiersByAttribute;
 // Maps AttributeTag → array of indices in ReplicatedModifiers.Items</code></pre>
-                    </div>
+    </div>
 
-                    <p>Enables O(1) lookup of all modifiers for a given attribute during recalculation.</p>
+    <p>Enables O(1) lookup of all modifiers for a given attribute during recalculation.</p>
 
-                    <h3>Cache Rebuild</h3>
-                    <p>Both caches are rebuilt from scratch after any removal operation:</p>
+    <h3>Cache Rebuild</h3>
+    <p>Both caches are rebuilt from scratch after any removal operation:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void RebuildModifierIndexCache()
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void RebuildModifierIndexCache()
 {
     ModifierIDToIndex.Empty(ReplicatedModifiers.Items.Num());
     ModifiersByAttribute.Empty();
@@ -642,22 +727,23 @@ for (const FGameplayTag&amp; Tag : AffectedAttributes)
         ModifiersByAttribute.FindOrAdd(Mod.AttributeTag).Add(i);
     }
 }</code></pre>
-                    </div>
+    </div>
 
-                    <p>This is necessary because removal uses <code>RemoveAtSwap</code> (O(1) array removal) which changes the indices of remaining elements.</p>
+    <p>This is necessary because removal uses <code>RemoveAtSwap</code> (O(1) array removal) which changes the indices
+        of remaining elements.</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="replication">Replication</h2>
+    <h2 id="replication">Replication</h2>
 
-                    <h3>FastArraySerializer</h3>
-                    <p>Modifiers replicate via <code>FReplicatedModifierArray</code>, a <code>FFastArraySerializer</code> subclass:</p>
+    <h3>FastArraySerializer</h3>
+    <p>Modifiers replicate via <code>FReplicatedModifierArray</code>, a <code>FFastArraySerializer</code> subclass:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>USTRUCT()
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>USTRUCT()
 struct FReplicatedModifierItem : public FFastArraySerializerItem
 {
     UPROPERTY()
@@ -673,116 +759,157 @@ struct FReplicatedModifierArray : public FFastArraySerializer
     UPROPERTY(NotReplicated)
     TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt; OwnerComponent;
 };</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Replication Callbacks</h3>
+    <h3>Replication Callbacks</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Callback</th>
-                                <th>Trigger</th>
-                                <th>Client-Side Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>PostReplicatedAdd</code></td>
-                                <td>Server added a modifier</td>
-                                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
-                            </tr>
-                            <tr>
-                                <td><code>PostReplicatedChange</code></td>
-                                <td>Server modified a modifier</td>
-                                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
-                            </tr>
-                            <tr>
-                                <td><code>PreReplicatedRemove</code></td>
-                                <td>Server removed a modifier</td>
-                                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Callback</th>
+                <th>Trigger</th>
+                <th>Client-Side Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>PostReplicatedAdd</code></td>
+                <td>Server added a modifier</td>
+                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
+            </tr>
+            <tr>
+                <td><code>PostReplicatedChange</code></td>
+                <td>Server modified a modifier</td>
+                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
+            </tr>
+            <tr>
+                <td><code>PreReplicatedRemove</code></td>
+                <td>Server removed a modifier</td>
+                <td><code>MarkAttributeDirty()</code> → recalc on client</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <p>All callbacks skip processing on authority (<code>ROLE_Authority</code>) to avoid double-processing on listen servers.</p>
+    <p>All callbacks skip processing on authority (<code>ROLE_Authority</code>) to avoid double-processing on listen
+        servers.</p>
 
-                    <h3>Delta Efficiency</h3>
-                    <ul>
-                        <li><strong>Add:</strong> <code>MarkItemDirty()</code> → only the new item is sent</li>
-                        <li><strong>Remove:</strong> <code>MarkArrayDirty()</code> → minimal delta update</li>
-                        <li><strong>Bulk operations:</strong> Single <code>MarkArrayDirty()</code> after all removals, then one replication pass</li>
-                    </ul>
+    <h3>Delta Efficiency</h3>
+    <ul>
+        <li><strong>Add:</strong> <code>MarkItemDirty()</code> → only the new item is sent</li>
+        <li><strong>Remove:</strong> <code>MarkArrayDirty()</code> → minimal delta update</li>
+        <li><strong>Bulk operations:</strong> Single <code>MarkArrayDirty()</code> after all removals, then one
+            replication pass</li>
+    </ul>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="authority-model">Authority Model</h2>
-                    <p>The modifier system enforces <strong>strict server authority</strong>:</p>
+    <h2 id="authority-model">Authority Model</h2>
+    <p>The modifier system enforces <strong>strict server authority</strong>:</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Operation</th>
-                                <th>Server</th>
-                                <th>Client</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>AddModifier()</code></td><td>Allowed, returns InstanceID</td><td>Returns <code>-1</code>, no-op</td></tr>
-                            <tr><td><code>RemoveModifierByID()</code></td><td>Allowed</td><td>Returns <code>false</code>, no-op</td></tr>
-                            <tr><td><code>RemoveModifiersByOwner()</code></td><td>Allowed</td><td>Returns <code>0</code>, no-op</td></tr>
-                            <tr><td><code>RemoveModifiersBySource()</code></td><td>Allowed</td><td>Returns <code>0</code>, no-op</td></tr>
-                            <tr><td><code>RemoveModifiersByAttribute()</code></td><td>Allowed</td><td>Returns <code>0</code>, no-op</td></tr>
-                            <tr><td><code>RemoveModifiersWithFilters()</code></td><td>Allowed</td><td>Returns <code>0</code>, no-op</td></tr>
-                            <tr><td><code>GetModifiers*()</code> (queries)</td><td>Allowed</td><td>Allowed (reads replicated data)</td></tr>
-                            <tr><td><code>GetModifierCount()</code></td><td>Allowed</td><td>Allowed</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Operation</th>
+                <th>Server</th>
+                <th>Client</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>AddModifier()</code></td>
+                <td>Allowed, returns InstanceID</td>
+                <td>Returns <code>-1</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifierByID()</code></td>
+                <td>Allowed</td>
+                <td>Returns <code>false</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByOwner()</code></td>
+                <td>Allowed</td>
+                <td>Returns <code>0</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersBySource()</code></td>
+                <td>Allowed</td>
+                <td>Returns <code>0</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByAttribute()</code></td>
+                <td>Allowed</td>
+                <td>Returns <code>0</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersWithFilters()</code></td>
+                <td>Allowed</td>
+                <td>Returns <code>0</code>, no-op</td>
+            </tr>
+            <tr>
+                <td><code>GetModifiers*()</code> (queries)</td>
+                <td>Allowed</td>
+                <td>Allowed (reads replicated data)</td>
+            </tr>
+            <tr>
+                <td><code>GetModifierCount()</code></td>
+                <td>Allowed</td>
+                <td>Allowed</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <p>Clients see the modifier stack through replication and can query it, but cannot mutate it. All mutations flow: <strong>Server → FastArray replication → Client callback → local recalc</strong>.</p>
+    <p>Clients see the modifier stack through replication and can query it, but cannot mutate it. All mutations flow:
+        <strong>Server → FastArray replication → Client callback → local recalc</strong>.
+    </p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="vm-integration">VM Integration</h2>
-                    <p>The ForgeVM interacts with modifiers through dedicated OpCodes executed during status bytecode.</p>
+    <h2 id="vm-integration">VM Integration</h2>
+    <p>The ForgeVM interacts with modifiers through dedicated OpCodes executed during status bytecode.</p>
 
-                    <h3>Key OpCodes</h3>
+    <h3>Key OpCodes</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>OpCode</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>OP_AddModifier</code></td>
-                                <td>Adds a modifier to the target or caster component. Encodes AttributeTag, SourceTag, Additive, Multiplicative in instruction payload. OwnerID is auto-set to the current StatusID</td>
-                            </tr>
-                            <tr>
-                                <td><code>OP_RemoveModifiers</code></td>
-                                <td>Removes modifiers matching filter criteria. Supports all the same filters as <code>RemoveModifiersWithFilters()</code></td>
-                            </tr>
-                            <tr>
-                                <td><code>OP_RemoveModifiersByOwner</code></td>
-                                <td>Convenience: removes all modifiers from a specific owner</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>OpCode</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>OP_AddModifier</code></td>
+                <td>Adds a modifier to the target or caster component. Encodes AttributeTag, SourceTag, Additive,
+                    Multiplicative in instruction payload. OwnerID is auto-set to the current StatusID</td>
+            </tr>
+            <tr>
+                <td><code>OP_RemoveModifiers</code></td>
+                <td>Removes modifiers matching filter criteria. Supports all the same filters as
+                    <code>RemoveModifiersWithFilters()</code>
+                </td>
+            </tr>
+            <tr>
+                <td><code>OP_RemoveModifiersByOwner</code></td>
+                <td>Convenience: removes all modifiers from a specific owner</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Automatic Cleanup</h3>
-                    <p>When a status instance is terminated (for any reason), the system automatically removes all modifiers owned by that <code>StatusID</code> via <code>RemoveModifiersByOwner(StatusID)</code>. This ensures no orphaned modifiers remain after a buff/debuff expires.</p>
+    <h3>Automatic Cleanup</h3>
+    <p>When a status instance is terminated (for any reason), the system automatically removes all modifiers owned by
+        that <code>StatusID</code> via <code>RemoveModifiersByOwner(StatusID)</code>. This ensures no orphaned modifiers
+        remain after a buff/debuff expires.</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="lifecycle-binding">Lifecycle Binding</h2>
-                    <p>Modifiers are typically bound to a status effect's lifecycle:</p>
+    <h2 id="lifecycle-binding">Lifecycle Binding</h2>
+    <p>Modifiers are typically bound to a status effect's lifecycle:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>Status Applied (OP_AddModifier)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>Status Applied (OP_AddModifier)
   │
   ├─ AddModifier(Armor, BuffSource, StatusID=42, +50, 1.0)
   │    → InstanceID = 7, OwnerID = 42
@@ -799,118 +926,176 @@ Status Terminated (any reason)
        ├─ Removes InstanceID 8 (MoveSpeed ×1.25)
        ├─ Recalculates Armor
        └─ Recalculates MoveSpeed</code></pre>
-                    </div>
+    </div>
 
-                    <p>This pattern guarantees clean modifier lifecycle regardless of how the status ends (expiry, explicit removal, owner destroyed, replaced, etc.).</p>
+    <p>This pattern guarantees clean modifier lifecycle regardless of how the status ends (expiry, explicit removal,
+        owner destroyed, replaced, etc.).</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="performance-characteristics">Performance Characteristics</h2>
+    <h2 id="performance-characteristics">Performance Characteristics</h2>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Operation</th>
-                                <th>Complexity</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td><code>AddModifier</code></td><td>O(1)</td><td>Append to array + cache update</td></tr>
-                            <tr><td><code>RemoveModifierByID</code></td><td>O(N)</td><td>Linear scan + O(N) cache rebuild</td></tr>
-                            <tr><td><code>RemoveModifiersByOwner</code></td><td>O(N)</td><td>Single reverse-iteration pass + O(N) cache rebuild</td></tr>
-                            <tr><td><code>RemoveModifiersBySource</code></td><td>O(N)</td><td>Single reverse-iteration pass + O(N) cache rebuild</td></tr>
-                            <tr><td><code>RemoveModifiersByAttribute</code></td><td>O(N)</td><td>Single reverse-iteration pass + O(N) cache rebuild</td></tr>
-                            <tr><td><code>RemoveModifiersWithFilters</code></td><td>O(N)</td><td>Single reverse-iteration pass + O(N) cache rebuild</td></tr>
-                            <tr><td><code>RecalculateAttribute</code></td><td>O(K)</td><td>K = number of modifiers on this attribute (via cache)</td></tr>
-                            <tr><td><code>GetModifiersForAttribute</code></td><td>O(N)</td><td>Linear scan (copies results)</td></tr>
-                            <tr><td><code>GetModifierCount</code></td><td>O(1)</td><td>Direct array size</td></tr>
-                            <tr><td>Array removal</td><td>O(1) per item</td><td><code>RemoveAtSwap</code> — no element shifting</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Operation</th>
+                <th>Complexity</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>AddModifier</code></td>
+                <td>O(1)</td>
+                <td>Append to array + cache update</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifierByID</code></td>
+                <td>O(N)</td>
+                <td>Linear scan + O(N) cache rebuild</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByOwner</code></td>
+                <td>O(N)</td>
+                <td>Single reverse-iteration pass + O(N) cache rebuild</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersBySource</code></td>
+                <td>O(N)</td>
+                <td>Single reverse-iteration pass + O(N) cache rebuild</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersByAttribute</code></td>
+                <td>O(N)</td>
+                <td>Single reverse-iteration pass + O(N) cache rebuild</td>
+            </tr>
+            <tr>
+                <td><code>RemoveModifiersWithFilters</code></td>
+                <td>O(N)</td>
+                <td>Single reverse-iteration pass + O(N) cache rebuild</td>
+            </tr>
+            <tr>
+                <td><code>RecalculateAttribute</code></td>
+                <td>O(K)</td>
+                <td>K = number of modifiers on this attribute (via cache)</td>
+            </tr>
+            <tr>
+                <td><code>GetModifiersForAttribute</code></td>
+                <td>O(N)</td>
+                <td>Linear scan (copies results)</td>
+            </tr>
+            <tr>
+                <td><code>GetModifierCount</code></td>
+                <td>O(1)</td>
+                <td>Direct array size</td>
+            </tr>
+            <tr>
+                <td>Array removal</td>
+                <td>O(1) per item</td>
+                <td><code>RemoveAtSwap</code> — no element shifting</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <p>Where N = total modifiers on the component, K = modifiers for one attribute.</p>
-                    <p><strong>Typical enterprise scenario:</strong> A character with 20–50 active modifiers. All operations complete in microseconds.</p>
+    <p>Where N = total modifiers on the component, K = modifiers for one attribute.</p>
+    <p><strong>Typical enterprise scenario:</strong> A character with 20–50 active modifiers. All operations complete in
+        microseconds.</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="best-practices">Best Practices</h2>
+    <h2 id="best-practices">Best Practices</h2>
 
-                    <h3>1. Always Use OwnerID for Status-Bound Modifiers</h3>
-                    <p>Set <code>OwnerID</code> to the <code>StatusID</code> of the creating status. This guarantees automatic cleanup:</p>
+    <h3>1. Always Use OwnerID for Status-Bound Modifiers</h3>
+    <p>Set <code>OwnerID</code> to the <code>StatusID</code> of the creating status. This guarantees automatic cleanup:
+    </p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>// In status bytecode (via OP_AddModifier):
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// In status bytecode (via OP_AddModifier):
 Component-&gt;AddModifier(ArmorTag, BuffTag, /*OwnerID=*/StatusID, 50.f, 1.f);
 
 // Automatic on status end:
 Component-&gt;RemoveModifiersByOwner(StatusID);</code></pre>
-                    </div>
+    </div>
 
-                    <h3>2. Use SourceTag for Category-Based Queries</h3>
-                    <p>Structure your source tags for flexible filtering:</p>
+    <h3>2. Use SourceTag for Category-Based Queries</h3>
+    <p>Structure your source tags for flexible filtering:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Tags</span>
-                        </div>
-                        <pre><code>StatsX.ModSource.Buff
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Tags</span>
+        </div>
+        <pre><code>StatsX.ModSource.Buff
 StatsX.ModSource.Debuff
 StatsX.ModSource.Equipment
 StatsX.ModSource.Passive
 StatsX.ModSource.Aura</code></pre>
-                    </div>
+    </div>
 
-                    <p>This enables UI queries like "show all buff modifiers" without knowing individual status IDs.</p>
+    <p>This enables UI queries like "show all buff modifiers" without knowing individual status IDs.</p>
 
-                    <h3>3. Additive vs Multiplicative: When to Use Each</h3>
+    <h3>3. Additive vs Multiplicative: When to Use Each</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Scenario</th>
-                                <th>Approach</th>
-                                <th>Example</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>Flat bonus (item stat)</td><td>Additive</td><td>+50 Armor from shield</td></tr>
-                            <tr><td>Percentage buff/debuff</td><td>Multiplicative</td><td>×1.2 for 20% increase, ×0.7 for 30% reduction</td></tr>
-                            <tr><td>Combined effect</td><td>Both</td><td>+30 Additive + ×1.1 Multiplicative</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Scenario</th>
+                <th>Approach</th>
+                <th>Example</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Flat bonus (item stat)</td>
+                <td>Additive</td>
+                <td>+50 Armor from shield</td>
+            </tr>
+            <tr>
+                <td>Percentage buff/debuff</td>
+                <td>Multiplicative</td>
+                <td>×1.2 for 20% increase, ×0.7 for 30% reduction</td>
+            </tr>
+            <tr>
+                <td>Combined effect</td>
+                <td>Both</td>
+                <td>+30 Additive + ×1.1 Multiplicative</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>4. Avoid Redundant Modifiers</h3>
-                    <p>Use <code>HasEffect()</code> before adding to skip no-op modifiers:</p>
+    <h3>4. Avoid Redundant Modifiers</h3>
+    <p>Use <code>HasEffect()</code> before adding to skip no-op modifiers:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>if (FStatModifier(0, 0, Tag, Source, Additive, Multiplicative).HasEffect())
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>if (FStatModifier(0, 0, Tag, Source, Additive, Multiplicative).HasEffect())
 {
     Component-&gt;AddModifier(Tag, Source, OwnerID, Additive, Multiplicative);
 }</code></pre>
-                    </div>
+    </div>
 
-                    <h3>5. Use Filtered Removal for Fine-Grained Control</h3>
-                    <p>When you need to remove specific subsets (e.g., "remove the first 3 buff modifiers on Armor from status 42"), use <code>RemoveModifiersWithFilters()</code> with its AND-logic and Count parameter instead of chaining multiple removal calls.</p>
+    <h3>5. Use Filtered Removal for Fine-Grained Control</h3>
+    <p>When you need to remove specific subsets (e.g., "remove the first 3 buff modifiers on Armor from status 42"), use
+        <code>RemoveModifiersWithFilters()</code> with its AND-logic and Count parameter instead of chaining multiple
+        removal calls.
+    </p>
 
-                    <h3>6. Query on Client, Mutate on Server</h3>
-                    <p>Leverage the replicated modifier stack on clients for UI display:</p>
+    <h3>6. Query on Client, Mutate on Server</h3>
+    <p>Leverage the replicated modifier stack on clients for UI display:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>// Client-safe: display modifier breakdown in UI
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>// Client-safe: display modifier breakdown in UI
 TArray&lt;FStatModifier&gt; ArmorMods = Component-&gt;GetModifiersForAttribute(ArmorTag);
 for (const FStatModifier&amp; Mod : ArmorMods)
 {
     // Show: Source, Additive, Multiplicative
 }</code></pre>
-                    </div>
-                </section>
+    </div>
+</section>

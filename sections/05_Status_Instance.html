@@ -1,345 +1,361 @@
 <section id="status-instance" class="tutorial-section">
-                    <h1>Status Instance</h1>
-                    
-                    <div class="info-box info">
-                        <div class="info-title">ℹ️ Version Info</div>
-                        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7</p>
-                    </div>
+    <h1>Status Instance</h1>
 
-                    <hr>
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> &mdash; Unreal Engine 5.7</p>
+    </div>
 
-                    <h2>Table of Contents</h2>
-                    <ol>
-                        <li><a href="#overview">Overview</a></li>
-                        <li><a href="#design-philosophy">Design Philosophy</a></li>
-                        <li><a href="#runtime-data">Runtime Data</a></li>
-                        <li><a href="#persistent-memory">Persistent Memory</a></li>
-                        <li><a href="#function-call-state">Function Call State</a></li>
-                        <li><a href="#onend-lifecycle-guards">OnEnd Lifecycle Guards</a></li>
-                        <li><a href="#instance-lifecycle">Instance Lifecycle</a></li>
-                        <li><a href="#initialization">Initialization</a></li>
-                        <li><a href="#timing-model">Timing Model</a></li>
-                        <li><a href="#duration--refresh-semantics">Duration &amp; Refresh Semantics</a></li>
-                        <li><a href="#stack-management">Stack Management</a></li>
-                        <li><a href="#state-machine">State Machine</a></li>
-                        <li><a href="#api-reference">API Reference</a></li>
-                        <li><a href="#best-practices">Best Practices</a></li>
-                    </ol>
+    <hr>
 
-                    <hr>
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#runtime-data">Runtime Data</a></li>
+        <li><a href="#persistent-memory">Persistent Memory</a></li>
+        <li><a href="#function-call-state">Function Call State</a></li>
+        <li><a href="#onend-lifecycle-guards">OnEnd Lifecycle Guards</a></li>
+        <li><a href="#instance-lifecycle">Instance Lifecycle</a></li>
+        <li><a href="#initialization">Initialization</a></li>
+        <li><a href="#timing-model">Timing Model</a></li>
+        <li><a href="#duration--refresh-semantics">Duration &amp; Refresh Semantics</a></li>
+        <li><a href="#stack-management">Stack Management</a></li>
+        <li><a href="#state-machine">State Machine</a></li>
+        <li><a href="#api-reference">API Reference</a></li>
+        <li><a href="#best-practices">Best Practices</a></li>
+    </ol>
 
-                    <h2 id="overview">Overview</h2>
-                    <p><code>FStatusInstance</code> is the <strong>runtime representation</strong> of an active status effect. It holds all persistent state needed across execution ticks: timing, stack count, saved program counter, memory blobs, object references, and actor pointers.</p>
-                    <p>Instances are <strong>not created automatically</strong> &mdash; the VM executes bytecode inline using a transient global context, and only when a handler explicitly calls <code>RegisterAsActiveInstance()</code> is an instance allocated from the pool.</p>
-                    <p><strong>Source:</strong> <code>Core/StatusInstance.h</code>, <code>Core/StatusInstance.cpp</code></p>
+    <hr>
 
-                    <hr>
+    <h2 id="overview">Overview</h2>
+    <p><code>FStatusInstance</code> is the <strong>runtime representation</strong> of an active status effect. It holds
+        all persistent state needed across execution ticks: timing, stack count, saved program counter, memory blobs,
+        object references, and actor pointers.</p>
+    <p>Instances are <strong>not created automatically</strong> &mdash; the VM executes bytecode inline using a
+        transient global context, and only when a handler explicitly calls <code>RegisterAsActiveInstance()</code> is an
+        instance allocated from the pool.</p>
+    <p><strong>Source:</strong> <code>Core/StatusInstance.h</code>, <code>Core/StatusInstance.cpp</code></p>
 
-                    <h2 id="design-philosophy">Design Philosophy</h2>
+    <hr>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Principle</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Handler-driven creation</strong></td>
-                                <td>Instances exist only when needed (e.g., a status has a delay, loop, or duration). Fire-and-forget statuses never allocate an instance</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Performance-optimized layout</strong></td>
-                                <td>The struct is organized for optimal runtime performance, with frequently-accessed tick data separated from cold data</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Pool-managed lifecycle</strong></td>
-                                <td>Instances are allocated from <code>FStatusInstancePool</code> and recycled via <code>Reset()</code>, avoiding GC pressure</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Separate from VM context</strong></td>
-                                <td>The VM uses a single global <code>FForgeVMContext</code>. Instances store only data that must persist between execution slices</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h2 id="design-philosophy">Design Philosophy</h2>
 
-                    <hr>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Principle</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Handler-driven creation</strong></td>
+                <td>Instances exist only when needed (e.g., a status has a delay, loop, or duration). Fire-and-forget
+                    statuses never allocate an instance</td>
+            </tr>
+            <tr>
+                <td><strong>Performance-optimized layout</strong></td>
+                <td>The struct is organized for optimal runtime performance, with frequently-accessed tick data
+                    separated from cold data</td>
+            </tr>
+            <tr>
+                <td><strong>Pool-managed lifecycle</strong></td>
+                <td>Instances are allocated from <code>FStatusInstancePool</code> and recycled via <code>Reset()</code>,
+                    avoiding GC pressure</td>
+            </tr>
+            <tr>
+                <td><strong>Separate from VM context</strong></td>
+                <td>The VM uses a single global <code>FForgeVMContext</code>. Instances store only data that must
+                    persist between execution slices</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h2 id="runtime-data">Runtime Data</h2>
-                    <p>The instance struct is organized for optimal runtime performance, with frequently-accessed tick data separated from initialization/termination data.</p>
+    <hr>
 
-                    <h3>Tick Data (Hot Path)</h3>
-                    <p>Fields accessed by <code>UpdateTiming()</code>, <code>ShouldTick()</code>, and <code>ShouldResume()</code> every frame:</p>
+    <h2 id="runtime-data">Runtime Data</h2>
+    <p>The instance struct is organized for optimal runtime performance, with frequently-accessed tick data separated
+        from initialization/termination data.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Field</th>
-                                <th>Type</th>
-                                <th>Default</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>StatusID</code></td>
-                                <td><code>int64</code></td>
-                                <td><code>0</code></td>
-                                <td>Unique instance identifier (generated by <code>UStatsX_GameInstanceSubsystem</code>)</td>
-                            </tr>
-                            <tr>
-                                <td><code>State</code></td>
-                                <td><code>EStatusInstanceState</code></td>
-                                <td><code>Inactive</code></td>
-                                <td>Current lifecycle state</td>
-                            </tr>
-                            <tr>
-                                <td><code>ElapsedTime</code></td>
-                                <td><code>float</code></td>
-                                <td><code>0.0</code></td>
-                                <td>Monotonic lifetime timer since registration (never resets)</td>
-                            </tr>
-                            <tr>
-                                <td><code>TimeSinceLastTick</code></td>
-                                <td><code>float</code></td>
-                                <td><code>0.0</code></td>
-                                <td>Accumulator since last tick execution (reset on each tick)</td>
-                            </tr>
-                            <tr>
-                                <td><code>Duration</code></td>
-                                <td><code>float</code></td>
-                                <td><code>-1.0</code></td>
-                                <td>Absolute expiry point on <code>ElapsedTime</code> timeline. &le; 0 = infinite</td>
-                            </tr>
-                            <tr>
-                                <td><code>BaseDuration</code></td>
-                                <td><code>float</code></td>
-                                <td><code>-1.0</code></td>
-                                <td>Original finite duration (used for deterministic refresh semantics)</td>
-                            </tr>
-                            <tr>
-                                <td><code>TickInterval</code></td>
-                                <td><code>float</code></td>
-                                <td><code>0.0</code></td>
-                                <td>Seconds between ticks. 0 = every frame</td>
-                            </tr>
-                            <tr>
-                                <td><code>NextExecutionTime</code></td>
-                                <td><code>float</code></td>
-                                <td><code>0.0</code></td>
-                                <td>Next scheduled execution time (for pool scheduling)</td>
-                            </tr>
-                            <tr>
-                                <td><code>SuspendTimer</code></td>
-                                <td><code>float</code></td>
-                                <td><code>0.0</code></td>
-                                <td>Countdown timer for suspended state. Resumes when &le; 0</td>
-                            </tr>
-                            <tr>
-                                <td><code>MaxIterations</code></td>
-                                <td><code>int32</code></td>
-                                <td><code>-1</code></td>
-                                <td>Maximum tick iterations. -1 = infinite</td>
-                            </tr>
-                            <tr>
-                                <td><code>CurrentIterationCount</code></td>
-                                <td><code>int32</code></td>
-                                <td><code>0</code></td>
-                                <td>How many ticks have executed so far</td>
-                            </tr>
-                            <tr>
-                                <td><code>StackCount</code></td>
-                                <td><code>int32</code></td>
-                                <td><code>1</code></td>
-                                <td>Current number of stacks</td>
-                            </tr>
-                            <tr>
-                                <td><code>SavedPC</code></td>
-                                <td><code>int32</code></td>
-                                <td><code>0</code></td>
-                                <td>Program Counter to resume from when unsuspended</td>
-                            </tr>
-                            <tr>
-                                <td><code>bWaitingForAsyncEvents</code></td>
-                                <td><code>bool</code></td>
-                                <td><code>false</code></td>
-                                <td>True while waiting for async event dispatch (montage callbacks, etc.)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Tick Data (Hot Path)</h3>
+    <p>Fields accessed by <code>UpdateTiming()</code>, <code>ShouldTick()</code>, and <code>ShouldResume()</code> every
+        frame:</p>
 
-                    <h3>Reference Data</h3>
-                    <p>Fields accessed during initialization, resumption, or termination:</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>StatusID</code></td>
+                <td><code>int64</code></td>
+                <td><code>0</code></td>
+                <td>Unique instance identifier (generated by <code>UStatsX_GameInstanceSubsystem</code>)</td>
+            </tr>
+            <tr>
+                <td><code>State</code></td>
+                <td><code>EStatusInstanceState</code></td>
+                <td><code>Inactive</code></td>
+                <td>Current lifecycle state</td>
+            </tr>
+            <tr>
+                <td><code>ElapsedTime</code></td>
+                <td><code>float</code></td>
+                <td><code>0.0</code></td>
+                <td>Monotonic lifetime timer since registration (never resets)</td>
+            </tr>
+            <tr>
+                <td><code>TimeSinceLastTick</code></td>
+                <td><code>float</code></td>
+                <td><code>0.0</code></td>
+                <td>Accumulator since last tick execution (reset on each tick)</td>
+            </tr>
+            <tr>
+                <td><code>Duration</code></td>
+                <td><code>float</code></td>
+                <td><code>-1.0</code></td>
+                <td>Absolute expiry point on <code>ElapsedTime</code> timeline. &le; 0 = infinite</td>
+            </tr>
+            <tr>
+                <td><code>BaseDuration</code></td>
+                <td><code>float</code></td>
+                <td><code>-1.0</code></td>
+                <td>Original finite duration (used for deterministic refresh semantics)</td>
+            </tr>
+            <tr>
+                <td><code>TickInterval</code></td>
+                <td><code>float</code></td>
+                <td><code>0.0</code></td>
+                <td>Seconds between ticks. 0 = every frame</td>
+            </tr>
+            <tr>
+                <td><code>NextExecutionTime</code></td>
+                <td><code>float</code></td>
+                <td><code>0.0</code></td>
+                <td>Next scheduled execution time (for pool scheduling)</td>
+            </tr>
+            <tr>
+                <td><code>SuspendTimer</code></td>
+                <td><code>float</code></td>
+                <td><code>0.0</code></td>
+                <td>Countdown timer for suspended state. Resumes when &le; 0</td>
+            </tr>
+            <tr>
+                <td><code>MaxIterations</code></td>
+                <td><code>int32</code></td>
+                <td><code>-1</code></td>
+                <td>Maximum tick iterations. -1 = infinite</td>
+            </tr>
+            <tr>
+                <td><code>CurrentIterationCount</code></td>
+                <td><code>int32</code></td>
+                <td><code>0</code></td>
+                <td>How many ticks have executed so far</td>
+            </tr>
+            <tr>
+                <td><code>StackCount</code></td>
+                <td><code>int32</code></td>
+                <td><code>1</code></td>
+                <td>Current number of stacks</td>
+            </tr>
+            <tr>
+                <td><code>SavedPC</code></td>
+                <td><code>int32</code></td>
+                <td><code>0</code></td>
+                <td>Program Counter to resume from when unsuspended</td>
+            </tr>
+            <tr>
+                <td><code>bWaitingForAsyncEvents</code></td>
+                <td><code>bool</code></td>
+                <td><code>false</code></td>
+                <td>True while waiting for async event dispatch (montage callbacks, etc.)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Field</th>
-                                <th>Type</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>StatusTag</code></td>
-                                <td><code>FGameplayTag</code></td>
-                                <td>Tag identifying this status type (copied from Definition)</td>
-                            </tr>
-                            <tr>
-                                <td><code>Definition</code></td>
-                                <td><code>const UPDA_StatusDefinition*</code></td>
-                                <td>Pointer to the compiled bytecode asset</td>
-                            </tr>
-                            <tr>
-                                <td><code>CasterActor</code></td>
-                                <td><code>TWeakObjectPtr&lt;AActor&gt;</code></td>
-                                <td>Actor that cast this status</td>
-                            </tr>
-                            <tr>
-                                <td><code>TargetActor</code></td>
-                                <td><code>TWeakObjectPtr&lt;AActor&gt;</code></td>
-                                <td>Actor receiving this status</td>
-                            </tr>
-                            <tr>
-                                <td><code>CasterComponent</code></td>
-                                <td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td>
-                                <td>Cached caster component (resolved once at init)</td>
-                            </tr>
-                            <tr>
-                                <td><code>TargetComponent</code></td>
-                                <td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td>
-                                <td>Cached target component (resolved once at init)</td>
-                            </tr>
-                            <tr>
-                                <td><code>Revision</code></td>
-                                <td><code>int32</code></td>
-                                <td>Monotonic per-instance revision. Incremented on each emitted status update. Starts at 1</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Reference Data</h3>
+    <p>Fields accessed during initialization, resumption, or termination:</p>
 
-                    <h3>Why TWeakObjectPtr?</h3>
-                    <p>Actor and component references use <code>TWeakObjectPtr</code> because:</p>
-                    <ul>
-                        <li>The status instance may outlive the actor (actor destroyed while status still in pool)</li>
-                        <li>Weak pointers auto-null when the referenced object is garbage collected</li>
-                        <li>The <code>OwnerDestroyed</code> termination reason handles cleanup when pointers become stale</li>
-                    </ul>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>StatusTag</code></td>
+                <td><code>FGameplayTag</code></td>
+                <td>Tag identifying this status type (copied from Definition)</td>
+            </tr>
+            <tr>
+                <td><code>Definition</code></td>
+                <td><code>const UPDA_StatusDefinition*</code></td>
+                <td>Pointer to the compiled bytecode asset</td>
+            </tr>
+            <tr>
+                <td><code>CasterActor</code></td>
+                <td><code>TWeakObjectPtr&lt;AActor&gt;</code></td>
+                <td>Actor that cast this status</td>
+            </tr>
+            <tr>
+                <td><code>TargetActor</code></td>
+                <td><code>TWeakObjectPtr&lt;AActor&gt;</code></td>
+                <td>Actor receiving this status</td>
+            </tr>
+            <tr>
+                <td><code>CasterComponent</code></td>
+                <td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td>
+                <td>Cached caster component (resolved once at init)</td>
+            </tr>
+            <tr>
+                <td><code>TargetComponent</code></td>
+                <td><code>TWeakObjectPtr&lt;UStatsX_StatsComponentBase&gt;</code></td>
+                <td>Cached target component (resolved once at init)</td>
+            </tr>
+            <tr>
+                <td><code>Revision</code></td>
+                <td><code>int32</code></td>
+                <td>Monotonic per-instance revision. Incremented on each emitted status update. Starts at 1</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <h3>Why TWeakObjectPtr?</h3>
+    <p>Actor and component references use <code>TWeakObjectPtr</code> because:</p>
+    <ul>
+        <li>The status instance may outlive the actor (actor destroyed while status still in pool)</li>
+        <li>Weak pointers auto-null when the referenced object is garbage collected</li>
+        <li>The <code>OwnerDestroyed</code> termination reason handles cleanup when pointers become stale</li>
+    </ul>
 
-                    <h2 id="persistent-memory">Persistent Memory</h2>
-                    <p>The instance holds several persistent memory regions that survive across execution slices:</p>
+    <hr>
 
-                    <h3>InstanceBlob</h3>
-                    <p>Raw byte storage for persistent node state (Gate/DoOnce flags, async node data, Instance-scoped variables). Size is pre-calculated by the compiler.</p>
+    <h2 id="persistent-memory">Persistent Memory</h2>
+    <p>The instance holds several persistent memory regions that survive across execution slices:</p>
 
-                    <h3>InstanceObjectPool</h3>
-                    <p>GC-safe object reference storage. Object references are tracked by Unreal's garbage collector via <code>UPROPERTY</code>, ensuring safe access across ticks.</p>
+    <h3>InstanceBlob</h3>
+    <p>Raw byte storage for persistent node state (Gate/DoOnce flags, async node data, Instance-scoped variables). Size
+        is pre-calculated by the compiler.</p>
 
-                    <h3>VariableBlob</h3>
-                    <p>Dedicated storage for user-declared variables that persist across execution slices. Initialized from context at instance creation time.</p>
+    <h3>InstanceObjectPool</h3>
+    <p>GC-safe object reference storage. Object references are tracked by Unreal's garbage collector via
+        <code>UPROPERTY</code>, ensuring safe access across ticks.
+    </p>
 
-                    <h3>ArrayPool</h3>
-                    <p>Persistent dynamic array storage for array and set variables that need to survive across ticks.</p>
+    <h3>VariableBlob</h3>
+    <p>Dedicated storage for user-declared variables that persist across execution slices. Initialized from context at
+        instance creation time.</p>
 
-                    <hr>
+    <h3>ArrayPool</h3>
+    <p>Persistent dynamic array storage for array and set variables that need to survive across ticks.</p>
 
-                    <h2 id="function-call-state">Function Call State</h2>
-                    <p>When a status instance suspends while inside a function call (nested event blocks), the full call state is persisted:</p>
+    <hr>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Field</th>
-                                <th>Type</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>FunctionCallStack</code></td>
-                                <td><code>TArray&lt;FForgeFunctionCallFrame&gt;</code></td>
-                                <td>Call frames: return PC, output descriptor, argument range</td>
-                            </tr>
-                            <tr>
-                                <td><code>FunctionArgSlots</code></td>
-                                <td><code>TArray&lt;FForgeFunctionArgSlot&gt;</code></td>
-                                <td>Metadata for each captured argument (offset, size, type)</td>
-                            </tr>
-                            <tr>
-                                <td><code>FunctionArgBlob</code></td>
-                                <td><code>TArray&lt;uint8&gt;</code></td>
-                                <td>Raw bytes of captured argument values</td>
-                            </tr>
-                            <tr>
-                                <td><code>FunctionCallObjectPool</code></td>
-                                <td><code>TArray&lt;TObjectPtr&lt;UObject&gt;&gt;</code></td>
-                                <td>GC-safe objects referenced by function arguments</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p>On resume, the VM restores these into the global context, allowing seamless continuation from inside nested function calls.</p>
+    <h2 id="function-call-state">Function Call State</h2>
+    <p>When a status instance suspends while inside a function call (nested event blocks), the full call state is
+        persisted:</p>
 
-                    <hr>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>FunctionCallStack</code></td>
+                <td><code>TArray&lt;FForgeFunctionCallFrame&gt;</code></td>
+                <td>Call frames: return PC, output descriptor, argument range</td>
+            </tr>
+            <tr>
+                <td><code>FunctionArgSlots</code></td>
+                <td><code>TArray&lt;FForgeFunctionArgSlot&gt;</code></td>
+                <td>Metadata for each captured argument (offset, size, type)</td>
+            </tr>
+            <tr>
+                <td><code>FunctionArgBlob</code></td>
+                <td><code>TArray&lt;uint8&gt;</code></td>
+                <td>Raw bytes of captured argument values</td>
+            </tr>
+            <tr>
+                <td><code>FunctionCallObjectPool</code></td>
+                <td><code>TArray&lt;TObjectPtr&lt;UObject&gt;&gt;</code></td>
+                <td>GC-safe objects referenced by function arguments</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>On resume, the VM restores these into the global context, allowing seamless continuation from inside nested
+        function calls.</p>
 
-                    <h2 id="onend-lifecycle-guards">OnEnd Lifecycle Guards</h2>
-                    <p>Four flags manage the OnEnd event dispatch lifecycle:</p>
+    <hr>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Flag</th>
-                                <th>Type</th>
-                                <th>Default</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>bOnEndExecutionInProgress</code></td>
-                                <td><code>bool</code></td>
-                                <td><code>false</code></td>
-                                <td>Reentrancy guard: prevents recursive OnEnd dispatch</td>
-                            </tr>
-                            <tr>
-                                <td><code>bOnEndEventExecuted</code></td>
-                                <td><code>bool</code></td>
-                                <td><code>false</code></td>
-                                <td>Tombstone: true once OnEnd has been attempted for this termination</td>
-                            </tr>
-                            <tr>
-                                <td><code>bHasPendingOnEndOverride</code></td>
-                                <td><code>bool</code></td>
-                                <td><code>false</code></td>
-                                <td>True when a termination node has provided an explicit OnEnd policy</td>
-                            </tr>
-                            <tr>
-                                <td><code>bPendingOnEndOverrideValue</code></td>
-                                <td><code>bool</code></td>
-                                <td><code>true</code></td>
-                                <td>The override value (execute OnEnd = true / skip = false)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h2 id="onend-lifecycle-guards">OnEnd Lifecycle Guards</h2>
+    <p>Four flags manage the OnEnd event dispatch lifecycle:</p>
 
-                    <p>These guards ensure that:</p>
-                    <ol>
-                        <li>OnEnd fires at most once per lifecycle termination</li>
-                        <li>A termination node (e.g., <code>OP_End</code> with explicit flag) can override the natural OnEnd policy</li>
-                        <li>Reentrancy is prevented if OnEnd logic itself triggers termination</li>
-                    </ol>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Flag</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>bOnEndExecutionInProgress</code></td>
+                <td><code>bool</code></td>
+                <td><code>false</code></td>
+                <td>Reentrancy guard: prevents recursive OnEnd dispatch</td>
+            </tr>
+            <tr>
+                <td><code>bOnEndEventExecuted</code></td>
+                <td><code>bool</code></td>
+                <td><code>false</code></td>
+                <td>Tombstone: true once OnEnd has been attempted for this termination</td>
+            </tr>
+            <tr>
+                <td><code>bHasPendingOnEndOverride</code></td>
+                <td><code>bool</code></td>
+                <td><code>false</code></td>
+                <td>True when a termination node has provided an explicit OnEnd policy</td>
+            </tr>
+            <tr>
+                <td><code>bPendingOnEndOverrideValue</code></td>
+                <td><code>bool</code></td>
+                <td><code>true</code></td>
+                <td>The override value (execute OnEnd = true / skip = false)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <p>These guards ensure that:</p>
+    <ol>
+        <li>OnEnd fires at most once per lifecycle termination</li>
+        <li>A termination node (e.g., <code>OP_End</code> with explicit flag) can override the natural OnEnd policy</li>
+        <li>Reentrancy is prevented if OnEnd logic itself triggers termination</li>
+    </ol>
 
-                    <h2 id="instance-lifecycle">Instance Lifecycle</h2>
-                    
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Structure</span>
-                        </div>
-                        <pre><code>Status Executed (Inline)
+    <hr>
+
+    <h2 id="instance-lifecycle">Instance Lifecycle</h2>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Status Executed (Inline)
   │
   ├─ VM runs bytecode synchronously
   │    └─ If a handler needs persistence:
@@ -374,55 +390,63 @@
   │    └─ Pool reclaims instance → Reset()
   │
   └─ Instance state: Inactive (available for reuse)</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="initialization">Initialization</h2>
-                    <p><code>InitializeFromContext()</code> migrates runtime state from the transient <code>FForgeVMContext</code> to persistent instance storage. This includes setting up timing defaults, copying actor and component references, transferring variable data, array pools, and function call state. Object references are remapped from the transient context pool to the persistent instance pool to ensure GC safety across ticks.</p>
-                    <p>This migration runs once per instance creation (not per tick). The cost is proportional to the number of variables and object references in the status definition.</p>
+    <h2 id="initialization">Initialization</h2>
+    <p><code>InitializeFromContext()</code> migrates runtime state from the transient <code>FForgeVMContext</code> to
+        persistent instance storage. This includes setting up timing defaults, copying actor and component references,
+        transferring variable data, array pools, and function call state. Object references are remapped from the
+        transient context pool to the persistent instance pool to ensure GC safety across ticks.</p>
+    <p>This migration runs once per instance creation (not per tick). The cost is proportional to the number of
+        variables and object references in the status definition.</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="timing-model">Timing Model</h2>
-                    
-                    <h3>UpdateTiming</h3>
-                    <p>Called every frame for all active/suspended instances. Advances <code>ElapsedTime</code> and <code>TimeSinceLastTick</code>, and counts down <code>SuspendTimer</code> for suspended instances.</p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void FStatusInstance::UpdateTiming(float DeltaTime);</code></pre>
-                    </div>
+    <h2 id="timing-model">Timing Model</h2>
 
-                    <h3>ShouldTick</h3>
-                    <p>Determines if an Active instance should execute this frame. Returns <code>true</code> if the instance is Active and either has no tick interval (every-frame) or the interval has elapsed.</p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>bool ShouldTick() const;</code></pre>
-                    </div>
+    <h3>UpdateTiming</h3>
+    <p>Called every frame for all active/suspended instances. Advances <code>ElapsedTime</code> and
+        <code>TimeSinceLastTick</code>, and counts down <code>SuspendTimer</code> for suspended instances.
+    </p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void FStatusInstance::UpdateTiming(float DeltaTime);</code></pre>
+    </div>
 
-                    <h3>ShouldResume</h3>
-                    <p>Determines if a Suspended instance should wake up. Returns <code>true</code> when the suspend timer has expired.</p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>bool ShouldResume() const;</code></pre>
-                    </div>
+    <h3>ShouldTick</h3>
+    <p>Determines if an Active instance should execute this frame. Returns <code>true</code> if the instance is Active
+        and either has no tick interval (every-frame) or the interval has elapsed.</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool ShouldTick() const;</code></pre>
+    </div>
 
-                    <hr>
+    <h3>ShouldResume</h3>
+    <p>Determines if a Suspended instance should wake up. Returns <code>true</code> when the suspend timer has expired.
+    </p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool ShouldResume() const;</code></pre>
+    </div>
 
-                    <h2 id="duration--refresh-semantics">Duration &amp; Refresh Semantics</h2>
+    <hr>
 
-                    <h3>Duration Timeline</h3>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Structure</span>
-                        </div>
-                        <pre><code>Time ──────────────────────────────────────────────────────►
+    <h2 id="duration--refresh-semantics">Duration &amp; Refresh Semantics</h2>
+
+    <h3>Duration Timeline</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>Time ──────────────────────────────────────────────────────►
 
 Registration        Duration expires
     │                    │
@@ -430,29 +454,31 @@ Registration        Duration expires
     ├───── ElapsedTime ──┤
     │                    │
     0                 Duration (absolute expiry point)</code></pre>
-                    </div>
-                    
-                    <ul>
-                        <li><code>ElapsedTime</code> is <strong>monotonic</strong> &mdash; never resets, always increases</li>
-                        <li><code>Duration</code> is an <strong>absolute expiry point</strong> on the ElapsedTime timeline</li>
-                        <li><code>Duration &le; 0</code> means infinite (never expires)</li>
-                    </ul>
+    </div>
 
-                    <h3>Refresh Logic</h3>
-                    <p><code>RefreshDurationWindow()</code> extends a finite duration without resetting elapsed time. It shifts the absolute expiry point forward by <code>BaseDuration</code> from the current <code>ElapsedTime</code>. Infinite durations are unaffected.</p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void RefreshDurationWindow();</code></pre>
-                    </div>
+    <ul>
+        <li><code>ElapsedTime</code> is <strong>monotonic</strong> &mdash; never resets, always increases</li>
+        <li><code>Duration</code> is an <strong>absolute expiry point</strong> on the ElapsedTime timeline</li>
+        <li><code>Duration &le; 0</code> means infinite (never expires)</li>
+    </ul>
 
-                    <p><strong>Example:</strong></p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Structure</span>
-                        </div>
-                        <pre><code>BaseDuration = 10.0 seconds
+    <h3>Refresh Logic</h3>
+    <p><code>RefreshDurationWindow()</code> extends a finite duration without resetting elapsed time. It shifts the
+        absolute expiry point forward by <code>BaseDuration</code> from the current <code>ElapsedTime</code>. Infinite
+        durations are unaffected.</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void RefreshDurationWindow();</code></pre>
+    </div>
+
+    <p><strong>Example:</strong></p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>BaseDuration = 10.0 seconds
 
 At ElapsedTime = 7.0:
   Duration was 10.0 (3 seconds remaining)
@@ -461,52 +487,58 @@ At ElapsedTime = 7.0:
 At ElapsedTime = 15.0:
   Duration is 17.0 (2 seconds remaining)
   After refresh: Duration = 15.0 + 10.0 = 25.0 (10 seconds remaining again)</code></pre>
-                    </div>
-                    <p>This design ensures <code>ElapsedTime</code> stays monotonic (useful for analytics and UI) while allowing infinite duration refreshes via stacking policies.</p>
+    </div>
+    <p>This design ensures <code>ElapsedTime</code> stays monotonic (useful for analytics and UI) while allowing
+        infinite duration refreshes via stacking policies.</p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="stack-management">Stack Management</h2>
+    <h2 id="stack-management">Stack Management</h2>
 
-                    <h3>AddStack</h3>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void AddStack(int32 Count);</code></pre>
-                    </div>
-                    <p>Increments the stack count. The stacking policy (Aggregate, AggregateAndRefresh, etc.) is enforced at the <code>WorldSubsystem</code> level before calling <code>AddStack()</code>.</p>
+    <h3>AddStack</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void AddStack(int32 Count);</code></pre>
+    </div>
+    <p>Increments the stack count. The stacking policy (Aggregate, AggregateAndRefresh, etc.) is enforced at the
+        <code>WorldSubsystem</code> level before calling <code>AddStack()</code>.
+    </p>
 
-                    <h3>RemoveStack</h3>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void RemoveStack(int32 Count);</code></pre>
-                    </div>
-                    <p>Decrements the stack count. When stacks reach zero, the instance is automatically terminated with reason <code>StacksZero</code>. The termination flows through the WorldSubsystem to ensure proper cleanup (OnEnd event, modifier removal, tag cleanup, etc.).</p>
+    <h3>RemoveStack</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void RemoveStack(int32 Count);</code></pre>
+    </div>
+    <p>Decrements the stack count. When stacks reach zero, the instance is automatically terminated with reason
+        <code>StacksZero</code>. The termination flows through the WorldSubsystem to ensure proper cleanup (OnEnd event,
+        modifier removal, tag cleanup, etc.).
+    </p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="state-machine">State Machine</h2>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Structure</span>
-                        </div>
-                        <pre><code>                    ┌────────────┐
-                    │  Inactive  │ ◄── Reset() / Pool available
+    <h2 id="state-machine">State Machine</h2>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Structure</span>
+        </div>
+        <pre><code>                    ┌────────────┐
+                    │  Inactive │ ◄── Reset() / Pool available
                     └─────┬──────┘
                           │ InitializeFromContext()
                           ▼
                     ┌────────────┐
-                    │   Active   │ ◄── Executing periodically (ShouldTick)
-                    └──┬─────┬──┘
+                    │   Active  │ ◄── Executing periodically (ShouldTick)
+                    └──┬─────┬───┘
                        │     │
            Handler     │     │ Handler suspends
            completes   │     │ (Delay, WaitForEvent)
                        │     ▼
                        │  ┌────────────┐
-                       │  │ Suspended  │ ◄── Waiting (SuspendTimer / ForgeEvent)
+                       │  │ Suspended │ ◄── Waiting (SuspendTimer / ForgeEvent)
                        │  └─────┬──────┘
                        │        │ ShouldResume() / Event fires
                        │        │
@@ -515,228 +547,238 @@ At ElapsedTime = 15.0:
                        │
                        ▼
                 ┌──────────────┐
-                │ Terminating  │ ◄── Duration expired / Removed / StacksZero / etc.
+                │ Terminating │ ◄── Duration expired / Removed / StacksZero / etc.
                 └──────┬───────┘
                        │ Cleanup complete
                        ▼
                  ┌────────────┐
-                 │  Inactive  │ ◄── Reset(), available for reuse
+                 │  Inactive │ ◄── Reset(), available for reuse
                  └────────────┘</code></pre>
-                    </div>
+    </div>
 
-                    <h3>State Descriptions</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>State</th>
-                                <th>Description</th>
-                                <th>Tick Behavior</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>Inactive</code></td>
-                                <td>Instance slot is empty / available in pool</td>
-                                <td>Not ticked</td>
-                            </tr>
-                            <tr>
-                                <td><code>Pending</code></td>
-                                <td>Queued for activation (reserved for future use)</td>
-                                <td>Not ticked</td>
-                            </tr>
-                            <tr>
-                                <td><code>Active</code></td>
-                                <td>Running normally. Executes on <code>TickInterval</code></td>
-                                <td><code>UpdateTiming</code> + <code>ShouldTick</code> check</td>
-                            </tr>
-                            <tr>
-                                <td><code>Suspended</code></td>
-                                <td>Paused, waiting for timer or event</td>
-                                <td><code>UpdateTiming</code> + <code>ShouldResume</code> check</td>
-                            </tr>
-                            <tr>
-                                <td><code>Terminating</code></td>
-                                <td>Cleanup in progress</td>
-                                <td>Transitional, immediately moves to Inactive</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>State Descriptions</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>State</th>
+                <th>Description</th>
+                <th>Tick Behavior</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Inactive</code></td>
+                <td>Instance slot is empty / available in pool</td>
+                <td>Not ticked</td>
+            </tr>
+            <tr>
+                <td><code>Pending</code></td>
+                <td>Queued for activation (reserved for future use)</td>
+                <td>Not ticked</td>
+            </tr>
+            <tr>
+                <td><code>Active</code></td>
+                <td>Running normally. Executes on <code>TickInterval</code></td>
+                <td><code>UpdateTiming</code> + <code>ShouldTick</code> check</td>
+            </tr>
+            <tr>
+                <td><code>Suspended</code></td>
+                <td>Paused, waiting for timer or event</td>
+                <td><code>UpdateTiming</code> + <code>ShouldResume</code> check</td>
+            </tr>
+            <tr>
+                <td><code>Terminating</code></td>
+                <td>Cleanup in progress</td>
+                <td>Transitional, immediately moves to Inactive</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>IsActive Helper</h3>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>bool IsActive() const;</code></pre>
-                    </div>
-                    <p>Both <code>Active</code> and <code>Suspended</code> are considered "alive" &mdash; they participate in timing updates, event listener registration, and termination cleanup.</p>
+    <h3>IsActive Helper</h3>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>bool IsActive() const;</code></pre>
+    </div>
+    <p>Both <code>Active</code> and <code>Suspended</code> are considered "alive" &mdash; they participate in timing
+        updates, event listener registration, and termination cleanup.</p>
 
-                    <hr>
+    <hr>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="reset--pool-reuse">Reset &amp; Pool Reuse</h2>
-                    <p>When an instance is released back to the pool, <code>Reset()</code> clears all timing fields, nulls all references, and frees persistent memory. After <code>Reset()</code>, the instance slot is available for reuse without reallocation.</p>
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">C++</span>
-                        </div>
-                        <pre><code>void Reset();</code></pre>
-                    </div>
+    <h2 id="reset--pool-reuse">Reset &amp; Pool Reuse</h2>
+    <p>When an instance is released back to the pool, <code>Reset()</code> clears all timing fields, nulls all
+        references, and frees persistent memory. After <code>Reset()</code>, the instance slot is available for reuse
+        without reallocation.</p>
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">C++</span>
+        </div>
+        <pre><code>void Reset();</code></pre>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="api-reference">API Reference</h2>
+    <h2 id="api-reference">API Reference</h2>
 
-                    <h3>Initialization</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>InitializeFromContext(Context, StatusID)</code></td>
-                                <td>Migrates context state to persistent instance. Called by <code>RegisterAsActiveInstance()</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Initialization</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>InitializeFromContext(Context, StatusID)</code></td>
+                <td>Migrates context state to persistent instance. Called by <code>RegisterAsActiveInstance()</code>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Timing</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>UpdateTiming(DeltaTime)</code></td>
-                                <td>Updates <code>ElapsedTime</code>, <code>TimeSinceLastTick</code>, <code>SuspendTimer</code></td>
-                            </tr>
-                            <tr>
-                                <td><code>ShouldTick()</code></td>
-                                <td>Returns <code>true</code> if Active and interval has elapsed</td>
-                            </tr>
-                            <tr>
-                                <td><code>ShouldResume()</code></td>
-                                <td>Returns <code>true</code> if Suspended and timer has expired</td>
-                            </tr>
-                            <tr>
-                                <td><code>RefreshDurationWindow()</code></td>
-                                <td>Extends finite duration by <code>BaseDuration</code> from current <code>ElapsedTime</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Timing</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>UpdateTiming(DeltaTime)</code></td>
+                <td>Updates <code>ElapsedTime</code>, <code>TimeSinceLastTick</code>, <code>SuspendTimer</code></td>
+            </tr>
+            <tr>
+                <td><code>ShouldTick()</code></td>
+                <td>Returns <code>true</code> if Active and interval has elapsed</td>
+            </tr>
+            <tr>
+                <td><code>ShouldResume()</code></td>
+                <td>Returns <code>true</code> if Suspended and timer has expired</td>
+            </tr>
+            <tr>
+                <td><code>RefreshDurationWindow()</code></td>
+                <td>Extends finite duration by <code>BaseDuration</code> from current <code>ElapsedTime</code></td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Stacking</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>AddStack(Count)</code></td>
-                                <td>Increments <code>StackCount</code></td>
-                            </tr>
-                            <tr>
-                                <td><code>RemoveStack(Count)</code></td>
-                                <td>Decrements <code>StackCount</code>. Auto-terminates if &le; 0</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Stacking</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>AddStack(Count)</code></td>
+                <td>Increments <code>StackCount</code></td>
+            </tr>
+            <tr>
+                <td><code>RemoveStack(Count)</code></td>
+                <td>Decrements <code>StackCount</code>. Auto-terminates if &le; 0</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Lifecycle</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>Terminate(Reason)</code></td>
-                                <td>Sets state to Terminating &rarr; Inactive</td>
-                            </tr>
-                            <tr>
-                                <td><code>IsActive()</code></td>
-                                <td>Returns <code>true</code> if Active or Suspended</td>
-                            </tr>
-                            <tr>
-                                <td><code>Reset()</code></td>
-                                <td>Clears all state for pool reuse</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Lifecycle</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Terminate(Reason)</code></td>
+                <td>Sets state to Terminating &rarr; Inactive</td>
+            </tr>
+            <tr>
+                <td><code>IsActive()</code></td>
+                <td>Returns <code>true</code> if Active or Suspended</td>
+            </tr>
+            <tr>
+                <td><code>Reset()</code></td>
+                <td>Clears all state for pool reuse</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Memory Access</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>GetBlobPtr(Offset)</code></td>
-                                <td>Returns pointer into <code>InstanceBlob</code> at byte offset</td>
-                            </tr>
-                            <tr>
-                                <td><code>GetArraySlot(Handle)</code></td>
-                                <td>Returns <code>FForgeArraySlot*</code> for array handle</td>
-                            </tr>
-                            <tr>
-                                <td><code>AllocObject(Obj)</code></td>
-                                <td>Allocates/deduplicates object in <code>InstanceObjectPool</code>, returns <code>uint16</code> index</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Memory Access</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>GetBlobPtr(Offset)</code></td>
+                <td>Returns pointer into <code>InstanceBlob</code> at byte offset</td>
+            </tr>
+            <tr>
+                <td><code>GetArraySlot(Handle)</code></td>
+                <td>Returns <code>FForgeArraySlot*</code> for array handle</td>
+            </tr>
+            <tr>
+                <td><code>AllocObject(Obj)</code></td>
+                <td>Allocates/deduplicates object in <code>InstanceObjectPool</code>, returns <code>uint16</code> index
+                </td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Async State</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Method</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>SetWaitingForAsyncEvents(bool)</code></td>
-                                <td>Marks instance as waiting for async event dispatch</td>
-                            </tr>
-                            <tr>
-                                <td><code>IsWaitingForAsyncEvents()</code></td>
-                                <td>Queries async waiting state</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <h3>Async State</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>SetWaitingForAsyncEvents(bool)</code></td>
+                <td>Marks instance as waiting for async event dispatch</td>
+            </tr>
+            <tr>
+                <td><code>IsWaitingForAsyncEvents()</code></td>
+                <td>Queries async waiting state</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="best-practices">Best Practices</h2>
+    <h2 id="best-practices">Best Practices</h2>
 
-                    <h3>1. Use TWeakObjectPtr for Safety</h3>
-                    <p>Actor/component pointers are weak by design. Always check <code>IsValid()</code> before dereferencing in game code. The termination system handles null pointers gracefully via <code>OwnerDestroyed</code> cleanup.</p>
+    <h3>1. Use TWeakObjectPtr for Safety</h3>
+    <p>Actor/component pointers are weak by design. Always check <code>IsValid()</code> before dereferencing in game
+        code. The termination system handles null pointers gracefully via <code>OwnerDestroyed</code> cleanup.</p>
 
-                    <h3>2. Revision for Update Ordering</h3>
-                    <p>The <code>Revision</code> field provides monotonic ordering for replicated status updates. Clients can reject stale updates by comparing revision numbers, ensuring eventual consistency without locks.</p>
+    <h3>2. Revision for Update Ordering</h3>
+    <p>The <code>Revision</code> field provides monotonic ordering for replicated status updates. Clients can reject
+        stale updates by comparing revision numbers, ensuring eventual consistency without locks.</p>
 
-                    <h3>3. Duration vs BaseDuration</h3>
-                    <ul>
-                        <li><code>Duration</code> is the absolute expiry point &mdash; compare against <code>ElapsedTime</code></li>
-                        <li><code>BaseDuration</code> is the original window size &mdash; used by <code>RefreshDurationWindow()</code> to compute the new absolute deadline</li>
-                        <li>Both &le; 0 means infinite: no expiration</li>
-                    </ul>
+    <h3>3. Duration vs BaseDuration</h3>
+    <ul>
+        <li><code>Duration</code> is the absolute expiry point &mdash; compare against <code>ElapsedTime</code></li>
+        <li><code>BaseDuration</code> is the original window size &mdash; used by <code>RefreshDurationWindow()</code>
+            to compute the new absolute deadline</li>
+        <li>Both &le; 0 means infinite: no expiration</li>
+    </ul>
 
-                    <h3>4. StackCount Invariant</h3>
-                    <p><code>StackCount</code> reaching zero triggers automatic termination via <code>TerminateInstance()</code>. If you need to set stacks to zero without termination, use direct field assignment followed by your own lifecycle logic &mdash; but this is strongly discouraged in normal usage.</p>
-                </section>
+    <h3>4. StackCount Invariant</h3>
+    <p><code>StackCount</code> reaching zero triggers automatic termination via <code>TerminateInstance()</code>. If you
+        need to set stacks to zero without termination, use direct field assignment followed by your own lifecycle logic
+        &mdash; but this is strongly discouraged in normal usage.</p>
+</section>

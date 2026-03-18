@@ -1,291 +1,314 @@
 <section id="architecture-overview" class="tutorial-section">
-                    <h1>Architecture Overview</h1>
-                    
-                    <div class="info-box info">
-                        <div class="info-title">ℹ️ Version Info</div>
-                        <p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7<br>Enterprise-grade Gameplay Ability System alternative</p>
-                    </div>
+    <h1>Architecture Overview</h1>
 
-                    <hr>
+    <div class="info-box info">
+        <div class="info-title">ℹ️ Version Info</div>
+        <p><strong>Stats_X v1.404</strong> — Unreal Engine 5.7<br>Enterprise-grade Gameplay Ability System alternative
+        </p>
+    </div>
 
-                    <h2>Table of Contents</h2>
-                    <ol>
-                        <li><a href="#design-philosophy">Design Philosophy</a></li>
-                        <li><a href="#plugin-modules">Plugin Modules</a></li>
-                        <li><a href="#architectural-layers">Architectural Layers</a></li>
-                        <li><a href="#runtime-layer-map">Runtime Layer Map</a></li>
-                        <li><a href="#subsystem-hierarchy">Subsystem Hierarchy</a></li>
-                        <li><a href="#execution-model">Execution Model</a></li>
-                        <li><a href="#data-flow">Data Flow</a></li>
-                        <li><a href="#memory-model">Memory Model</a></li>
-                        <li><a href="#network-architecture">Network Architecture</a></li>
-                        <li><a href="#extension-points">Extension Points</a></li>
-                        <li><a href="#platform-support">Platform Support</a></li>
-                        <li><a href="#module-dependencies">Module Dependencies</a></li>
-                        <li><a href="#key-source-files">Key Source Files</a></li>
-                    </ol>
+    <hr>
 
-                    <hr>
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#design-philosophy">Design Philosophy</a></li>
+        <li><a href="#plugin-modules">Plugin Modules</a></li>
+        <li><a href="#architectural-layers">Architectural Layers</a></li>
+        <li><a href="#runtime-layer-map">Runtime Layer Map</a></li>
+        <li><a href="#subsystem-hierarchy">Subsystem Hierarchy</a></li>
+        <li><a href="#execution-model">Execution Model</a></li>
+        <li><a href="#data-flow">Data Flow</a></li>
+        <li><a href="#memory-model">Memory Model</a></li>
+        <li><a href="#network-architecture">Network Architecture</a></li>
+        <li><a href="#extension-points">Extension Points</a></li>
+        <li><a href="#platform-support">Platform Support</a></li>
+        <li><a href="#module-dependencies">Module Dependencies</a></li>
+        <li><a href="#key-source-files">Key Source Files</a></li>
+    </ol>
 
-                    <h2 id="design-philosophy">Design Philosophy</h2>
-                    <p>Stats_X is built around four core principles:</p>
-                    
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Principle</th>
-                                <th>Implementation</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Zero-allocation hot path</strong></td>
-                                <td>Execution context is reused across invocations; status instances are pooled to avoid runtime allocations</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Cache-friendly design</strong></td>
-                                <td>Instructions and runtime data are laid out for optimal cache performance</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Handler-driven lifecycle</strong></td>
-                                <td>The VM executes bytecode inline — node handlers decide if/when to promote an execution to a persistent instance</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Visual authoring, native performance</strong></td>
-                                <td>StatusForge graph editor compiles to compact bytecode executed by the ForgeVM at native speed</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <hr>
 
-                    <p>The system deliberately avoids GAS patterns that introduce allocation pressure (per-ability instancing, deep UObject hierarchies, Gameplay Effect pooling) and instead adopts a bytecode VM approach where <strong>status definitions are data assets compiled to instructions</strong>, and the runtime uses an efficient dispatch mechanism for registered handlers.</p>
+    <h2 id="design-philosophy">Design Philosophy</h2>
+    <p>Stats_X is built around four core principles:</p>
 
-                    <hr>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Principle</th>
+                <th>Implementation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Zero-allocation hot path</strong></td>
+                <td>Execution context is reused across invocations; status instances are pooled to avoid runtime
+                    allocations</td>
+            </tr>
+            <tr>
+                <td><strong>Cache-friendly design</strong></td>
+                <td>Instructions and runtime data are laid out for optimal cache performance</td>
+            </tr>
+            <tr>
+                <td><strong>Handler-driven lifecycle</strong></td>
+                <td>The VM executes bytecode inline — node handlers decide if/when to promote an execution to a
+                    persistent instance</td>
+            </tr>
+            <tr>
+                <td><strong>Visual authoring, native performance</strong></td>
+                <td>StatusForge graph editor compiles to compact bytecode executed by the ForgeVM at native speed</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h2 id="plugin-modules">Plugin Modules</h2>
-                    <p>Stats_X ships as three modules:</p>
+    <p>The system deliberately avoids GAS patterns that introduce allocation pressure (per-ability instancing, deep
+        UObject hierarchies, Gameplay Effect pooling) and instead adopts a bytecode VM approach where <strong>status
+            definitions are data assets compiled to instructions</strong>, and the runtime uses an efficient dispatch
+        mechanism for registered handlers.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Module</th>
-                                <th>Type</th>
-                                <th>Loading Phase</th>
-                                <th>Purpose</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Stats_X</strong></td>
-                                <td>Runtime</td>
-                                <td>Default</td>
-                                <td>VM, components, replication, all runtime systems</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Stats_XEditor</strong></td>
-                                <td>Editor</td>
-                                <td>Default</td>
-                                <td>StatusForge visual graph editor, compiler, node registry</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Stats_XUncooked</strong></td>
-                                <td>UncookedOnly</td>
-                                <td>Default</td>
-                                <td>Blueprint-only helpers (e.g. <code>K2Node_SwitchOnTag</code>)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <hr>
 
-                    <p><strong>External dependency:</strong> Niagara plugin (for VFX cosmetic cue support).</p>
+    <h2 id="plugin-modules">Plugin Modules</h2>
+    <p>Stats_X ships as three modules:</p>
 
-                    <hr>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Module</th>
+                <th>Type</th>
+                <th>Loading Phase</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Stats_X</strong></td>
+                <td>Runtime</td>
+                <td>Default</td>
+                <td>VM, components, replication, all runtime systems</td>
+            </tr>
+            <tr>
+                <td><strong>Stats_XEditor</strong></td>
+                <td>Editor</td>
+                <td>Default</td>
+                <td>StatusForge visual graph editor, compiler, node registry</td>
+            </tr>
+            <tr>
+                <td><strong>Stats_XUncooked</strong></td>
+                <td>UncookedOnly</td>
+                <td>Default</td>
+                <td>Blueprint-only helpers (e.g. <code>K2Node_SwitchOnTag</code>)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h2 id="architectural-layers">Architectural Layers</h2>
-                    <p>The runtime is organized in five vertical layers. Each layer only depends on the layers below it.</p>
+    <p><strong>External dependency:</strong> Niagara plugin (for VFX cosmetic cue support).</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Architecture</span>
-                        </div>
-                        <pre><code>┌─────────────────────────────────────────────────────────────────┐
+    <hr>
+
+    <h2 id="architectural-layers">Architectural Layers</h2>
+    <p>The runtime is organized in five vertical layers. Each layer only depends on the layers below it.</p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Architecture</span>
+        </div>
+        <pre><code>
+┌───────────────────────────────────────────────────────────────────────┐
 │                    LAYER 5 — PRESENTATION                       │
-│   Cosmetic Cue Bus · VFX/SFX Handles · Network Cue Relay       │
-├─────────────────────────────────────────────────────────────────┤
+│   Cosmetic Cue Bus · VFX/SFX Handles · Network Cue Relay        │
+├───────────────────────────────────────────────────────────────────────┤
 │                    LAYER 4 — ORCHESTRATION                      │
 │   WorldSubsystem · GameInstanceSubsystem · Forge Event System   │
-├─────────────────────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────────────────────────┤
 │                    LAYER 3 — COMPONENT                          │
 │   StatsComponentBase · Attributes · Modifiers · Thresholds      │
 │   Local Interceptors · Replication                              │
-├─────────────────────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────────────────────────┤
 │                    LAYER 2 — EXECUTION                          │
 │   ForgeVM · Instruction Dispatch · Status Instance Pool         │
-├─────────────────────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────────────────────────┤
 │                    LAYER 1 — DATA                               │
 │   StatusDefinition (compiled bytecode) · Literal Pools          │
 │   Variable Declarations · OpCode Tables                         │
-└─────────────────────────────────────────────────────────────────┘</code></pre>
-                    </div>
+└───────────────────────────────────────────────────────────────────────┘
+        </code></pre>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="runtime-layer-map">Runtime Layer Map</h2>
+    <h2 id="runtime-layer-map">Runtime Layer Map</h2>
 
-                    <h3>Layer 1 — Data</h3>
-                    <p>Immutable, compiled assets produced by the StatusForge editor.</p>
+    <h3>Layer 1 — Data</h3>
+    <p>Immutable, compiled assets produced by the StatusForge editor.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Structure</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>UPDA_StatusDefinition</code></td>
-                                <td>Compiled status asset containing the instruction array, typed literal pools, variable declarations, and function definitions</td>
-                            </tr>
-                            <tr>
-                                <td><code>FStatusInstruction</code></td>
-                                <td>Single VM instruction using a fixed-width format optimized for cache performance. Supports continuation slots for large payloads</td>
-                            </tr>
-                            <tr>
-                                <td>Literal Pools</td>
-                                <td>Type-safe constant pools (floats, ints, bools, tags, objects, vectors, transforms, strings, structs, etc.) indexed from instruction payloads</td>
-                            </tr>
-                            <tr>
-                                <td>OpCode Tables</td>
-                                <td>System OpCodes, Built-In Node OpCodes, and Custom Project OpCodes (10000+)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Structure</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>UPDA_StatusDefinition</code></td>
+                <td>Compiled status asset containing the instruction array, typed literal pools, variable declarations,
+                    and function definitions</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstruction</code></td>
+                <td>Single VM instruction using a fixed-width format optimized for cache performance. Supports
+                    continuation slots for large payloads</td>
+            </tr>
+            <tr>
+                <td>Literal Pools</td>
+                <td>Type-safe constant pools (floats, ints, bools, tags, objects, vectors, transforms, strings, structs,
+                    etc.) indexed from instruction payloads</td>
+            </tr>
+            <tr>
+                <td>OpCode Tables</td>
+                <td>System OpCodes, Built-In Node OpCodes, and Custom Project OpCodes (10000+)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Layer 2 — Execution</h3>
-                    <p>The virtual machine and its runtime state.</p>
+    <h3>Layer 2 — Execution</h3>
+    <p>The virtual machine and its runtime state.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Component</th>
-                                <th>Type</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>FForgeVM</code></td>
-                                <td>Singleton</td>
-                                <td>Bytecode interpreter. Uses an efficient dispatch mechanism to execute instructions with no per-execution allocation</td>
-                            </tr>
-                            <tr>
-                                <td><code>FForgeVMContext</code></td>
-                                <td>Struct (reused)</td>
-                                <td>Transient execution state holding scratch memory, variable storage, object references, and function call frames. Reused across executions</td>
-                            </tr>
-                            <tr>
-                                <td><code>FStatusInstance</code></td>
-                                <td>Struct (pooled)</td>
-                                <td>Persistent state for suspended/active effects: timing, iteration count, stack count, variables, and saved execution position</td>
-                            </tr>
-                            <tr>
-                                <td><code>FStatusInstancePool</code></td>
-                                <td>Struct</td>
-                                <td>Pre-allocated pool of <code>FStatusInstance</code>. Handle-based access via StatusID. Owned by <code>UStatsX_WorldSubsystem</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Type</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>FForgeVM</code></td>
+                <td>Singleton</td>
+                <td>Bytecode interpreter. Uses an efficient dispatch mechanism to execute instructions with no
+                    per-execution allocation</td>
+            </tr>
+            <tr>
+                <td><code>FForgeVMContext</code></td>
+                <td>Struct (reused)</td>
+                <td>Transient execution state holding scratch memory, variable storage, object references, and function
+                    call frames. Reused across executions</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstance</code></td>
+                <td>Struct (pooled)</td>
+                <td>Persistent state for suspended/active effects: timing, iteration count, stack count, variables, and
+                    saved execution position</td>
+            </tr>
+            <tr>
+                <td><code>FStatusInstancePool</code></td>
+                <td>Struct</td>
+                <td>Pre-allocated pool of <code>FStatusInstance</code>. Handle-based access via StatusID. Owned by
+                    <code>UStatsX_WorldSubsystem</code>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Layer 3 — Component</h3>
-                    <p>Per-actor gameplay state.</p>
+    <h3>Layer 3 — Component</h3>
+    <p>Per-actor gameplay state.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Component</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>UStatsX_StatsComponentBase</code></td>
-                                <td>Actor component holding attributes, modifiers, thresholds, local interceptors, and replicated data. Entry point for <code>ApplyStatus()</code></td>
-                            </tr>
-                            <tr>
-                                <td><code>FStatAttribute</code></td>
-                                <td>Value triplet: Current / Max / Base. Clamping, overflow toggle, replication flag</td>
-                            </tr>
-                            <tr>
-                                <td><code>FStatModifier</code></td>
-                                <td>Additive + Multiplicative modifier. Identified by InstanceID, grouped by OwnerID (batch removal)</td>
-                            </tr>
-                            <tr>
-                                <td>Local Interceptors</td>
-                                <td>Per-component interceptor registrations with Caster/Target scope filtering</td>
-                            </tr>
-                            <tr>
-                                <td>Replication</td>
-                                <td>Attributes and modifiers replicate via <code>FFastArraySerializer</code> for delta-only network updates</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>UStatsX_StatsComponentBase</code></td>
+                <td>Actor component holding attributes, modifiers, thresholds, local interceptors, and replicated data.
+                    Entry point for <code>ApplyStatus()</code></td>
+            </tr>
+            <tr>
+                <td><code>FStatAttribute</code></td>
+                <td>Value triplet: Current / Max / Base. Clamping, overflow toggle, replication flag</td>
+            </tr>
+            <tr>
+                <td><code>FStatModifier</code></td>
+                <td>Additive + Multiplicative modifier. Identified by InstanceID, grouped by OwnerID (batch removal)
+                </td>
+            </tr>
+            <tr>
+                <td>Local Interceptors</td>
+                <td>Per-component interceptor registrations with Caster/Target scope filtering</td>
+            </tr>
+            <tr>
+                <td>Replication</td>
+                <td>Attributes and modifiers replicate via <code>FFastArraySerializer</code> for delta-only network
+                    updates</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Layer 4 — Orchestration</h3>
-                    <p>World-level coordination and lifecycle management.</p>
+    <h3>Layer 4 — Orchestration</h3>
+    <p>World-level coordination and lifecycle management.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Component</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>UStatsX_GameInstanceSubsystem</code></td>
-                                <td>Global StatusID generation. Holds the <code>DA_ImmutableGameStatuses</code> registry for tag-based status lookup</td>
-                            </tr>
-                            <tr>
-                                <td><code>UStatsX_WorldSubsystem</code></td>
-                                <td>Central authority: executes statuses, owns the instance pool, ticks instances, manages stacking policies, routes cosmetic cues, manages global interceptors, runs the Forge Event System</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>UStatsX_GameInstanceSubsystem</code></td>
+                <td>Global StatusID generation. Holds the <code>DA_ImmutableGameStatuses</code> registry for tag-based
+                    status lookup</td>
+            </tr>
+            <tr>
+                <td><code>UStatsX_WorldSubsystem</code></td>
+                <td>Central authority: executes statuses, owns the instance pool, ticks instances, manages stacking
+                    policies, routes cosmetic cues, manages global interceptors, runs the Forge Event System</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Layer 5 — Presentation</h3>
-                    <p>Visual/audio feedback and network transport for cosmetic state.</p>
+    <h3>Layer 5 — Presentation</h3>
+    <p>Visual/audio feedback and network transport for cosmetic state.</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Component</th>
-                                <th>Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>Cosmetic Cue Bus</td>
-                                <td>Enqueue / flush pipeline for <code>FStatsXCosmeticCue</code> (montage, VFX, SFX, custom). Deduplication via stream key</td>
-                            </tr>
-                            <tr>
-                                <td>VFX / SFX Handle Registry</td>
-                                <td>Monotonic handle allocation, local Niagara/Audio component tracking</td>
-                            </tr>
-                            <tr>
-                                <td><code>AStatsX_NetCueRelay</code></td>
-                                <td>Per-route-actor replicated actor. Transports cosmetic cues to clients via state-reliable or burst-unreliable channels</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Cosmetic Cue Bus</td>
+                <td>Enqueue / flush pipeline for <code>FStatsXCosmeticCue</code> (montage, VFX, SFX, custom).
+                    Deduplication via stream key</td>
+            </tr>
+            <tr>
+                <td>VFX / SFX Handle Registry</td>
+                <td>Monotonic handle allocation, local Niagara/Audio component tracking</td>
+            </tr>
+            <tr>
+                <td><code>AStatsX_NetCueRelay</code></td>
+                <td>Per-route-actor replicated actor. Transports cosmetic cues to clients via state-reliable or
+                    burst-unreliable channels</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="subsystem-hierarchy">Subsystem Hierarchy</h2>
+    <h2 id="subsystem-hierarchy">Subsystem Hierarchy</h2>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Hierarchy</span>
-                        </div>
-                        <pre><code>UGameInstance
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Hierarchy</span>
+        </div>
+        <pre><code>UGameInstance
  └─ UStatsX_GameInstanceSubsystem         [1 per game instance]
       • StatusID generation
       • DA_ImmutableGameStatuses registry
@@ -305,20 +328,21 @@ AActor
       • Local Interceptor registry
       • Replication via FastArraySerializer
       • Delegates: OnAttributeChanged, OnThresholdReached, OnStatusTagChanged</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="execution-model">Execution Model</h2>
+    <h2 id="execution-model">Execution Model</h2>
 
-                    <h3>Inline Execution (default)</h3>
-                    <p>Every status begins as an <strong>inline execution</strong> — the VM runs bytecode synchronously from start to end (or until a suspend point). No pool instance is created unless a handler explicitly requests it.</p>
+    <h3>Inline Execution (default)</h3>
+    <p>Every status begins as an <strong>inline execution</strong> — the VM runs bytecode synchronously from start to
+        end (or until a suspend point). No pool instance is created unless a handler explicitly requests it.</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>WorldSubsystem.ExecuteStatus(StatusID, Definition, Caster, Target)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>WorldSubsystem.ExecuteStatus(StatusID, Definition, Caster, Target)
   │
   ├─ Apply stacking policy (Aggregate, Refresh, Override, Reject, Independent)
   ├─ ForgeVM.ExecuteStatus()
@@ -327,38 +351,42 @@ AActor
   │    └─ Run instruction loop until terminal state
   │
   └─ Result: Completed | Suspended | Error</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Instance Resumption</h3>
-                    <p>Suspended instances are ticked by the WorldSubsystem. When their timer expires or a Forge Event fires, the VM resumes execution from the saved position:</p>
+    <h3>Instance Resumption</h3>
+    <p>Suspended instances are ticked by the WorldSubsystem. When their timer expires or a Forge Event fires, the VM
+        resumes execution from the saved position:</p>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>WorldSubsystem.Tick(DeltaTime)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>WorldSubsystem.Tick(DeltaTime)
   │
   ├─ Process pending async resumes (montage callbacks, etc.)
   ├─ Tick active instances (timer-based resumption)
   ├─ Process Forge Event triggers
   ├─ Flush pending status updates (coalesced delta replication)
   └─ Flush cosmetic cue bus (route and dispatch cues)</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Catch-Up Mechanism</h3>
-                    <p>If a status falls behind (frame hitches), the WorldSubsystem executes multiple iterations per frame, capped by <code>MaxExecutionsPerFrame</code> (default: 100). Optional time-drift compensation ensures precise scheduling over long durations.</p>
+    <h3>Catch-Up Mechanism</h3>
+    <p>If a status falls behind (frame hitches), the WorldSubsystem executes multiple iterations per frame, capped by
+        <code>MaxExecutionsPerFrame</code> (default: 100). Optional time-drift compensation ensures precise scheduling
+        over long durations.
+    </p>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="data-flow">Data Flow</h2>
+    <h2 id="data-flow">Data Flow</h2>
 
-                    <h3>Status Casting Flow</h3>
+    <h3>Status Casting Flow</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>ApplyStatus (Component or WorldSubsystem)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>ApplyStatus (Component or WorldSubsystem)
   │
   ├─ Generate unique StatusID
   ├─ Apply stacking policy:
@@ -376,15 +404,15 @@ AActor
        ├─ Register as active instance in the pool
        ├─ Notify components (OnStatusTagChanged)
        └─ Replicate seed data</code></pre>
-                    </div>
+    </div>
 
-                    <h3>Interceptor Data Flow</h3>
+    <h3>Interceptor Data Flow</h3>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Flow</span>
-                        </div>
-                        <pre><code>Node Execution (e.g., ModifyAttribute)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Flow</span>
+        </div>
+        <pre><code>Node Execution (e.g., ModifyAttribute)
   │
   ├─ Pre-phase interceptors
   │    ├─ Local interceptors (Caster scope, Target scope)
@@ -394,241 +422,282 @@ AActor
   ├─ Execute core node logic
   │
   └─ Post-phase interceptors (same pattern)</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="memory-model">Memory Model</h2>
+    <h2 id="memory-model">Memory Model</h2>
 
-                    <h3>Transient Memory (per-execution, reused)</h3>
-                    <p>The execution context (<code>FForgeVMContext</code>) holds all transient memory needed for a single execution slice: scratch memory for intermediate values, object references (GC-tracked), dynamic array slots, and function call frames. All transient memory is reset between executions.</p>
+    <h3>Transient Memory (per-execution, reused)</h3>
+    <p>The execution context (<code>FForgeVMContext</code>) holds all transient memory needed for a single execution
+        slice: scratch memory for intermediate values, object references (GC-tracked), dynamic array slots, and function
+        call frames. All transient memory is reset between executions.</p>
 
-                    <h3>Persistent Memory (per-instance, pooled)</h3>
-                    <p>Each <code>FStatusInstance</code> maintains persistent state that survives across ticks: instance data (SaveGame-compatible), object references (GC-safe), user-declared variables, and dynamic arrays. This data persists for the lifetime of the status effect.</p>
+    <h3>Persistent Memory (per-instance, pooled)</h3>
+    <p>Each <code>FStatusInstance</code> maintains persistent state that survives across ticks: instance data
+        (SaveGame-compatible), object references (GC-safe), user-declared variables, and dynamic arrays. This data
+        persists for the lifetime of the status effect.</p>
 
-                    <h3>Data Source Resolution</h3>
-                    <p>Instructions can read data from four sources, resolved automatically by the VM:</p>
+    <h3>Data Source Resolution</h3>
+    <p>Instructions can read data from four sources, resolved automatically by the VM:</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Source</th>
-                                <th>Description</th>
-                                <th>Lifetime</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>Literal</code></td>
-                                <td>Immutable constants from the definition's literal pools</td>
-                                <td>Immutable</td>
-                            </tr>
-                            <tr>
-                                <td><code>Context</code></td>
-                                <td>Transient scratch values from the current execution slice</td>
-                                <td>Per-slice</td>
-                            </tr>
-                            <tr>
-                                <td><code>Instance</code></td>
-                                <td>Persistent data stored on the status instance</td>
-                                <td>Per-instance</td>
-                            </tr>
-                            <tr>
-                                <td><code>CallFrame</code></td>
-                                <td>Arguments passed to the current function call</td>
-                                <td>Per-function-call</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source</th>
+                <th>Description</th>
+                <th>Lifetime</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Literal</code></td>
+                <td>Immutable constants from the definition's literal pools</td>
+                <td>Immutable</td>
+            </tr>
+            <tr>
+                <td><code>Context</code></td>
+                <td>Transient scratch values from the current execution slice</td>
+                <td>Per-slice</td>
+            </tr>
+            <tr>
+                <td><code>Instance</code></td>
+                <td>Persistent data stored on the status instance</td>
+                <td>Per-instance</td>
+            </tr>
+            <tr>
+                <td><code>CallFrame</code></td>
+                <td>Arguments passed to the current function call</td>
+                <td>Per-function-call</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="network-architecture">Network Architecture</h2>
-                    <p>Stats_X uses a <strong>split replication model</strong>:</p>
+    <h2 id="network-architecture">Network Architecture</h2>
+    <p>Stats_X uses a <strong>split replication model</strong>:</p>
 
-                    <h3>Gameplay State (Reliable, Property Replication)</h3>
+    <h3>Gameplay State (Reliable, Property Replication)</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Mechanism</th>
-                                <th>Owner</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>Attributes</td>
-                                <td><code>FReplicatedAttributeArray</code> (FastArraySerializer)</td>
-                                <td><code>UStatsX_StatsComponentBase</code></td>
-                            </tr>
-                            <tr>
-                                <td>Modifiers</td>
-                                <td><code>FReplicatedModifierArray</code> (FastArraySerializer)</td>
-                                <td><code>UStatsX_StatsComponentBase</code></td>
-                            </tr>
-                            <tr>
-                                <td>Status lifecycle</td>
-                                <td><code>FStatusSetData</code> (Added / Removed)</td>
-                                <td><code>UStatsX_StatsComponentBase</code></td>
-                            </tr>
-                            <tr>
-                                <td>Status updates</td>
-                                <td><code>FStatusUpdateData</code> (delta updates for stack, duration, interval, iterations)</td>
-                                <td><code>UStatsX_WorldSubsystem</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Mechanism</th>
+                <th>Owner</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Attributes</td>
+                <td><code>FReplicatedAttributeArray</code> (FastArraySerializer)</td>
+                <td><code>UStatsX_StatsComponentBase</code></td>
+            </tr>
+            <tr>
+                <td>Modifiers</td>
+                <td><code>FReplicatedModifierArray</code> (FastArraySerializer)</td>
+                <td><code>UStatsX_StatsComponentBase</code></td>
+            </tr>
+            <tr>
+                <td>Status lifecycle</td>
+                <td><code>FStatusSetData</code> (Added / Removed)</td>
+                <td><code>UStatsX_StatsComponentBase</code></td>
+            </tr>
+            <tr>
+                <td>Status updates</td>
+                <td><code>FStatusUpdateData</code> (delta updates for stack, duration, interval, iterations)</td>
+                <td><code>UStatsX_WorldSubsystem</code></td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <h3>Cosmetic State (Configurable Reliability)</h3>
+    <h3>Cosmetic State (Configurable Reliability)</h3>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Channel</th>
-                                <th>Mechanism</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>State cues (VFX attach, persistent montages)</td>
-                                <td><code>StateReliable</code></td>
-                                <td><code>AStatsX_NetCueRelay</code> replicated property + deduplication</td>
-                            </tr>
-                            <tr>
-                                <td>Burst cues (hit impacts, one-shot SFX)</td>
-                                <td><code>BurstUnreliable</code></td>
-                                <td><code>AStatsX_NetCueRelay</code> multicast RPC</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Channel</th>
+                <th>Mechanism</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>State cues (VFX attach, persistent montages)</td>
+                <td><code>StateReliable</code></td>
+                <td><code>AStatsX_NetCueRelay</code> replicated property + deduplication</td>
+            </tr>
+            <tr>
+                <td>Burst cues (hit impacts, one-shot SFX)</td>
+                <td><code>BurstUnreliable</code></td>
+                <td><code>AStatsX_NetCueRelay</code> multicast RPC</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <p>Route policy determines which relay carries each cue:</p>
+    <p>Route policy determines which relay carries each cue:</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Policy</th>
-                                <th>Relay</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>Auto</code></td>
-                                <td>Target actor relay (fallback: global relay)</td>
-                            </tr>
-                            <tr>
-                                <td><code>TargetActor</code></td>
-                                <td>Target actor relay</td>
-                            </tr>
-                            <tr>
-                                <td><code>CasterActor</code></td>
-                                <td>Caster actor relay</td>
-                            </tr>
-                            <tr>
-                                <td><code>ExplicitActor</code></td>
-                                <td>Explicit route actor relay</td>
-                            </tr>
-                            <tr>
-                                <td><code>Global</code></td>
-                                <td>Global relay (always relevant)</td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Policy</th>
+                <th>Relay</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Auto</code></td>
+                <td>Target actor relay (fallback: global relay)</td>
+            </tr>
+            <tr>
+                <td><code>TargetActor</code></td>
+                <td>Target actor relay</td>
+            </tr>
+            <tr>
+                <td><code>CasterActor</code></td>
+                <td>Caster actor relay</td>
+            </tr>
+            <tr>
+                <td><code>ExplicitActor</code></td>
+                <td>Explicit route actor relay</td>
+            </tr>
+            <tr>
+                <td><code>Global</code></td>
+                <td>Global relay (always relevant)</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="extension-points">Extension Points</h2>
-                    <p>Stats_X is designed for project-specific extension without modifying plugin source:</p>
+    <h2 id="extension-points">Extension Points</h2>
+    <p>Stats_X is designed for project-specific extension without modifying plugin source:</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Extension</th>
-                                <th>Mechanism</th>
-                                <th>Registration</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Custom OpCodes</strong></td>
-                                <td>Implement a handler function and register via <code>ForgeVM::RegisterHandler()</code></td>
-                                <td>Module startup. OpCode range 10000+</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Custom Actions</strong></td>
-                                <td>Subclass <code>UForgeCustomAction</code>, override <code>Execute()</code></td>
-                                <td>Referenced by <code>OP_CustomAction</code> in StatusForge graph</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Custom Checks</strong></td>
-                                <td>Subclass <code>UForgeCustomCheck</code>, override <code>Execute()</code></td>
-                                <td>Referenced by <code>OP_CustomCheck</code> in StatusForge graph</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Interceptors</strong></td>
-                                <td>Subclass <code>UForgeInterceptorBase</code>, override <code>Condition()</code> + <code>Action()</code></td>
-                                <td>Registered at runtime via <code>OP_RegisterLocalInterceptor</code> / <code>OP_RegisterGlobalInterceptor</code> or C++ API</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Cosmetic Cue Sinks</strong></td>
-                                <td>Bind to <code>FOnStatsXCosmeticCueRoutedNative</code></td>
-                                <td><code>WorldSubsystem.RegisterCosmeticCueSink()</code></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Forge Events</strong></td>
-                                <td><code>SendForgeEvent()</code> / <code>WaitForEvent</code></td>
-                                <td>Fully data-driven, no code required</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Variable Overrides</strong></td>
-                                <td><code>TArray&lt;FForgeVariableOverride&gt;</code> passed at cast time</td>
-                                <td>Runtime API on <code>ExecuteStatus()</code> and <code>CastStatusSync()</code></td>
-                            </tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Extension</th>
+                <th>Mechanism</th>
+                <th>Registration</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Custom OpCodes</strong></td>
+                <td>Implement a handler function and register via <code>ForgeVM::RegisterHandler()</code></td>
+                <td>Module startup. OpCode range 10000+</td>
+            </tr>
+            <tr>
+                <td><strong>Custom Actions</strong></td>
+                <td>Subclass <code>UForgeCustomAction</code>, override <code>Execute()</code></td>
+                <td>Referenced by <code>OP_CustomAction</code> in StatusForge graph</td>
+            </tr>
+            <tr>
+                <td><strong>Custom Checks</strong></td>
+                <td>Subclass <code>UForgeCustomCheck</code>, override <code>Execute()</code></td>
+                <td>Referenced by <code>OP_CustomCheck</code> in StatusForge graph</td>
+            </tr>
+            <tr>
+                <td><strong>Interceptors</strong></td>
+                <td>Subclass <code>UForgeInterceptorBase</code>, override <code>Condition()</code> +
+                    <code>Action()</code>
+                </td>
+                <td>Registered at runtime via <code>OP_RegisterLocalInterceptor</code> /
+                    <code>OP_RegisterGlobalInterceptor</code> or C++ API
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Cosmetic Cue Sinks</strong></td>
+                <td>Bind to <code>FOnStatsXCosmeticCueRoutedNative</code></td>
+                <td><code>WorldSubsystem.RegisterCosmeticCueSink()</code></td>
+            </tr>
+            <tr>
+                <td><strong>Forge Events</strong></td>
+                <td><code>SendForgeEvent()</code> / <code>WaitForEvent</code></td>
+                <td>Fully data-driven, no code required</td>
+            </tr>
+            <tr>
+                <td><strong>Variable Overrides</strong></td>
+                <td><code>TArray&lt;FForgeVariableOverride&gt;</code> passed at cast time</td>
+                <td>Runtime API on <code>ExecuteStatus()</code> and <code>CastStatusSync()</code></td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="platform-support">Platform Support</h2>
+    <h2 id="platform-support">Platform Support</h2>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Platform</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>Win64</td><td>Supported</td></tr>
-                            <tr><td>Mac</td><td>Supported</td></tr>
-                            <tr><td>Linux</td><td>Supported</td></tr>
-                            <tr><td>PS4</td><td>Supported</td></tr>
-                            <tr><td>PS5</td><td>Supported</td></tr>
-                            <tr><td>Xbox One</td><td>Supported</td></tr>
-                            <tr><td>Xbox Series X/S</td><td>Supported</td></tr>
-                            <tr><td>Nintendo Switch</td><td>Supported</td></tr>
-                            <tr><td>iOS</td><td>Supported</td></tr>
-                            <tr><td>Android</td><td>Supported</td></tr>
-                            <tr><td>HoloLens</td><td>Supported</td></tr>
-                        </tbody>
-                    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Win64</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Mac</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Linux</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>PS4</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>PS5</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Xbox One</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Xbox Series X/S</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Nintendo Switch</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>iOS</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>Android</td>
+                <td>Supported</td>
+            </tr>
+            <tr>
+                <td>HoloLens</td>
+                <td>Supported</td>
+            </tr>
+        </tbody>
+    </table>
 
-                    <div class="info-box danger">
-                        <div class="info-title">🚫 Excluded Platform</div>
-                        <p>HTML5 is not supported.</p>
-                    </div>
+    <div class="info-box danger">
+        <div class="info-title">🚫 Excluded Platform</div>
+        <p>HTML5 is not supported.</p>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="module-dependencies">Module Dependencies</h2>
+    <h2 id="module-dependencies">Module Dependencies</h2>
 
-                    <div class="code-block">
-                        <div class="code-header">
-                            <span class="code-lang">Modules</span>
-                        </div>
-                        <pre><code>Stats_X (Runtime)
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Modules</span>
+        </div>
+        <pre><code>Stats_X (Runtime)
  ├─ Core
  ├─ CoreUObject
  ├─ Engine
@@ -649,29 +718,60 @@ Stats_XUncooked (UncookedOnly)
  ├─ Stats_X
  ├─ BlueprintGraph
  └─ KismetCompiler</code></pre>
-                    </div>
+    </div>
 
-                    <hr>
+    <hr>
 
-                    <h2 id="key-source-files">Key Source Files</h2>
-                    <p>The plugin is organized into the following key header groups:</p>
+    <h2 id="key-source-files">Key Source Files</h2>
+    <p>The plugin is organized into the following key header groups:</p>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Area</th>
-                                <th>Layer</th>
-                                <th>Purpose</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>VM Core</td><td>Execution</td><td>VM singleton, execution context, core type definitions</td></tr>
-                            <tr><td>Data Types</td><td>Data</td><td>Status definitions, instructions, core gameplay types (<code>FStatAttribute</code>, <code>FStatModifier</code>, enums, tags)</td></tr>
-                            <tr><td>Subsystems</td><td>Orchestration</td><td>Game instance subsystem (ID generation, registry) and world subsystem (execution, ticking, events, cues)</td></tr>
-                            <tr><td>Components</td><td>Component</td><td>Actor component: attributes, modifiers, thresholds, replication</td></tr>
-                            <tr><td>Interceptors</td><td>Component</td><td>Interceptor base class with Condition/Action pattern</td></tr>
-                            <tr><td>Custom Logic</td><td>Extension</td><td>Custom action and custom check base classes for C++/Blueprint extension</td></tr>
-                            <tr><td>Networking</td><td>Presentation</td><td>Cosmetic cue types and network relay for cue transport</td></tr>
-                        </tbody>
-                    </table>
-                </section>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Area</th>
+                <th>Layer</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>VM Core</td>
+                <td>Execution</td>
+                <td>VM singleton, execution context, core type definitions</td>
+            </tr>
+            <tr>
+                <td>Data Types</td>
+                <td>Data</td>
+                <td>Status definitions, instructions, core gameplay types (<code>FStatAttribute</code>,
+                    <code>FStatModifier</code>, enums, tags)
+                </td>
+            </tr>
+            <tr>
+                <td>Subsystems</td>
+                <td>Orchestration</td>
+                <td>Game instance subsystem (ID generation, registry) and world subsystem (execution, ticking, events,
+                    cues)</td>
+            </tr>
+            <tr>
+                <td>Components</td>
+                <td>Component</td>
+                <td>Actor component: attributes, modifiers, thresholds, replication</td>
+            </tr>
+            <tr>
+                <td>Interceptors</td>
+                <td>Component</td>
+                <td>Interceptor base class with Condition/Action pattern</td>
+            </tr>
+            <tr>
+                <td>Custom Logic</td>
+                <td>Extension</td>
+                <td>Custom action and custom check base classes for C++/Blueprint extension</td>
+            </tr>
+            <tr>
+                <td>Networking</td>
+                <td>Presentation</td>
+                <td>Cosmetic cue types and network relay for cue transport</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
