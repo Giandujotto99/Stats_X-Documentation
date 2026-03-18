@@ -5,11 +5,6 @@
       "title": "Getting Started",
       "sections": [
         {
-          "id": "overview",
-          "label": "Overview",
-          "file": "01_Overview.html"
-        },
-        {
           "id": "installation",
           "label": "Installation — Important",
           "file": "Installation.html"
@@ -43,23 +38,11 @@
     },
     {
       "title": "Status System",
-      "sections": [
-        {
-          "id": "overview",
-          "label": "Overview",
-          "file": "01_Overview.html"
-        }
-      ]
+      "sections": []
     },
     {
       "title": "Status Examples",
-      "sections": [
-        {
-          "id": "overview",
-          "label": "Overview",
-          "file": "01_Overview.html"
-        }
-      ]
+      "sections": []
     }
   ]
 }
