@@ -25,9 +25,19 @@
       "title": "Attributes",
       "sections": [
         {
-          "id": "overview",
-          "label": "Overview",
-          "file": "01_Overview.html"
+          "id": "setup-attributes",
+          "label": "Setup Attributes",
+          "file": "SetupAttributes.html"
+        },
+        {
+          "id": "thresholds",
+          "label": "Thresholds",
+          "file": "Thresholds.html"
+        },
+        {
+          "id": "modifiers",
+          "label": "Modifiers",
+          "file": "Modifiers.html"
         }
       ]
     },
