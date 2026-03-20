@@ -1,0 +1,484 @@
+<section id="interceptors" class="tutorial-section">
+    <h1>Interceptors</h1>
+
+    <p>
+        Interceptors let one status react to what another status is doing. They are perfect when you want to observe,
+        filter, modify, or block a gameplay event without rewriting the original status.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What we are building</div>
+            <p>
+                In this tutorial we use <strong>Mana Shield</strong> as the practical example. While Mana Shield is
+                active, incoming health damage will be intercepted before it is applied, and the same amount will be
+                redirected to mana instead.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Mental model</div>
+            <p>
+                A status emits an interceptor event. A registered interceptor receives it, checks if it cares about that
+                event, and then decides what to do in <code>Action</code>.
+            </p>
+        </div>
+    </div>
+
+    <h2>How Mana Shield Will Work</h2>
+
+    <ul>
+        <li>The player casts <code>SF_ManaShield</code>.</li>
+        <li>The status registers an interceptor on the player.</li>
+        <li>Another status tries to damage the player's health.</li>
+        <li>The health-damage event is intercepted before the damage is finalized.</li>
+        <li>The interceptor redirects that amount to mana and stops the original health damage.</li>
+    </ul>
+
+    <h2>What an Interceptor Really Is</h2>
+
+    <p>
+        An interceptor is a Blueprint class derived from <code>Interceptor</code> / <code>UForgeInterceptorBase</code>.
+        It has two key functions:
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Function</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>Condition</code></td>
+                    <td>Decides if this interceptor should react to the current event.</td>
+                </tr>
+                <tr>
+                    <td><code>Action</code></td>
+                    <td>Executes the real response. Returning <code>false</code> halts the triggering status execution.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Important rule</div>
+            <p>
+                Interceptors do nothing unless some status graph actually emits propagation events. Registering an
+                interceptor is only half of the system. The other half is broadcasting the event from the graph that
+                should be intercepted.
+            </p>
+        </div>
+    </div>
+
+    <h2>Create the Two Statuses</h2>
+
+    <p>
+        For this example, create three statuses:
+    </p>
+
+    <ul>
+        <li><code>SF_ManaShield</code> - the status that registers the interceptor.</li>
+        <li><code>SF_RedirectDelta</code> - a helper status usable everywhere to redirect intercepted damages.</li>
+        <li><code>SF_Damage</code> - the status that deals damage and we will use to test the interceptor.</li>
+    </ul>
+
+    <p>
+        <code>SF_ManaShield</code> is the defensive effect you cast on the player. <code>SF_RedirectDelta</code> is just
+        a simple helper used inside the interceptor action to move the value to mana cleanly in a way that other
+        interceptors can intercept the damage on mana too.
+    </p>
+
+    <h2>Create the Interceptor Blueprint</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a new Blueprint class</div>
+                <p>
+                    In the Content Browser, create a new Blueprint class and choose <code>Interceptor</code> as the
+                    parent class.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Give it a clear name</div>
+                <p>
+                    A name such as <code>SI_ManaShield</code> makes the purpose obvious immediately.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Register the Interceptor from Mana Shield</h2>
+
+    <p>
+        Open <code>SF_ManaShield</code> and register the interceptor from its graph.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Make the Status Persistent</div>
+                <p>
+                    Inside the Mana Shield status, place the node UntilDeprecationBehavior with duration = -1
+                    (infinite). This way the status will be an active status, refer to Status Lifecycle tutorial.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add Register Local Interceptor</div>
+                <p>
+                    Next to the UntilDeprecationBehavior node, in the branch without name, place the node
+                    <code>RegisterLocalInterceptor</code> on the actor that should be protected.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the correct component</div>
+                <p>
+                    Register it on the player's Stats component, because that is where the target-side interception must
+                    happen. So, use GetTargetStatsComponent node as StatsComponentTarget pin.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Bind the event tag</div>
+                <p>
+                    Use the base registration tag <code>StatsX.Event.Pre.OnHealthDamaged</code>. Do not add the scope
+                    suffix manually here.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Select Target scope</div>
+                <p>
+                    Mana Shield should react when the protected actor <em>receives</em> damage, so this interceptor must
+                    be registered in <strong>Target</strong> scope, not Caster scope.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Registration Setting</th>
+                    <th>Value for Mana Shield</th>
+                    <th>Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>StatsComponentTarget</td>
+                    <td><code>GetTargetStatsComponent</code></td>
+                    <td>Who owns this interceptor, where the interceptor is stored, attention this is not the scope, is
+                        complementary to it.</td>
+                </tr>
+                <tr>
+                    <td>Interceptor Class</td>
+                    <td><code>SI_ManaShield</code></td>
+                    <td>The Blueprint that will react to the event.</td>
+                </tr>
+                <tr>
+                    <td>Event Tag</td>
+                    <td><code>StatsX.Event.Pre.OnHealthDamaged</code></td>
+                    <td>We want to intercept the event before the damage is finalized.</td>
+                </tr>
+                <tr>
+                    <td>bIsCaster</td>
+                    <td>false</td>
+                    <td>This is the scope. The shield belongs to the actor receiving the damage, so no, the scope of the
+                        action we are going to intercept is not the Caster.</td>
+                </tr>
+                <tr>
+                    <td>Priority</td>
+                    <td>Any sensible positive value</td>
+                    <td>Higher priority executes earlier if multiple interceptors exist.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Common Error</div>
+            <p>
+                Initially it is tricky to understand how to setup the scope, but think about this:
+                <br>
+                <strong>StatsComponentTarget</strong> is the actor owner of the interceptor, so he will be the actor in
+                Scope.
+                <br>
+                <strong>bIsCaster</strong> is the ROLE of the actor in scope.
+                <br>
+                <strong>Event Tag</strong> is the event to intercept.
+                <br>
+                So, you can think... "The interceptor must triggers on EventTag when StatsComponentTarget is in the Role
+                of bIsCaster"
+            </p>
+        </div>
+    </div>
+
+    <h2>Condition: React Only to Real Damage</h2>
+
+    <p>
+        Open the interceptor Blueprint and override <code>Condition</code>.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Read the payload field you care about</div>
+                <p>
+                    For a health-damage event, the useful field is the incoming delta. Read it from the payload using
+                    the payload accessor functions exposed by the interceptor, GetPayloadFloat with input FieldName
+                    'Delta'.
+                </p>
+
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Filter only negative deltas</div>
+                <p>
+                    In Stats_X, negative delta means damage and positive delta means healing. Mana Shield should only
+                    react when the delta is negative.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Check if mana is >0</div>
+                <p>
+                    It is useless to trigger if you know the effect will be none, save performance.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <img src="../images/v14/SIC.png" alt="Interceptor Condition 1">
+
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Why use Condition first</div>
+            <p>
+                Keeping the filter inside <code>Condition</code> makes the interceptor cheap and clean. If the event is
+                not real damage, the expensive logic in <code>Action</code> never runs.
+            </p>
+        </div>
+    </div>
+
+    <h2>Action: Redirect the Damage to Mana</h2>
+
+    <p>
+        Now override <code>Action</code>. This is where Mana Shield performs the redirect.
+    </p>
+
+    <img src="../images/v14/SI1.png" alt="Interceptor Action 1">
+    <img src="../images/v14/SI2.png" alt="Interceptor Action 2">
+    <img src="../images/v14/SI3.png" alt="Interceptor Action 3">
+
+    <h2>The Other Half: Broadcast the Event from the Damage Status</h2>
+
+    <p>
+        Registering the interceptor is not enough. The damage status must also broadcast the correct interceptor event.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open the status that applies health damage</div>
+                <p>
+                    Find the status graph where health damage is actually applied.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add a propagation node before the health modification</div>
+                <p>
+                    Place <code>CallPropagationPreEvents</code> before the node that modifies Health. This gives
+                    interceptors a chance to react before the value is finalized.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use the target-scope event tag</div>
+                <p>
+                    Broadcast <code>StatsX.Event.Pre.OnHealthDamaged.Target</code> so the target-side interceptors of
+                    the
+                    damaged actor are the ones that react.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>What you register</th>
+                    <th>What you broadcast</th>
+                    <th>Why they differ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.Event.Pre.OnHealthDamaged</code></td>
+                    <td><code>StatsX.Event.Pre.OnHealthDamaged.Target</code></td>
+                    <td>The runtime suffix tells the system which registry should receive the event.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Registration tag vs broadcast tag</div>
+            <p>
+                Register with the base tag. Broadcast with the scoped tag. The system strips the suffix internally and
+                routes the event to Caster, Target, or Global interceptors based on that suffix.
+            </p>
+        </div>
+    </div>
+
+    <h2>Pre vs Post</h2>
+
+    <p>
+        For Mana Shield, <strong>Pre</strong> is the correct phase because you want to catch the health damage before it
+        is committed.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Phase</th>
+                    <th>When to use it</th>
+                    <th>Note</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Pre</td>
+                    <td>When you want to inspect, modify, or block an operation before it finishes.</td>
+                    <td>Knows Input pins of the next node, does not knows output pins</td>
+                </tr>
+                <tr>
+                    <td>Post</td>
+                    <td>When you want to react after the operation already happened.</td>
+                    <td>Knows both input and output pins of the previous node</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Caster, Target, and Global Scope</h2>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Scope</th>
+                    <th>Meaning</th>
+                    <th>Example</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Caster</td>
+                    <td>The actor casting the triggering status reacts.</td>
+                    <td>A buff that strengthens the owner's outgoing damage.</td>
+                </tr>
+                <tr>
+                    <td>Target</td>
+                    <td>The actor receiving the triggering status reacts.</td>
+                    <td>Mana Shield protecting the damaged target.</td>
+                </tr>
+                <tr>
+                    <td>Global</td>
+                    <td>The world subsystem reacts regardless of which actor is involved.</td>
+                    <td>Global analytics, logging, or world-wide gameplay rules.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Useful Blueprint Access Inside an Interceptor</h2>
+
+    <p>
+        During <code>Condition</code> and <code>Action</code>, the interceptor can access both source data and
+        triggering
+        data.
+    </p>
+
+    <ul>
+        <li><code>GetSourceActor</code> / <code>GetSourceComponent</code> tell you who registered this interceptor.</li>
+        <li><code>GetCasterActor</code> / <code>GetTargetActor</code> tell you who triggered the current event.</li>
+        <li><code>GetTriggeringStatusID</code> identifies the status currently being intercepted.</li>
+        <li>Payload accessors let you inspect the event data exposed by the propagation node.</li>
+        <li>Variable accessors let you read and write variables on the triggering status.</li>
+    </ul>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Very useful detail</div>
+            <p>
+                The source actor is the one that registered the interceptor, while the caster and target accessors refer
+                to the status currently triggering the event. Those are not always the same thing.
+            </p>
+        </div>
+    </div>
+
+    <h2>Automatic Cleanup</h2>
+
+    <p>
+        When the status that registered the interceptor ends, Stats_X automatically unregisters the interceptors created
+        by that status.
+    </p>
+
+    <p>
+        This is important for effects like Mana Shield, because you do not want the interception logic to remain active
+        after the shield has expired.
+    </p>
+
+    <h2>Common Mistakes</h2>
+
+    <ul>
+        <li>Registering an interceptor but forgetting to broadcast the matching propagation event from the other status.
+        </li>
+        <li>Using the wrong scope, for example Caster instead of Target.</li>
+        <li>Using <code>Post</code> when the logic really needs to stop the event before it happens.</li>
+        <li>Registering with the scoped tag instead of the base tag.</li>
+        <li>Returning <code>false</code> from <code>Action</code> without realizing it halts the triggering status
+            execution.</li>
+    </ul>
+
+    <p>
+        You are done: you now know how to register an interceptor, filter the right event, react in Blueprint, and make
+        another status emit the propagation event that the interceptor is waiting for.
+    </p>
+</section>

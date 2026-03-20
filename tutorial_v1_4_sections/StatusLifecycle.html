@@ -1,0 +1,311 @@
+<section id="status-lifecycle" class="tutorial-section">
+    <h1>Status Lifecycle</h1>
+
+    <p>
+        In this section you will learn how a status is cast, when it stays one-shot versus when it becomes active, how
+        Stats_X tracks it for caster and target, and which dispatchers you should use to react to status changes.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What this section explains</div>
+            <p>
+                A status is not only something you cast. It also has a runtime life: it can start, become active,
+                update over time, expire, and notify both server and client through synchronized dispatchers.
+            </p>
+        </div>
+    </div>
+
+    <h2>Casting a Status</h2>
+
+    <p>
+        To cast a status you first need a valid Status Forge asset with a GameplayTag identifier and a compiled runtime
+        definition.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the Status Forge asset</div>
+                <p>
+                    Build the status in Status Forge, assign its GameplayTag, and compile it so the runtime definition
+                    is
+                    generated.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose where to cast it from</div>
+                <p>
+                    If your actor has a Stats component, call <code>CastStatusSync</code> or
+                    <code>CastStatusAsync</code>
+                    on that component. If the actor does not have a Stats component, you can still cast the status from
+                    <code>StatsX_WorldSubsystem</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Pass the correct casting parameters</div>
+                <p>
+                    Provide the status tag, caster, target, and any variable overrides needed by the status.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Multiplayer note</div>
+            <p>
+                In multiplayer projects, cast statuses from the server side. Status execution and replication are
+                designed around authoritative runtime control.
+            </p>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>StatusTag</td>
+                    <td>The GameplayTag identifier of the compiled Status Forge asset.</td>
+                </tr>
+                <tr>
+                    <td>CasterActor</td>
+                    <td>The actor that is casting the status.</td>
+                </tr>
+                <tr>
+                    <td>TargetActor</td>
+                    <td>The actor receiving the status. It can also be the same actor as the caster.</td>
+                </tr>
+                <tr>
+                    <td>Overrides</td>
+                    <td>The set of variable overrides used to customize the status at cast time.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <img class="large" src="images/v14/CastStatus.png" alt="CastStatus node example">
+    <div class="image-caption">Example of casting a status with tag, caster, target, and overrides.</div>
+
+    <h2>One-Shot vs Active Status</h2>
+
+    <p>
+        A status can exist in two runtime forms: <strong>One-Shot</strong> or <strong>Active</strong>.
+    </p>
+
+    <h3>One-Shot Status</h3>
+    <p>
+        A one-shot status behaves similarly to a function call. It is cast, executed, and resolved without needing to
+        remain in the world as an ongoing active instance. It does not keep a lasting presence that needs to be tracked
+        over time.
+    </p>
+
+    <p>
+        Typical examples are calculations, instant logic, triggers, or short procedural flows that do not need to stay
+        alive after their work is done.
+    </p>
+
+    <h3>Active Status</h3>
+    <p>
+        An active status is a status instance that remains alive after its initial execution. It is stored in the world
+        pool and, when available a Stats Component (not required), handle is referenced to the caster and target Stats
+        components so it
+        can continue ticking,
+        waiting, or reacting to later events.
+    </p>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Important rule</div>
+            <p>
+                All statuses begin as one-shot. A status becomes active only when execution reaches an async node such
+                as
+                <code>LoopBehavior</code>, <code>UntilDeprecationBehavior</code>, <code>WaitForEvent</code>, or other
+                nodes that put the VM in a suspended state.
+            </p>
+        </div>
+    </div>
+
+    <h2>Where Active Statuses Are Tracked</h2>
+
+    <p>
+        Once a status becomes active, Stats_X tracks it in multiple synchronized places.
+    </p>
+
+    <ul>
+        <li>The world-level active status pool owned by <code>UStatsX_WorldSubsystem</code>.</li>
+        <li>The target component's <code>ReceivedActiveStatuses</code> container, if the target has a Stats component.
+        </li>
+        <li>The caster component's <code>CastedActiveStatuses</code> container, if the caster has a Stats component.
+        </li>
+    </ul>
+
+    <p>
+        The caster and target views are synchronized representations of the same active runtime status. In other words,
+        the caster-side casted containers and the target-side received containers stay aligned with the same status
+        handles and lifecycle events.
+    </p>
+
+    <h2>How a Status Ends</h2>
+
+    <p>
+        Active statuses are removed automatically when they expire, but they can also be removed manually by gameplay
+        logic.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Status expires or is removed</div>
+                <p>
+                    The runtime instance reaches its natural end or is explicitly removed by code or graph logic.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">References are cleaned up</div>
+                <p>
+                    The status is removed from the world pool and from the caster and target containers that were
+                    tracking it.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Registered interceptors are removed too</div>
+                <p>
+                    Any interceptors registered by that status are cleaned up automatically as part of the removal flow.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Status Dispatchers</h2>
+
+    <p>
+        Stats_X exposes synchronized dispatchers that help both server and client react to status changes. These are
+        especially useful for gameplay reactions, UI refreshes, and client-side status tracking.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">On Received Status Tag Changed</div>
+                <p>
+                    Fires when a status tag is added to the target's active received set, or when the last instance of
+                    that tag disappears from the received set.
+                </p>
+                <p>
+                    Example: if Actor A receives <code>Burning</code>, the dispatcher fires with
+                    <code>bAdded = true</code>. If multiple Burning instances exist, it does not fire on every single
+                    removal - it fires again only when the last Burning instance is gone.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">On Casted Status Tag Changed</div>
+                <p>
+                    Same idea as the previous dispatcher, but from the caster point of view. It fires when a status tag
+                    appears in or disappears from the caster's active casted set.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">On Received Status Set / On Casted Status Set</div>
+                <p>
+                    These are <strong>lifecycle boundary</strong> events for a single active status instance, not
+                    whole-set
+                    refresh events. They fire when a status instance is added to or removed from the received or casted
+                    active set.
+                </p>
+                <p>
+                    The payload is <code>FStatusSetData</code>, which contains an <code>Action</code>
+                    (<code>Added</code> or <code>Removed</code>) plus a <code>Seed</code> snapshot. That seed contains
+                    the
+                    client-facing status data needed to represent the instance in UI, including
+                    <code>StatusID</code>, <code>StatusTag</code>, <code>ServerStartTimeSeconds</code>,
+                    <code>MaxDurationSeconds</code>, <code>TickIntervalSeconds</code>, <code>MaxIterations</code>,
+                    <code>StackCount</code>, and <code>Revision</code>.
+                </p>
+                <p>
+                    Use these dispatchers to add or remove a local entry for one specific status instance.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">On Received Status Update / On Casted Status Update</div>
+                <p>
+                    These are <strong>delta update</strong> events for an already active status instance. They do not
+                    fire
+                    every frame, and they are not generic "something changed" notifications.
+                </p>
+                <p>
+                    They are emitted only for non-deducible runtime updates, such as stack changes, refreshes,
+                    stack-change-plus-refresh, or runtime tuning. The payload is <code>FStatusUpdateData</code>, which
+                    contains <code>StatusID</code>, <code>Revision</code>, <code>Reason</code>, and a
+                    <code>ChangedFields</code> bitmask.
+                </p>
+                <p>
+                    Only the fields marked inside <code>ChangedFields</code> are valid and should be applied on the
+                    client side.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">UI utility mindset</div>
+            <p>
+                The intended client-side workflow is to keep a local cache keyed by <code>StatusID</code>. When
+                <code>On...StatusSet</code> fires with <code>Added</code>, store the incoming <code>Seed</code>. When it
+                fires with <code>Removed</code>, remove that cached entry. When <code>On...StatusUpdate</code> fires,
+                patch the cached data of that same <code>StatusID</code> using only the fields flagged in
+                <code>ChangedFields</code>.
+            </p>
+        </div>
+    </div>
+
+    <div class="image-caption">Client-side flow: cache lifecycle seed data per status instance, patch it with delta
+        updates, and drive the UI from that local state.</div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Client access tip</div>
+            <p>
+                Do not expect a full replicated status-instance object from these dispatchers. The current system
+                replicates lifecycle seed snapshots and delta update events. For timers, use the cached
+                <code>FStatusSeedData</code> together with <code>GetStatusInstanceRemainingTime</code>. For update
+                payloads, use helper checks such as <code>StatusUpdateHasStackCount</code>,
+                <code>StatusUpdateHasStartTime</code>, <code>StatusUpdateHasMaxDuration</code>,
+                <code>StatusUpdateHasTickInterval</code>, and <code>StatusUpdateHasMaxIterations</code>.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: you now know how statuses are cast, when they become active, how they are tracked, and how to
+        build client-side status UI correctly using lifecycle seed events plus delta updates.
+    </p>
+</section>

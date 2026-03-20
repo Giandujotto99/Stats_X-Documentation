@@ -1,0 +1,433 @@
+<section id="setup-attributes" class="tutorial-section">
+    <h1>Setup Attributes</h1>
+
+    <p>
+        In this section you will create your Stats_X component hierarchy, attach it to your character, initialize your
+        first attributes, and bind the first gameplay reactions.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What is an Attribute?</div>
+            <p>
+                An attribute in Stats_X is a struct made of three floats. What those values represent depends on how you
+                use the attribute. By default the system clamps values internally, for example <code>Current</code>
+                stays between <code>0</code> and <code>Max</code>. If you want overflow behavior, enable
+                <code>bOverflows</code>.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Before you start</div>
+            <p>
+                Complete the Gameplay Tags setup first. Also, whenever this tutorial says rename, move to, or create a
+                folder, treat those names as suggestions - feel free to adapt them to your own project structure.
+            </p>
+        </div>
+    </div>
+
+    <h2>Create the Stats Components</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the master component</div>
+                <p>
+                    Go to your project's <code>Content</code> folder, not the plugin content folder. Right-click in the
+                    Content Browser, choose <code>Blueprint Class</code>, search for
+                    <code>StatsX_StatsComponentBase</code>, and create it.
+                </p>
+                <p>Rename this blueprint <code>BPC_StatsMaster</code>.</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the child component</div>
+                <p>
+                    Right-click <code>BPC_StatsMaster</code> and choose <code>Create Child Blueprint Class</code>.
+                </p>
+                <p>Rename the child blueprint <code>BPC_CharacterStats</code>.</p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Attach the Component to Your Character</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open the character you want to use</div>
+                <p>
+                    Stats_X is not invasive, so you can use the character blueprint you already have in your project.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add the stats component</div>
+                <p>
+                    In the <code>Components</code> panel, click <code>Add</code>, search for
+                    <code>BPC_CharacterStats</code> or whatever you named it, and add it to the character.
+                </p>
+                <p>
+                    Your character now owns the Stats_X component. At this point it still does nothing by itself, and
+                    ticking is disabled.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Prepare the Initialization Event</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Clean up the master blueprint</div>
+                <p>
+                    Open <code>BPC_StatsMaster</code> and remove the default events from the graph, leaving only
+                    <code>Begin Play</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the server initialization event</div>
+                <p>
+                    Add a custom event called <code>Server_InitializeAttributes</code> and set it to
+                    <code>Run On Server</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Initialize Your First Attributes</h2>
+
+    <p>
+        Open <code>BPC_CharacterStats</code>, go to the Functions panel, click <code>Override</code>, and choose
+        <code>Server_InitializeAttributes</code>. That is where we will set up the first attributes.
+    </p>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Manual setup for learning</div>
+            <p>
+                In a real project you will probably define these values through a Data Table or a Data Asset. For this
+                tutorial we set them manually so the logic stays easy to follow.
+            </p>
+        </div>
+    </div>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Start with the first two nodes in Then 0</div>
+                <p>
+                    Add a <code>Sequence</code> node. In <code>Then 0</code>, place
+                    <code>InitializeStatAttribute</code> for the <code>Level</code> tag and leave
+                    <code>Value</code> and <code>BaseValue</code> at <code>0</code>.
+                </p>
+                <p>
+                    Next to it, add <code>InitializeResourceAttribute</code> for the <code>Experience</code> tag.
+                    Leave <code>CurrentValue</code> and <code>MaxValue</code> at <code>0</code>, but set
+                    <code>BaseValue</code> to <code>100</code>. We will use that later in the leveling formula.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Fill the rest of the sequence branches</div>
+                <p>
+                    Continue by copying the values below. They are split into separate tables so it is easier to read
+                    and faster to reproduce inside the blueprint graph.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h3>Stat Attributes</h3>
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Sequence Branch</th>
+                    <th>Attribute Tag</th>
+                    <th>Value</th>
+                    <th>BaseValue</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Then 0</td>
+                    <td>Level</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 1</td>
+                    <td>Strength</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 1</td>
+                    <td>Dexterity</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 1</td>
+                    <td>Intelligence</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>CooldownReduction</td>
+                    <td>1</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>CriticalChance</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>CriticalDamage</td>
+                    <td>1</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>Haste</td>
+                    <td>1</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>MovementSpeed</td>
+                    <td>500</td>
+                    <td>500</td>
+                </tr>
+                <tr>
+                    <td>Then 2</td>
+                    <td>SpellPower</td>
+                    <td>1</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td>Then 3</td>
+                    <td>Resistance.Arcane</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Resource Attributes</h3>
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Sequence Branch</th>
+                    <th>Attribute Tag</th>
+                    <th>CurrentValue</th>
+                    <th>MaxValue</th>
+                    <th>BaseValue</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Then 0</td>
+                    <td>Experience</td>
+                    <td>0</td>
+                    <td>0</td>
+                    <td>100</td>
+                </tr>
+                <tr>
+                    <td>Then 0</td>
+                    <td>AttributePoints</td>
+                    <td>8</td>
+                    <td>1000</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 0</td>
+                    <td>ExpReward</td>
+                    <td>0</td>
+                    <td>1000</td>
+                    <td>0</td>
+                </tr>
+                <tr>
+                    <td>Then 4</td>
+                    <td>Health</td>
+                    <td>100</td>
+                    <td>100</td>
+                    <td>100</td>
+                </tr>
+                <tr>
+                    <td>Then 4</td>
+                    <td>Mana</td>
+                    <td>100</td>
+                    <td>100</td>
+                    <td>100</td>
+                </tr>
+                <tr>
+                    <td>Then 4</td>
+                    <td>Stamina</td>
+                    <td>100</td>
+                    <td>100</td>
+                    <td>100</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <img class="full" src="images/SetupAttributes/AttributesSetupped.png"
+        alt="Example setup of the initialized attributes graph">
+    <div class="image-caption">Example of a completed attribute initialization graph.</div>
+
+    <h2>Bind Begin Play and the Attribute Changed Event</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Store a reference to your character</div>
+                <p>
+                    In <code>BPC_CharacterStats</code>, use the <code>Begin Play</code> event, call
+                    <code>GetOwner</code>, cast it to your character blueprint, and promote the result to a variable
+                    called <code>CharRef</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Bind OnAttributeChanged</div>
+                <p>
+                    Call the <code>OnAttributeChanged</code> dispatcher. From the event input pin, create a
+                    <code>Create Event</code> node and choose <code>Create a matching event</code> from the dropdown.
+                </p>
+                <p>
+                    Rename the event to <code>OnAttributeChanged_Multicast</code>. We are not splitting the bind logic
+                    with <code>SwitchOnAuthority</code> yet, so this bind will react on both server and client.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Initialize attributes on the authority branch</div>
+                <p>
+                    After binding <code>OnAttributeChanged</code>, add a <code>SwitchOnAuthority</code> node. On the
+                    <code>Authority</code> branch, call <code>Server_InitializeAttributes</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <img src="images/SetupAttributes/BeginPlaySetup.png" alt="Begin Play setup for the character stats component">
+    <div class="image-caption">Store a reference to the owning character during Begin Play.</div>
+
+    <img class="large" src="images/v14/OnAttributeChangedSetupv14.png"
+        alt="Bind OnAttributeChanged and initialize attributes on authority">
+    <div class="image-caption">Bind the dispatcher first, then initialize attributes on the authority branch.</div>
+
+    <img class="large" src="images/v14/ServerInitAtt.png"
+        alt="Call Server_InitializeAttributes on the authority branch">
+    <div class="image-caption">Call Server_InitializeAttributes on the authority branch.</div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Important replication note</div>
+            <p>
+                <code>OnAttributeChanged_SomethingEvent</code> nodes are not replicated RPCs by themselves. Replication
+                happens internally before those events fire. That means you can split logic between server and client by
+                deciding where you bind and react to the event.
+            </p>
+        </div>
+    </div>
+
+    <h2>Apply Movement Speed Immediately</h2>
+
+    <p>
+        Movement Speed is the first attribute you can see affecting gameplay right away, so it is a great first example
+        of reacting to an attribute change.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Switch on the updated tag</div>
+                <p>
+                    In <code>OnAttributeChanged_Multicast</code>, call <code>Switch on Tag List</code>. This is a
+                    quality-of-life node; if you prefer the standard <code>Switch on Tag</code>, that works too.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Listen only for MovementSpeed</div>
+                <p>
+                    In the Details panel of the switch node, add the <code>MovementSpeed</code> tag and enable
+                    <code>ExactMatch</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Apply the new max speed</div>
+                <p>
+                    From the <code>MovementSpeed</code> branch, set your character max speed using the event input
+                    parameter <code>NewValue.Max</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <img class="large" src="images/v14/MoveSpeed.png" alt="Movement speed update driven by OnAttributeChanged">
+    <div class="image-caption">Example of updating movement speed from the replicated attribute value.</div>
+
+    <h2>UI Setup Options</h2>
+
+    <p>
+        At this point your attributes are initialized correctly on both server and client. For UI updates you can use
+        either of these approaches:
+    </p>
+
+    <ul>
+        <li>
+            Use <code>OnAttributeChanged_ClientEvent</code>, forward it through the Player Controller to your HUD, and
+            update the widgets there.
+        </li>
+        <li>
+            From the UI, get the controlled pawn, fetch <code>StatsX_StatsComponentBase</code> with
+            <code>GetComponentByClass</code>, bind to <code>OnAttributeChanged</code>, and update the text or numeric
+            widgets directly.
+        </li>
+    </ul>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">UI tip</div>
+            <p>
+                If you use the second approach, manually trigger <code>OnAttributeChanged</code> once right after the
+                bind so the UI receives the initial values immediately.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: your first attributes are initialized, replicated, and already driving gameplay.
+    </p>
+</section>

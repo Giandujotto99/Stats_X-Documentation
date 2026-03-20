@@ -1,0 +1,116 @@
+<section id="installation" class="tutorial-section">
+    <h1>Installation</h1>
+
+    <p>
+        In this section you will install the plugin, enable it in your project, and create the runtime data asset that
+        Stats_X needs to resolve compiled statuses.
+    </p>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Important requirement</div>
+            <p>
+                Stats_X runtime expects a <code>PDA_ImmutableGameStatuses</code> data asset to be assigned in Project
+                Settings. Without it, the plugin cannot resolve status definitions at runtime.
+            </p>
+        </div>
+    </div>
+
+    <h2>Install the Plugin in the Engine Version You Want to Use</h2>
+
+    <p>
+        First, place the plugin inside the Unreal Engine version you want to work with.
+    </p>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/Install_v14.mp4"
+                type="video/mp4">
+        </video>
+    </div>
+
+    <h2>Enable Stats_X in Your Project</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open the Plugins window</div>
+                <p>
+                    In Unreal, go to <code>Edit -> Plugins</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Search for Stats_X and enable it</div>
+                <p>
+                    Find the <code>Stats_X</code> plugin, enable it, and restart the editor if Unreal asks for it.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/AbilitateStatsX_v14.mp4"
+                type="video/mp4">
+        </video>
+    </div>
+
+    <h2>Create the Immutable Game Statuses Data Asset</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a new Data Asset in your project content</div>
+                <p>
+                    In the Content Browser, create a new Data Asset and choose
+                    <code>PDA_ImmutableGameStatuses</code> as the asset class.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Give it a clear name</div>
+                <p>
+                    I recommend naming it <code>DA_ImmutableGameStatuses</code>. It can live anywhere in your project
+                    content folder, as long as you assign it in the settings afterward.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Assign it in Project Settings</div>
+                <p>
+                    Go to <code>Project Settings -> Plugins -> Stats_X Runtime</code> and assign your
+                    <code>DA_ImmutableGameStatuses</code> asset to <code>Immutable Game Statuses</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-wrapper">
+        <video controls>
+            <source src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/CreateDA.mp4"
+                type="video/mp4">
+        </video>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Why this asset matters</div>
+            <p>
+                Every compiled status definition is resolved through this registry asset. Later, when you compile new
+                Status Forge assets, Stats_X will register them there automatically.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: the plugin is installed correctly and the project is ready for the next setup steps.
+    </p>
+</section>

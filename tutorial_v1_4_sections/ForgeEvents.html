@@ -1,0 +1,462 @@
+<section id="forge-events" class="tutorial-section">
+    <h1>Forge Events</h1>
+
+    <p>
+        Forge Events are the bridge between Blueprint gameplay and a running status. Instead of guessing the right
+        moment
+        with a <code>Delay</code>, a status can wait for a real gameplay signal such as an animation notify, a
+        projectile callback, an interaction, or any other Blueprint-driven event.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What Forge Events do</div>
+            <p>
+                <code>WaitForEvent</code> and <code>WaitForEvents</code> let a status pause and listen. Later,
+                <code>SendForgeEvent</code> wakes the waiting status and resumes the correct event branch.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">When to use them</div>
+            <p>
+                Forge Events are perfect when status execution must react to something external: a montage notify, a
+                weapon release frame, a projectile hit, a combo input window, or a world interaction.
+            </p>
+        </div>
+    </div>
+
+    <h2>The Example We Will Build</h2>
+
+    <p>
+        In this tutorial we build a practical Blueprint flow: the player starts a casting status, the status waits for
+        a montage notify, and when the notify fires the status resumes and releases the projectile.
+    </p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Blueprint Flow</span>
+        </div>
+        <pre><code>Player input
+-> Cast Status
+-> Status plays montage / enters WaitForEvents
+-> Montage notify fires in Blueprint
+-> Blueprint calls SendForgeEvent
+-> Status resumes in OnEventTriggered
+-> Projectile or gameplay effect is released</code></pre>
+    </div>
+
+    <h2>Why This Is Better Than Delay</h2>
+
+    <ul>
+        <li>A montage can change length, but the notify still marks the correct frame.</li>
+        <li>The status resumes only when the real event happens, not when a guessed timer expires.</li>
+        <li>The same pattern works for projectiles, interactions, combo windows, and many other Blueprint events.</li>
+    </ul>
+
+    <h2>Create the Event Tag</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a GameplayTag for the event</div>
+                <p>
+                    Add a new tag under the event hierarchy, for example
+                    <code>StatsX.Event.Gameplay.Fireball.Release</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Name it after the real gameplay moment</div>
+                <p>
+                    Good event tags describe <em>when</em> something happened, not what you hope will happen next. Think
+                    in terms of <code>Release</code>, <code>Impact</code>, <code>Combo.Continue</code>,
+                    <code>Interaction.Accepted</code>, and similar signals.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Build the Waiting Status</h2>
+
+    <p>
+        Now build or open the status that should wait for the external signal. In this example it is the casting status
+        that should release the projectile only after the animation reaches the notify.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the waiting node for the graph</div>
+                <p>
+                    If you only need one event, <code>WaitForEvent</code> is enough. In this example we will use
+                    <code>WaitForEvents</code> because it gives us more control, such as per-event trigger limits and
+                    max waiting time.
+                </p>
+                <p>
+                    Configure it with the event tag you created, such as
+                    <code>StatsX.Event.Gameplay.Fireball.Release</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use the immediate branch for setup</div>
+                <p>
+                    The unnamed branch of <code>WaitForEvent</code>, or the <code>Now</code> branch of
+                    <code>WaitForEvents</code>, runs immediately in the same frame. Use it for setup work such as
+                    starting a montage, spawning telegraph VFX, or preparing state before the event arrives.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use the event handler for the real reaction</div>
+                <p>
+                    In <code>WaitForEvent</code>, put the gameplay action you actually want to delay in the
+                    <code>Event Triggered</code> branch. In <code>WaitForEvents</code>, define the event entries in the
+                    <code>Events</code> parameter, then create one <code>OnEventTriggered</code> node for each event you
+                    want to handle.
+                    <br>
+                    For a fireball, this is where you would release the projectile, cast the hit status, or continue the
+                    combo.
+                </p>
+
+                <img src="images/v14/WFEs.png" alt="WaitForEvents node configured for the fireball example">
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the OnEventTriggered handlers</div>
+                <p>
+                    If you are using <code>WaitForEvents</code>, the output is the one that runs
+                    instantly before the status enters suspension and starts waiting for events.
+                    <br>
+                    To create the branch for a specific event, add a new <code>OnEventTriggered</code> node. Assign to
+                    it one of the events you configured in <code>WaitForEvents</code>, then define how many times it can
+                    trigger and the max waiting time. In this example the waiting time is 2 seconds, so if the montage
+                    is interrupted or something goes wrong, the status does not wait forever and can auto terminate.
+                    <br>
+                    You need one <code>OnEventTriggered</code> node for each event tag you want to react to.
+                </p>
+
+                <img src="images/v14/OnEventTriggered.png"
+                    alt="OnEventTriggered handler configured for a WaitForEvents entry">
+            </div>
+        </div>
+    </div>
+
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Waiting Flow Part</th>
+                    <th>When it runs</th>
+                    <th>Typical use</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>WaitForEvent</code> Immediate / <code>WaitForEvents</code> Now</td>
+                    <td>Right away, in the same frame</td>
+                    <td>Play montage, setup visuals, start anticipation logic</td>
+                </tr>
+                <tr>
+                    <td><code>WaitForEvent</code> Event Triggered / <code>WaitForEvents</code> OnEventTriggered</td>
+                    <td>Later, when the matching event is sent</td>
+                    <td>Release projectile, apply hit logic, continue combo flow</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Important timing rule</div>
+            <p>
+                The event branch does <strong>not</strong> resume instantly in the same frame as
+                <code>SendForgeEvent</code>. The event is queued and the status resumes on the next subsystem tick.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Default listener behavior</div>
+            <p>
+                <code>WaitForEvent</code> registers an infinite listener by default. This means the same waiting status
+                can react again and again to the same event until the status ends. If you want a single-use reaction,
+                make the status end after the first trigger or use <code>WaitForEvents</code> with a trigger budget.
+            </p>
+        </div>
+    </div>
+
+    <h2>Send the Event from Blueprint</h2>
+
+    <p>
+        Once the status is waiting, you need to send the event at the correct gameplay moment.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the Blueprint that knows the moment has happened</div>
+                <p>
+                    For this example, the best source is the animation notify inside the Montage. In other cases,
+                    it could be the projectile Blueprint, an interactable actor, or a character event graph.
+                    <br>
+                    Go to the Content Browser, right-click, create a new Blueprint class, and choose
+                    <code>AnimNotify</code> as parent class.
+                    <br>Open it, add a new variable of type <code>GameplayTag</code>, name it
+                    <code>EventTag</code> and click the eye icon to make it <code>InstanceEditable</code>.
+                    <br>
+                    Now go to your animation montage and add this notify at the frame where you want to send the event.
+                    <br>
+                    In the details panel of the notify, you can now choose the tag you want to send. It must match the
+                    tag used by the waiting node, or one of the tags configured inside <code>WaitForEvents</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Call SendForgeEvent with the same EventTag</div>
+                <p>
+                    When the notify or Blueprint event fires, call <code>SendForgeEvent</code> using the exact same tag
+                    the status is waiting for. In the notify, override <code>Received_Notify</code> and call
+                    <code>SendForgeEvent</code> there. In this kind of Blueprint, the Blueprint Library version is often
+                    the best choice because you can pass the scope actor explicitly.
+                </p>
+
+                <img src="images/v14/ANotify.png" alt="AnimNotify Blueprint sending a Forge Event">
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Make sure the scope actor matches</div>
+                <p>
+                    A waiting status listens with an actor scope. Internally, the waiting node uses the target actor
+                    first, and if there is no target it falls back to the caster actor. If you send the event from the
+                    wrong scope actor, the waiting status will not resume.
+                </p>
+                <p>
+                    In an <code>AnimNotify</code> setup, this usually means passing the mesh owner or character owner as
+                    the scope actor.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h3>Three Practical Ways to Send It</h3>
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Method</th>
+                    <th>Best use case</th>
+                    <th>Scope behavior</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Stats Component - SendForgeEvent</td>
+                    <td>When the actor already owns a Stats component</td>
+                    <td>Uses the component owner automatically as the scope actor</td>
+                </tr>
+                <tr>
+                    <td>Blueprint Library - SendForgeEvent</td>
+                    <td>Anim Blueprints, notifies, widgets, or any other Blueprint context</td>
+                    <td>You pass the scope actor explicitly</td>
+                </tr>
+                <tr>
+                    <td>WorldSubsystem - SendForgeEvent</td>
+                    <td>More advanced setups that already work with the subsystem directly</td>
+                    <td>You pass the scope actor explicitly</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Easy rule for self-cast statuses</div>
+            <p>
+                If the status is cast by the same actor that should receive the event, calling
+                <code>SendForgeEvent</code> from that actor's Stats component is usually the easiest and safest option.
+            </p>
+        </div>
+    </div>
+
+    <h2>Send Payload with the Event</h2>
+
+    <p>
+        Forge Events can also carry data. The payload uses the same override struct you already know from variable
+        overrides: <code>FForgeVariableOverride</code>.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create variables in the waiting status</div>
+                <p>
+                    Add the variables the event should fill. A very good convention is to keep them under the dedicated
+                    subtree <code>StatsX.Variable.Payload.*</code>, for example
+                    <code>StatsX.Variable.Payload.ChargedDamage</code> or
+                    <code>StatsX.Variable.Payload.TargetLocation</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Build the payload array in Blueprint</div>
+                <p>
+                    Use the Blueprint helper nodes such as <code>MakeFloatOverride</code>,
+                    <code>MakeGameplayTagOverride</code>, <code>MakeVectorOverride</code>, and the other override
+                    factories to assemble the payload.
+                </p>
+
+                <img src="images/v14/ANPayload.png" alt="AnimNotify payload setup for SendForgeEvent">
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Read the variables directly after resume</div>
+                <p>
+                    When the waiting status resumes, the payload has already been applied to the status variables. That
+                    means the <code>Event Triggered</code> branch can use the new values immediately.
+                </p>
+
+                <img src="images/v14/PR.png" alt="Status reading payload values after the event resumes">
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Variable in Status</th>
+                    <th>Payload sent from Blueprint</th>
+                    <th>What the handler can do</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.Variable.Payload.ChargedDamage</code></td>
+                    <td><code>MakeFloatOverride(..., 125.0)</code></td>
+                    <td>Scale damage based on the real charge amount</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.Variable.Payload.ReleaseSocket</code></td>
+                    <td><code>MakeNameOverride(...)</code></td>
+                    <td>Choose which socket or release point to use</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.Variable.Payload.TargetLocation</code></td>
+                    <td><code>MakeVectorOverride(...)</code></td>
+                    <td>Resume the event branch with a precise world-space target</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Keep payload simple</div>
+            <p>
+                Scalars, tags, object references, class references, and common value types work well as payload. For
+                Blueprint tutorials and gameplay iteration, keep event payloads small and focused instead of trying to
+                send large structures or collection-heavy data.
+            </p>
+        </div>
+    </div>
+
+    <h2>Use WaitForEvents for More Advanced Flows</h2>
+
+    <p>
+        Use <code>WaitForEvents</code> when one status should react to multiple possible signals instead of only one.
+    </p>
+
+    <p>
+        This node is especially useful for combo windows, interrupt logic, reaction branches, or any gameplay situation
+        where the next step depends on which event arrives first.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Typical handler</th>
+                    <th>MaxTriggers</th>
+                    <th>MaxWaitingTime</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.Event.Gameplay.Combo.Continue</code></td>
+                    <td>Go to the next combo branch</td>
+                    <td>1</td>
+                    <td>0.35</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.Event.Gameplay.Combo.Cancel</code></td>
+                    <td>Abort the combo flow</td>
+                    <td>1</td>
+                    <td>0.35</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.Event.Gameplay.Combo.Bonus</code></td>
+                    <td>Apply an optional extra branch</td>
+                    <td>-1</td>
+                    <td>-1</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">How WaitForEvents differs from WaitForEvent</div>
+            <p>
+                <code>WaitForEvent</code> is the simplest persistent listener: one tag, infinite triggers, no timeout.
+                <code>WaitForEvents</code> adds per-event handler branches, per-event trigger limits, and per-event
+                waiting times.
+            </p>
+        </div>
+    </div>
+
+    <h2>Common Mistakes</h2>
+
+    <ul>
+        <li>Using the right event tag but sending it from the wrong scope actor.</li>
+        <li>Expecting the event branch to run in the same frame instead of the next tick.</li>
+        <li>Using <code>Delay</code> for animation-driven moments that already have a notify.</li>
+        <li>Forgetting that <code>WaitForEvent</code> keeps listening forever unless the status ends.</li>
+        <li>Trying to solve a complex multi-branch gameplay flow with one single event when <code>WaitForEvents</code>
+            would be clearer.</li>
+    </ul>
+
+    <h2>Final Mental Model</h2>
+
+    <p>
+        Think of Forge Events like this: Blueprints tell the world <em>when something real happened</em>, and Status
+        Forge decides <em>what that means for gameplay</em>.
+    </p>
+
+    <p>
+        Once you start using this pattern, your statuses stop depending on guessed delays and begin reacting to real
+        gameplay timing. That makes your logic cleaner, easier to reuse, and much more reliable.
+    </p>
+</section>

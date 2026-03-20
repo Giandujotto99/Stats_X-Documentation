@@ -1,0 +1,201 @@
+<section id="modifiers" class="tutorial-section">
+    <h1>Modifiers</h1>
+
+    <p>
+        In this section you will understand what modifiers solve, how Stats_X recalculates them safely, and how to add
+        or remove a modifier manually when you are not using Status Forge.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What is a modifier?</div>
+            <p>
+                A modifier is a runtime adjustment applied to an attribute. In Stats_X, modifiers are designed to
+                affect the derived <code>Max</code> value rather than permanently overwriting the original
+                <code>Base</code> value.
+            </p>
+        </div>
+    </div>
+
+    <h2>Why Modifiers Exist</h2>
+
+    <p>
+        Modifiers solve a classic stacking problem. If you directly subtract and then re-add values, overlapping buffs
+        and debuffs can easily restore the wrong amount and leave the attribute in an invalid state.
+    </p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Example</span>
+        </div>
+        <pre><code>Movement Speed Base Value = 500
+
+Enemy debuff: Additive = -300, Multiplicative = 1
+New Max = (500 + (-300)) * 1 = 200
+
+Snow debuff: Additive = -400, Multiplicative = 1
+New Max = (500 + (-700)) * 1 = -200 -> clamped to 0
+
+Enemy debuff ends
+New Max = (500 + (-400)) * 1 = 100
+
+Snow debuff ends
+New Max = (500 + 0) * 1 = 500</code></pre>
+    </div>
+
+    <p>
+        That is the key benefit: removing one modifier never restores the wrong value, because Stats_X recalculates the
+        final result from the full active stack every time (dirty flags for performance).
+    </p>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Recalculation formula</div>
+            <p>
+                Stats_X recalculates modifiers with <code>Max = (Base + Sum(Additive)) * Product(Multiplicative)</code>.
+                This keeps overlapping effects stable and predictable.
+            </p>
+        </div>
+    </div>
+
+    <h2>Manual Modifiers vs Status Forge</h2>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Recommended workflow</div>
+            <p>
+                You can create modifiers manually, but the recommended approach is to use Status Forge. It keeps your
+                effect logic inside a single framework and works naturally with interceptors and status-driven cleanup.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box danger">
+        <div class="info-box-content">
+            <div class="info-box-title">Server-side only</div>
+            <p>
+                Handle modifiers only on the server. Their state is replicated internally, so you should not manually
+                apply them on both sides.
+            </p>
+        </div>
+    </div>
+
+    <h2>Add a Modifier Manually</h2>
+
+    <p>
+        If you want to create a modifier without Status Forge, use the <code>AddModifier</code> node from a
+        Stats_X component.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Call AddModifier on the stats component</div>
+                <p>
+                    Do this from server-side gameplay logic, for example from your character, an ability, or a
+                    dedicated event that owns the effect.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the target attribute</div>
+                <p>
+                    Modifiers are typically useful for values that influence the attribute <code>Max</code>. In this
+                    example we target <code>Health</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Fill the modifier parameters</div>
+                <p>
+                    Set the source, owner, additive value, and multiplicative value according to the effect you want to
+                    create.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Parameter Name</th>
+                    <th>Example Value</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>AttributeTag</td>
+                    <td>Health</td>
+                    <td>The attribute affected by the modifier. In practice, modifiers are used to affect its Max value.
+                    </td>
+                </tr>
+                <tr>
+                    <td>SourceTag</td>
+                    <td>Debuff.Arcane</td>
+                    <td>Identifies the source or category of the modifier. Useful for filtered cleanup such as removing
+                        all fire or arcane debuffs.</td>
+                </tr>
+                <tr>
+                    <td>OwnerID</td>
+                    <td>0</td>
+                    <td>The creator or grouping ID of the modifier. In Status Forge this is handled automatically for
+                        you.</td>
+                </tr>
+                <tr>
+                    <td>AdditiveValue</td>
+                    <td>-400</td>
+                    <td>A flat change applied before multiplication.</td>
+                </tr>
+                <tr>
+                    <td>MultiplicativeValue</td>
+                    <td>1</td>
+                    <td>
+                        A multiplier applied after additive values. For example, <code>0.7</code> means -30% and
+                        <code>1.3</code> means +30%.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <img class="large" src="images/Modifiers/Modifiers.png" alt="Example AddModifier setup in Blueprints">
+    <div class="image-caption">Example of a manual modifier added directly from a Stats_X component.</div>
+
+    <h2>Remove and Manage Modifiers</h2>
+
+    <p>
+        Once a modifier exists, you can remove it in different ways depending on the type of logic you need.
+    </p>
+
+    <ul>
+        <li><code>RemoveModifierByID</code> for one exact modifier instance.</li>
+        <li><code>RemoveModifiersByOwner</code> to remove everything created by the same owner or status.</li>
+        <li><code>RemoveModifiersBySource</code> to remove a whole category such as a specific debuff source.</li>
+        <li><code>RemoveModifiersByAttribute</code> to clear all modifiers affecting one attribute.</li>
+    </ul>
+
+    <img class="full" src="images/v14/ModifiersNodes.png" alt="Blueprint nodes for removing and managing modifiers">
+    <div class="image-caption">Common Blueprint nodes for removing or querying modifiers, plus additional utility
+        helpers.</div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Best practice</div>
+            <p>
+                If a modifier belongs to a temporary gameplay effect, give it a meaningful <code>OwnerID</code> or let
+                Status Forge manage it for you. That makes cleanup far easier when the effect ends.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: you now know why modifiers are needed, how Stats_X keeps them stable, and how to add or remove
+        them manually when needed.
+    </p>
+</section>

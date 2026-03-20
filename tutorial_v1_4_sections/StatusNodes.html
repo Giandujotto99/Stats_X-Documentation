@@ -1,0 +1,194 @@
+<section id="status-nodes" class="tutorial-section">
+    <h1>Status Nodes</h1>
+
+    <p>
+        Nodes are the building blocks of Status Forge. They are the visual pieces that define how a status behaves,
+        interacts with attributes, reacts to events, and evolves over time.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">How to think about a node</div>
+            <p>
+                Each node is an authoring tool in the editor, but at compile time it becomes a real instruction handled
+                by the Forge runtime. That is why the system feels visual while still staying performant.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        Every built-in node is documented, and new updates will continue expanding the available toolset. If you ever
+        need something more specific, Stats_X also lets you extend the system with your own logic.
+    </p>
+
+    <h2>Built-in Nodes and Custom Nodes</h2>
+
+    <p>
+        Status Forge already gives you a wide set of nodes, but you are not limited to the built-in set.
+    </p>
+
+    <ul>
+        <li>Use the built-in nodes for standard gameplay flow, checks, math, modifiers, statuses, and events.</li>
+        <li>If you need fully native custom behavior, you can create your own nodes in C++.</li>
+        <li>If you work in Blueprints, you can extend the system through <code>Custom Actions</code> and
+            <code>Custom Checks</code>.
+        </li>
+    </ul>
+
+    <img class="large" src="images/v14/SFCustLog.png" alt="Custom logic nodes in Status Forge">
+    <div class="image-caption">Custom logic lets you extend Status Forge without changing the plugin workflow.</div>
+
+    <h2>Create Your Own Custom Logic in Blueprints</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a new Blueprint class</div>
+                <p>
+                    In the Content Browser, create a new Blueprint class and choose either
+                    <code>ForgeCustomAction</code> or <code>ForgeCustomCheck</code> depending on the type of node you
+                    want to build.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Write the logic inside the Blueprint</div>
+                <p>
+                    Implement the gameplay behavior or condition you need, exactly like you would for any other
+                    Blueprint-based extension.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Expose editable variables</div>
+                <p>
+                    Create instance-editable variables in the Blueprint. Those variables become pins or configurable
+                    parameters in Status Forge, so the node can be customized directly from the graph.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Blueprint-friendly extension path</div>
+            <p>
+                This is the easiest way for Blueprint users to create reusable node behavior without modifying the
+                plugin
+                source code.
+            </p>
+        </div>
+    </div>
+
+    <h2>Connection Rules</h2>
+
+    <p>
+        There is one especially important rule to remember when connecting nodes in Status Forge: pay attention to blue
+        nodes that work across time.
+    </p>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Blue timed nodes can cross frames</div>
+            <p>
+                If a blue node has a duration or any time-based behavior, it means the execution can continue in a later
+                frame. Data coming from nodes before it may no longer be available in the way you expect when the graph
+                resumes after time has passed.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        In practice, this means you should not assume temporary data from a node before a time-based node will still be
+        safely usable in nodes after it. If the graph spans multiple frames, the context has changed.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Bad connection pattern</div>
+                <p>
+                    A node produces data, then a time-based blue node waits or runs across multiple frames, and finally
+                    a
+                    later node tries to use that earlier data as if everything still belonged to the same moment.
+                </p>
+                <img class="large" src="images/v14/SFBadConnection.png"
+                    alt="Incorrect Status Forge connection across timed blue node">
+                <div class="image-caption">Incorrect pattern: data is treated as if execution never left the same frame.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Good connection pattern</div>
+                <p>
+                    Restructure the graph so the logic after the timed node uses data that is still valid for that later
+                    frame, or rebuild the needed data after the delay instead of depending on the old transient state.
+                </p>
+                <img class="large" src="images/v14/SFGoodConnection.png"
+                    alt="Correct Status Forge connection across timed blue node">
+                <div class="image-caption">Correct pattern: the logic is rebuilt in a way that respects multi-frame
+                    execution.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-box danger">
+        <div class="info-box-content">
+            <div class="info-box-title">Practical mindset</div>
+            <p>
+                If a node waits, loops with time, or otherwise spans multiple frames, think of the logic after it as a
+                later moment in gameplay, not as a direct continuation of the same instant.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        Once you understand this rule, building larger statuses becomes much safer. You can combine built-in nodes,
+        custom logic, and time-based behavior without creating subtle execution mistakes.
+    </p>
+
+    <h2>Avoid Deep Async Chains</h2>
+
+    <p>
+        Here is the practical extension of the same rule: do not build very deep chains of async nodes that all want to
+        control suspension, timing, and status resumption at the same time.
+    </p>
+
+    <p>
+        In the example below, the status contains <strong>7 async nodes</strong> but works perfectly because all events
+        does not contains other async nodes. For example:
+    </p>
+
+    <ul>
+        <li>Node <code>1</code> is a <code>PlayMontage</code> node that also fires events.</li>
+        <li>Node <code>2</code> is a <code>WaitForEvents</code> node listening for 4 different events.</li>
+        <li>Node <code>7</code> is a <code>CastStatus</code> node that launches another status dedicated to the montage
+            logic because use directly a PlayMontage node in that point would break this rule.</li>
+    </ul>
+
+    <img class="large" src="images/v14/SFAsyncChain.png" alt="Status Forge async chain example">
+    <div class="image-caption">Example of a complex async chain split across multiple responsibilities.</div>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Do not chain too many time slices</div>
+            <p>
+                When too many async nodes are chained together, they start competing over timing, suspension, resume
+                flow, and active-status ownership. In simple cases it may still work, but in more complex graphs you
+                will often see wrong timing, missed events, or logic that does not trigger as expected.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        The safest solution is simple: if the logic becomes too asynchronous, split it into multiple statuses with clear
+        responsibilities instead of forcing everything into one deep chain. This keeps the execution easier to reason
+        about and makes debugging much easier too.
+    </p>
+</section>

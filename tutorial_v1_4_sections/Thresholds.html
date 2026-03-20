@@ -1,0 +1,184 @@
+<section id="thresholds" class="tutorial-section">
+    <h1>Thresholds</h1>
+
+    <p>
+        In this section you will add your first attribute threshold, bind the threshold dispatcher, and prepare a clean
+        place where you can react to events such as death, low health, or any other critical attribute transition.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What is a threshold?</div>
+            <p>
+                A threshold watches one attribute value and fires an event when that value reaches or crosses a specific
+                boundary. In practice, it is the easiest way to react to events like <code>Health.Current</code>
+                reaching zero.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Before you continue</div>
+            <p>
+                This tutorial assumes your attributes are already initialized, especially <code>Health</code>. If you
+                have not completed the previous section yet, do that first.
+            </p>
+        </div>
+    </div>
+
+    <h2>Create the Threshold Initialization Event</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open your character stats blueprint</div>
+                <p>
+                    Open <code>BPC_CharacterStats</code>, the same blueprint where you initialized your attributes.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a server event for thresholds</div>
+                <p>
+                    Add a custom event named <code>Server_InitializeThresholds</code> and set its replication to
+                    <code>Run On Server</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add the threshold registration node</div>
+                <p>
+                    As the first node in this event, add <code>AddAttributeThreshold</code>. From its Threshold struct
+                    input, drag a wire and create <code>Make Attribute Threshold</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Configure the Example Threshold</h2>
+
+    <p>
+        This example creates a threshold for <code>Health.Current</code> and triggers when the value crosses below
+        <code>0</code>.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Parameter Name</th>
+                    <th>Parameter Value</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>AttributeTag</td>
+                    <td>Health</td>
+                    <td>The attribute you want to monitor.</td>
+                </tr>
+                <tr>
+                    <td>SubAttributeTag</td>
+                    <td>Current</td>
+                    <td>We are watching the current health value, not Max or Base.</td>
+                </tr>
+                <tr>
+                    <td>ThresholdValue</td>
+                    <td>0</td>
+                    <td>The boundary value that will be checked.</td>
+                </tr>
+                <tr>
+                    <td>Comparison</td>
+                    <td>Crossing Below</td>
+                    <td>It triggers only when the value crosses from above 0 to 0 or lower.</td>
+                </tr>
+                <tr>
+                    <td>RemoveAfterTrigger</td>
+                    <td>False</td>
+                    <td>The threshold stays active after triggering.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <img class="large" src="images/SetupThresolds/DefineThresholds.png" alt="Create and configure the Health threshold">
+    <div class="image-caption">Example setup for a Health threshold that reacts when Current crosses below zero.</div>
+
+    <h2>Call the Event and Bind the Dispatcher</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Go back to Begin Play</div>
+                <p>
+                    In the <code>Begin Play</code> logic, after the call to <code>Server_InitializeAttributes</code>,
+                    call <code>Server_InitializeThresholds</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Bind the threshold dispatcher</div>
+                <p>
+                    Next to that logic, add <code>BindEventToOnAttributeThresholdReached</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the matching event</div>
+                <p>
+                    From the red event input pin, create a <code>Create Event</code> node and choose
+                    <code>Create a matching event</code> from the signature dropdown.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Name the callback clearly</div>
+                <p>
+                    Rename the generated event to <code>OnAttributeThresholdReached_ServerEvent</code> so it is obvious
+                    where this logic runs and what it reacts to.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <img class="large" src="images/SetupThresolds/BindThresholds.png" alt="Bind the OnAttributeThresholdReached dispatcher">
+    <div class="image-caption">Bind the dispatcher so the component can react when a threshold is crossed.</div>
+
+    <h2>What to Do Inside the Event</h2>
+
+    <p>
+        Your threshold setup is now ready. Inside <code>OnAttributeThresholdReached_ServerEvent</code>, you can decide
+        what should happen when the threshold is triggered.
+    </p>
+
+    <ul>
+        <li>Filter by <code>AttributeTag</code> if you only care about a specific monitored attribute.</li>
+        <li>Filter by threshold handle if you are storing handles in a map or array and want more precise control.</li>
+        <li>Use this event for reactions such as death, phase changes, warnings, or automatic gameplay responses.</li>
+    </ul>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Persistent vs one-shot thresholds</div>
+            <p>
+                Because <code>RemoveAfterTrigger</code> is set to <code>False</code> in this example, the threshold
+                remains active after firing. If you need a one-time trigger, enable removal after trigger instead.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: thresholds are now registered, bound, and ready to drive gameplay logic from attribute changes.
+    </p>
+</section>

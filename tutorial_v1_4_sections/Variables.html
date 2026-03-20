@@ -1,0 +1,209 @@
+<section id="variables" class="tutorial-section">
+    <h1>Variables</h1>
+
+    <p>
+        Variables let a status store values it can read inside the graph. The simplest useful example is one float
+        variable that represents how much damage the status should deal.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What we are building</div>
+            <p>
+                In this tutorial we create a single variable called <code>StatsX.Variable.DamageAmount</code>, read it
+                in the graph, and use it as the damage value of the status.
+            </p>
+        </div>
+    </div>
+
+    <h2>Create the Variable</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open your Status Forge asset</div>
+                <p>
+                    Go to the Variables panel inside the status you want to use for damage.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add one variable declaration</div>
+                <p>
+                    Create a variable with tag <code>StatsX.Variable.DamageAmount</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Set the type and default value</div>
+                <p>
+                    Set <code>Variable Type</code> to <code>Float</code>, <code>Container Mode</code> to
+                    <code>Single</code>, and give it a default value such as <code>50.0</code>.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Variable Tag</th>
+                    <th>Type</th>
+                    <th>Container</th>
+                    <th>Default</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.Variable.DamageAmount</code></td>
+                    <td>Float</td>
+                    <td>Single</td>
+                    <td>50.0</td>
+                    <td>The amount of damage this status should apply.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Why this is already useful</div>
+            <p>
+                Even with just one variable, the same status becomes reusable. You can keep one generic damage status
+                and change only the value instead of duplicating the whole asset.
+            </p>
+        </div>
+    </div>
+
+    <h2>Use the Variable in the Graph</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Read the value with Get Variable</div>
+                <p>
+                    Inside the graph, place a <code>Get Variable</code> node and select
+                    <code>StatsX.Variable.DamageAmount</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use that value as the damage input</div>
+                <p>
+                    Connect the result of <code>Get Variable</code> to the node that applies damage, modifies health,
+                    or feeds your custom logic.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Let the graph read the current value every time</div>
+                <p>
+                    Now the status no longer has a hardcoded damage number in the graph. It reads the value from the
+                    variable, so you can tune it from the declaration or override it from Blueprint later.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Simple Graph Flow</span>
+        </div>
+        <pre><code>Status starts
+-> Get Variable (StatsX.Variable.DamageAmount)
+-> Apply damage using that float value</code></pre>
+    </div>
+
+    <h2>Why This Is Better Than Hardcoding</h2>
+
+    <ul>
+        <li>You change the default damage in one place instead of rewriting the graph.</li>
+        <li>The same status can be reused for weak, medium, or strong versions.</li>
+        <li>Each cast can keep its own value independently.</li>
+    </ul>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Per-instance behavior</div>
+            <p>
+                Variables belong to the running status instance. If two actors cast the same status, each one can have
+                its own <code>DamageAmount</code> value.
+            </p>
+        </div>
+    </div>
+
+    <h2>Optionally Override It from Blueprint</h2>
+
+    <p>
+        If you want, Blueprint can replace the default value when the status is cast.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create a float override</div>
+                <p>
+                    Use <code>MakeFloatOverride</code> with tag <code>StatsX.Variable.DamageAmount</code> and the new
+                    value you want, for example <code>125.0</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Put it into the overrides array</div>
+                <p>
+                    Add that override to the <code>TArray&lt;FForgeVariableOverride&gt;</code> you pass when casting the
+                    status.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Cast the status normally</div>
+                <p>
+                    Feed the overrides array into <code>CastStatusAsync</code> or <code>CastStatusSync</code>. The graph
+                    will read the overridden value from the very first instruction.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Blueprint Flow</span>
+        </div>
+        <pre><code>MakeFloatOverride
+-> VariableTag = StatsX.Variable.DamageAmount
+-> Value = 125.0
+
+Add to Overrides Array
+-> CastStatusAsync / CastStatusSync</code></pre>
+    </div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Note</div>
+            <p>
+                If you use the node CastStatus, the one in the Status Forge, input pins will apear based on the
+                variables in that status. So you can override variables from Status to Status and as told from
+                Blueprints to Status.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        You are done: you now know the simplest and most useful way to start working with Variables in Status Forge.
+    </p>
+</section>

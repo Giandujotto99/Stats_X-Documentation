@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Stats_X Library - Downloadable resources and supporting files for Unreal Engine 5.">
+    <title>Library - Stats_X</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="images/StatsX_Thumbnail_267x267.png">
+</head>
+
+<body class="selector-page">
+    <header class="site-header">
+        <div class="header-content">
+            <a href="index.html" class="logo">
+                <img src="images/StatsX_Thumbnail_267x267.png" alt="Stats_X Logo" class="logo-img">
+                <span class="logo-text">STATS<span>_X</span></span>
+            </a>
+            <nav class="header-nav">
+                <a href="docs.html">Tutorials</a>
+                <a href="reference.html">Documentation</a>
+                <a href="https://discord.gg/SWAaXK86bg" target="_blank">Discord</a>
+                <a href="library.html" class="active">Library</a>
+                <span class="version-badge">v1.4</span>
+            </nav>
+        </div>
+    </header>
+
+    <main class="library-landing">
+        <section class="library-panel stagger">
+            <p class="library-brand">STATS<span>_X</span></p>
+            <h1 class="library-page-title">Library</h1>
+            <p class="library-description">
+                Download import-ready nodes and statuses into your project with extreme ease.
+            </p>
+            <div class="library-actions">
+                <button type="button" class="library-action-button" id="library-node-button" data-section="node"
+                    aria-pressed="false">Node</button>
+                <button type="button" class="library-action-button" id="library-status-button" data-section="status"
+                    aria-pressed="false">Status</button>
+            </div>
+        </section>
+    </main>
+
+    <section class="library-loaded-shell" id="library-loaded-shell" hidden>
+        <div class="library-loaded-content content" id="library-content-container"></div>
+    </section>
+
+    <footer class="site-footer">
+        <div class="footer-logo">STATS<span>_X</span></div>
+        <div class="footer-info">v1.4 - Plugin for Unreal Engine 5.x by Gabriele Rogani - XForge</div>
+        <div class="footer-links">
+            <a href="https://discord.gg/SWAaXK86bg" target="_blank">Discord</a>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const sectionConfig = {
+                node: {
+                    manifest: 'node-manifest.json',
+                    title: 'Node Library',
+                    emptyTitle: 'No nodes yet',
+                    emptyMessage: 'Add your first node entry to library_sections/node-manifest.json when you are ready.'
+                },
+                status: {
+                    manifest: 'status-manifest.json',
+                    title: 'Status Library',
+                    emptyTitle: 'No statuses yet',
+                    emptyMessage: 'Add your first status entry to library_sections/status-manifest.json when you are ready.'
+                }
+            };
+
+            const buttons = Array.from(document.querySelectorAll('.library-action-button'));
+            const loadedShell = document.getElementById('library-loaded-shell');
+            const contentContainer = document.getElementById('library-content-container');
+            const basePath = 'library_sections';
+            const manifestCache = new Map();
+            const scrollState = {
+                node: 0,
+                status: 0
+            };
+            const defaultImage = 'images/StatsX_Thumbnail_534x534.png';
+
+            let currentView = {
+                sectionId: '',
+                itemId: ''
+            };
+            let renderToken = 0;
+
+            function escapeHtml(value) {
+                return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                }[character]));
+            }
+
+            function buildHash(sectionId, itemId = '') {
+                return itemId ? `#${sectionId}/${itemId}` : `#${sectionId}`;
+            }
+
+            function parseHash() {
+                const rawHash = window.location.hash.replace(/^#/, '').trim();
+
+                if (!rawHash) {
+                    return { sectionId: '', itemId: '' };
+                }
+
+                const [sectionId, ...itemParts] = rawHash.split('/').filter(Boolean);
+
+                if (!sectionConfig[sectionId]) {
+                    return { sectionId: '', itemId: '' };
+                }
+
+                return {
+                    sectionId,
+                    itemId: itemParts.join('/')
+                };
+            }
+
+            function normalizeManifest(sectionId, manifest) {
+                const config = sectionConfig[sectionId];
+                const rawItems = Array.isArray(manifest.items) ? manifest.items : [];
+
+                return {
+                    title: manifest.title || config.title,
+                    description: manifest.description || '',
+                    emptyTitle: manifest.emptyTitle || config.emptyTitle,
+                    emptyMessage: manifest.emptyMessage || config.emptyMessage,
+                    items: rawItems.filter((item) => item && item.id && item.title).map((item) => ({
+                        id: String(item.id),
+                        title: String(item.title),
+                        image: item.image || defaultImage,
+                        shortDescription: item.shortDescription || '',
+                        pluginVersion: item.pluginVersion || 'v1.4',
+                        tags: Array.isArray(item.tags) ? item.tags : [],
+                        detailFile: item.detailFile || ''
+                    }))
+                };
+            }
+
+            async function getManifest(sectionId) {
+                const config = sectionConfig[sectionId];
+
+                if (!config) {
+                    throw new Error('Unknown library section');
+                }
+
+                if (!manifestCache.has(sectionId)) {
+                    manifestCache.set(sectionId, fetch(`${basePath}/${config.manifest}`)
+                        .then(async (response) => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+
+                            const manifest = await response.json();
+                            return normalizeManifest(sectionId, manifest);
+                        })
+                        .catch((error) => {
+                            manifestCache.delete(sectionId);
+                            throw error;
+                        }));
+                }
+
+                return manifestCache.get(sectionId);
+            }
+
+            function updateActiveButton(sectionId) {
+                buttons.forEach((button) => {
+                    const isActive = button.dataset.section === sectionId;
+                    button.classList.toggle('active', isActive);
+                    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+                });
+            }
+
+            function clearLoadedSection() {
+                loadedShell.hidden = true;
+                contentContainer.innerHTML = '';
+                updateActiveButton('');
+                currentView = { sectionId: '', itemId: '' };
+            }
+
+            function buildGridMarkup(sectionId, manifest) {
+                const cardsMarkup = manifest.items.map((item) => `
+                    <button type="button" class="library-item-card" data-item-id="${escapeHtml(item.id)}">
+                        <span class="library-item-thumb-wrap">
+                            <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.title)}" class="library-item-thumb">
+                        </span>
+                        <span class="library-item-card-body">
+                            <span class="library-item-card-title">${escapeHtml(item.title)}</span>
+                            <span class="library-item-card-copy">${escapeHtml(item.shortDescription)}</span>
+                        </span>
+                    </button>
+                `).join('');
+
+                const bodyMarkup = manifest.items.length ? `
+                    <div class="library-catalog-grid">
+                        ${cardsMarkup}
+                    </div>
+                ` : `
+                    <div class="library-empty-card">
+                        <h3 class="library-loaded-title">${escapeHtml(manifest.emptyTitle)}</h3>
+                        <p class="library-loaded-copy">${escapeHtml(manifest.emptyMessage)}</p>
+                    </div>
+                `;
+
+                return `
+                    <section class="library-loaded-section active" data-library-view="grid" data-library-section="${escapeHtml(sectionId)}">
+                        <div class="library-loaded-header">
+                            <p class="library-loaded-kicker">Importable collection</p>
+                            <h2 class="library-loaded-title">${escapeHtml(manifest.title)}</h2>
+                            <p class="library-loaded-copy">${escapeHtml(manifest.description)}</p>
+                        </div>
+                        ${bodyMarkup}
+                    </section>
+                `;
+            }
+
+            function buildDetailWrapper(sectionId, item, detailMarkup) {
+                return `
+                    <section class="library-loaded-section library-detail-view active" data-library-view="detail" data-library-section="${escapeHtml(sectionId)}" data-library-item="${escapeHtml(item.id)}">
+                        <button type="button" class="library-return-button" data-return-section="${escapeHtml(sectionId)}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M19 12H5"></path>
+                                <path d="M12 19l-7-7 7-7"></path>
+                            </svg>
+                            Return
+                        </button>
+                        ${detailMarkup}
+                    </section>
+                `;
+            }
+
+            function bindGridCards(sectionId) {
+                contentContainer.querySelectorAll('.library-item-card').forEach((card) => {
+                    card.addEventListener('click', () => {
+                        scrollState[sectionId] = window.scrollY;
+                        renderDetail(sectionId, card.dataset.itemId, { updateHistory: true });
+                    });
+                });
+            }
+
+            function bindReturnButton(sectionId) {
+                const returnButton = contentContainer.querySelector('.library-return-button');
+
+                if (!returnButton) {
+                    return;
+                }
+
+                returnButton.addEventListener('click', () => {
+                    renderGrid(sectionId, { updateHistory: true, restoreScroll: true });
+                });
+            }
+
+            function applyPostRenderScroll(sectionId, options = {}) {
+                if (options.restoreScroll) {
+                    const savedPosition = scrollState[sectionId] || 0;
+                    requestAnimationFrame(() => {
+                        window.scrollTo({ top: savedPosition, behavior: 'auto' });
+                    });
+                    return;
+                }
+
+                if (options.scroll !== false) {
+                    loadedShell.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+
+            async function renderGrid(sectionId, options = {}) {
+                const requestToken = ++renderToken;
+
+                loadedShell.hidden = false;
+                updateActiveButton(sectionId);
+                contentContainer.innerHTML = '<section class="library-loaded-section"><p class="library-loaded-copy">Loading section...</p></section>';
+
+                try {
+                    const manifest = await getManifest(sectionId);
+
+                    if (requestToken !== renderToken) {
+                        return;
+                    }
+
+                    contentContainer.innerHTML = buildGridMarkup(sectionId, manifest);
+                    currentView = { sectionId, itemId: '' };
+                    bindGridCards(sectionId);
+
+                    if (options.updateHistory) {
+                        history.pushState(null, '', buildHash(sectionId));
+                    }
+
+                    applyPostRenderScroll(sectionId, options);
+                } catch (error) {
+                    if (requestToken !== renderToken) {
+                        return;
+                    }
+
+                    console.error('Error loading library catalog:', error);
+                    contentContainer.innerHTML = `
+                        <section class="library-loaded-section active">
+                            <div class="library-empty-card">
+                                <h2 class="library-loaded-title">Error Loading Section</h2>
+                                <p class="library-loaded-copy">Could not load the ${escapeHtml(sectionId)} catalog.</p>
+                            </div>
+                        </section>
+                    `;
+                    currentView = { sectionId, itemId: '' };
+                }
+            }
+
+            async function renderDetail(sectionId, itemId, options = {}) {
+                const requestToken = ++renderToken;
+
+                loadedShell.hidden = false;
+                updateActiveButton(sectionId);
+                contentContainer.innerHTML = '<section class="library-loaded-section"><p class="library-loaded-copy">Loading item...</p></section>';
+
+                try {
+                    const manifest = await getManifest(sectionId);
+
+                    if (requestToken !== renderToken) {
+                        return;
+                    }
+
+                    const item = manifest.items.find((entry) => entry.id === itemId);
+
+                    if (!item || !item.detailFile) {
+                        contentContainer.innerHTML = buildDetailWrapper(sectionId, {
+                            id: itemId || sectionId
+                        }, `
+                            <div class="library-empty-card">
+                                <h2 class="library-loaded-title">Item Not Found</h2>
+                                <p class="library-loaded-copy">The requested library item is not available in this catalog.</p>
+                            </div>
+                        `);
+                        currentView = { sectionId, itemId };
+                        bindReturnButton(sectionId);
+                        return;
+                    }
+
+                    const response = await fetch(`${basePath}/${item.detailFile}`);
+
+                    if (requestToken !== renderToken) {
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const detailMarkup = (await response.text()).trim() || `
+                        <div class="library-empty-card">
+                            <h2 class="library-loaded-title">Empty Item</h2>
+                            <p class="library-loaded-copy">This library item does not contain any detail markup yet.</p>
+                        </div>
+                    `;
+
+                    contentContainer.innerHTML = buildDetailWrapper(sectionId, item, detailMarkup);
+                    currentView = { sectionId, itemId };
+                    bindReturnButton(sectionId);
+
+                    if (options.updateHistory) {
+                        history.pushState(null, '', buildHash(sectionId, itemId));
+                    }
+
+                    if (options.scroll !== false) {
+                        loadedShell.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (error) {
+                    if (requestToken !== renderToken) {
+                        return;
+                    }
+
+                    console.error('Error loading library item:', error);
+                    contentContainer.innerHTML = buildDetailWrapper(sectionId, {
+                        id: itemId || sectionId
+                    }, `
+                        <div class="library-empty-card">
+                            <h2 class="library-loaded-title">Error Loading Item</h2>
+                            <p class="library-loaded-copy">Could not load the requested item right now.</p>
+                        </div>
+                    `);
+                    currentView = { sectionId, itemId };
+                    bindReturnButton(sectionId);
+                }
+            }
+
+            function syncFromLocation(options = {}) {
+                const { sectionId, itemId } = parseHash();
+
+                if (!sectionId) {
+                    clearLoadedSection();
+                    return;
+                }
+
+                if (itemId) {
+                    renderDetail(sectionId, itemId, { scroll: false });
+                    return;
+                }
+
+                const restoreScroll = options.fromHistory && currentView.sectionId === sectionId && Boolean(currentView.itemId);
+                renderGrid(sectionId, { scroll: false, restoreScroll });
+            }
+
+            buttons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    renderGrid(button.dataset.section, { updateHistory: true });
+                });
+            });
+
+            syncFromLocation();
+
+            window.addEventListener('popstate', () => {
+                syncFromLocation({ fromHistory: true });
+            });
+        });
+    </script>
+</body>
+
+</html>

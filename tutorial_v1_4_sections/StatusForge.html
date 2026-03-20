@@ -1,0 +1,340 @@
+<section id="status-forge" class="tutorial-section">
+    <h1>Status Forge</h1>
+
+    <p>
+        Status Forge is the heart of Stats_X authoring. In this section you will understand what it is, what a status
+        really becomes at runtime, and how the editor helps you build reusable gameplay logic visually.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What is Status Forge?</div>
+            <p>
+                Status Forge is a visual editor that lets you build complex <code>Status Definition</code> assets in a
+                Blueprint-like workflow. Each node is compiled into instructions executed by the Forge virtual machine,
+                so the final runtime status stays fast and CPU-friendly.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Editor-only authoring, runtime output</div>
+            <p>
+                The Status Forge asset itself is editor-only. The real gameplay asset is the compiled data asset it
+                generates. Every time you save and compile, Stats_X updates that runtime definition for you.
+            </p>
+        </div>
+    </div>
+
+    <h2>What Is a Status?</h2>
+
+    <p>
+        A status is a compiled gameplay definition stored in a data asset as an optimized list of instructions. In
+        practice, a status is simply <em>something that happens</em>.
+    </p>
+
+    <ul>
+        <li>A spell, skill, passive, aura, or timed gameplay effect.</li>
+        <li>A world action, such as opening a door, spawning an enemy, or entering a boss arena.</li>
+    </ul>
+
+    <p>
+        If you know GAS, you can think of a Stats_X status as covering the role of both a Gameplay Ability and a
+        Gameplay Effect, but with a workflow that is faster to author, easier to share, and cheaper to execute.
+    </p>
+
+    <h2>Create Your First Status Forge Asset</h2>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Create the asset from the Content Browser</div>
+                <p>
+                    Right-click in the Content Browser, open the <code>XForge</code> category, then
+                    <code>StatsX</code>, and choose <code>StatusForge</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use a clear naming convention</div>
+                <p>
+                    The recommended convention is <code>SF_YourStatusName</code>. This keeps your forge assets easy to
+                    recognize in larger projects.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="video-wrapper full">
+        <video controls>
+            <source
+                src="https://github.com/Giandujotto99/Stats_X-Documentation/releases/download/media/CreateStatusForgeAsset.mp4"
+                type="video/mp4">
+        </video>
+    </div>
+
+    <h2>First Look at the Editor</h2>
+
+    <img class="full" src="images/v14/SFInterface.png" alt="First look at the Status Forge interface">
+    <div class="image-caption">The Status Forge editor layout at a glance.</div>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">The Forge Graph</div>
+                <p>
+                    This is where you build the status logic with nodes. The first node is always
+                    <code>StartForge</code>, and every logic path grows from there.
+                </p>
+                <img class="full" src="images/v14/SFGraph.png" alt="The Forge Graph in Status Forge">
+                <div class="image-caption">The visual graph where the status logic is authored.</div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Status Core Data</div>
+                <p>
+                    This panel defines the identity and behavior rules of the status: tag, stacking, limits, and other
+                    core properties.
+                </p>
+                <img class="full" src="images/v14/SFCore.png" alt="Status Core Data panel in Status Forge">
+                <div class="image-caption">Core data defines how the status behaves before you even look at the graph.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Node palette and details panel</div>
+                <p>
+                    Nodes can be added by right-clicking in the graph or by using the palette. When you select a node,
+                    the details panel shows all editable parameters for that node.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <h2>Understand Status Core Data</h2>
+
+    <p>
+        The core data section defines the fundamental rules of a status. This is the part that decides how the status is
+        identified, how it stacks, and how it behaves when cast repeatedly.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>StatusTag</td>
+                    <td>The GameplayTag used to cast, refresh, update, or remove this status.</td>
+                </tr>
+                <tr>
+                    <td>Description</td>
+                    <td>A designer-friendly tooltip that documents the purpose of the status.</td>
+                </tr>
+                <tr>
+                    <td>Max Stacks</td>
+                    <td>The maximum number of stacks. A value of <code>-1</code> means infinite stacks.</td>
+                </tr>
+                <tr>
+                    <td>Stack Per Caster</td>
+                    <td>If enabled, different casters maintain separate stack groups on the same target.</td>
+                </tr>
+                <tr>
+                    <td>ExecuteOnEndForNaturalTermination</td>
+                    <td>If enabled, the <code>OnEnd</code> logic runs when the status ends (can be overwritten runtime).
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Stacking Policies</h3>
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Policy</th>
+                    <th>Behavior</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Aggregate</td>
+                    <td>Adds a stack if the same status is already active on the target.</td>
+                </tr>
+                <tr>
+                    <td>Aggregate and Refresh</td>
+                    <td>Adds a stack and also resets the duration.</td>
+                </tr>
+                <tr>
+                    <td>Refresh Only</td>
+                    <td>Does not add stacks, but refreshes the duration.</td>
+                </tr>
+                <tr>
+                    <td>Override</td>
+                    <td>Removes the old status and replaces it with the new cast.</td>
+                </tr>
+                <tr>
+                    <td>Reject</td>
+                    <td>Ignores the new cast if the same status is already active.</td>
+                </tr>
+                <tr>
+                    <td>Independent</td>
+                    <td>Always allows the cast, even if the same tag is already active.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Why Stack Per Caster matters</div>
+            <p>
+                If two different actors cast the same aggregate status on one target, enabling
+                <code>Stack Per Caster</code> keeps those stacks separate. That makes ownership and cleanup much easier
+                to reason about.
+            </p>
+        </div>
+    </div>
+
+    <h2>Compile and Runtime Output</h2>
+
+    <p>
+        Once the graph and core data are ready, click <code>Compile</code>. This generates or updates the runtime data
+        asset used in-game.
+    </p>
+
+    <img class="full" src="images/v14/SFCo.png" alt="Compile button in Status Forge">
+    <div class="image-caption">Compile turns the visual graph into the runtime status definition.</div>
+
+    <p>
+        The generated data asset is automatically assigned to the <code>DA Status Definition</code> reference, and it
+        is also registered inside the <code>DA_ImmutableGameStatuses</code> asset created during installation.
+    </p>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Important workflow note</div>
+            <p>
+                Compiling again does not create duplicate runtime assets. It simply updates the same generated status
+                definition. That means you can iterate safely without cluttering your project.
+            </p>
+        </div>
+    </div>
+
+    <img class="full" src="images/v14/SFCompile.png" alt="Compiled status definition reference in Status Forge">
+    <div class="image-caption">The generated data asset reference and compile timestamp.</div>
+
+    <h2>Node Selection and Editing</h2>
+
+    <p>
+        Nodes can be spawned in the graph by right-clicking, exactly like in Blueprints. If you prefer, you can also
+        use the palette panel on the left. If you closed it by mistake, reopen it from <code>Window -> Palette</code>.
+    </p>
+
+    <img class="full" src="images/v14/SFNodePick.png" alt="Node selection palette in Status Forge">
+    <div class="image-caption">Use either the graph context menu or the palette to add nodes.</div>
+
+    <p>
+        When you select a node, the details panel exposes all of its editable parameters. The node itself also shows a
+        concise summary of the most relevant information you configured.
+    </p>
+
+    <img class="full" src="images/v14/SFNodeSelection.png" alt="Node details panel in Status Forge">
+    <div class="image-caption">Selected nodes expose their parameters through the details panel.</div>
+
+    <h2>Import and Share Statuses</h2>
+
+    <p>
+        One of the strongest ideas behind Status Forge is portability. When you save and compile a forge asset, Stats_X
+        can export a JSON representation that recreates the exact same forge structure in another project: nodes,
+        connections, variables, configuration, and the overall editable logic.
+    </p>
+
+    <p>
+        This is important because the JSON is not just a summary or a final compiled result. It is a portable version of
+        the authored status itself. When you import it, you are not receiving only an effect that works - you are
+        receiving the full starting point for further design work.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What the JSON preserves</div>
+            <p>
+                The imported JSON recreates the same status authoring structure, so you can inspect it, edit it, extend
+                it, and make it your own instead of rebuilding the whole graph manually from zero.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        This is what makes the Library truly powerful: a status can be created once, shared as JSON, imported in a few
+        seconds, and then adapted to a completely different project. You may only need to change some values, swap a
+        tag, replace a calculation, or add your own branch of logic - but the heavy work is already done.
+    </p>
+
+    <p>
+        In practice, this turns statuses into reusable building blocks. Instead of spending an hour recreating the same
+        graph, you can open the Library, choose the closest status, import it, study how it was built, customize it,
+        and move forward immediately. That is not only a convenience feature - it is a multiplier for iteration speed,
+        knowledge sharing, and community growth.
+    </p>
+
+    <img class="full" src="images/v14/SFImport.png" alt="Import JSON in Status Forge">
+    <div class="image-caption">Import JSON recreates the same forge asset in seconds.</div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Community value</div>
+            <p>
+                The more reusable statuses the community shares, the stronger the Library becomes, and the faster new
+                gameplay systems can be built.
+            </p>
+        </div>
+    </div>
+
+    <h2>Forge Variables</h2>
+
+    <p>
+        Forge variables make statuses flexible. They let you define data that can be overridden at cast time or changed
+        inside the status logic itself.
+    </p>
+
+    <ul>
+        <li><code>StatsX.Variable.*</code> is for real forge variables that you override or edit during execution.</li>
+        <li><code>StatsX.Variable.Payload.*</code> is for data coming from payloads.</li>
+    </ul>
+
+    <p>
+        If you know GAS, think of this as the bridge that allows nodes such as <code>WaitForEvent</code> and
+        <code>WaitForEvents</code> to receive payload data from elsewhere in your project through
+        <code>SendForgeEvent</code>.
+    </p>
+
+    <img class="medium" src="images/v14/SFVar.png" alt="Forge variables in Status Forge">
+    <div class="image-caption">Forge variables let one status definition adapt to many different use cases.</div>
+
+    <h2>Why Status Forge Matters</h2>
+
+    <p>
+        Status Forge is more than just an editor. It is the system that turns reusable gameplay logic into something you
+        can author visually, compile into efficient runtime data, export to JSON, import again in seconds, and keep
+        growing over time.
+    </p>
+
+    <p>
+        This is the most powerful feature in Stats_X, and it is the foundation for the next sections where the nodes
+        and connection rules become even more important.
+    </p>
+</section>

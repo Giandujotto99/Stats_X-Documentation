@@ -1,0 +1,165 @@
+<section id="setup-gameplay-tags" class="tutorial-section">
+    <h1>Setup GameplayTags</h1>
+
+    <p>
+        Before creating attributes, statuses, and cooldown logic, take a moment to design your GameplayTag hierarchy.
+        A clean hierarchy will make the rest of the project much easier to scale.
+    </p>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">What this section is really about</div>
+            <p>
+                You do not need to plan every single tag for the entire game today. The goal is to create a strong,
+                readable structure so future tags can fit naturally instead of becoming chaos over time.
+            </p>
+        </div>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Good habit</div>
+            <p>
+                Write your hierarchy down before you start. A simple document, Google Sheet, or Miro board is often
+                enough to avoid renaming and reorganizing everything later.
+            </p>
+        </div>
+    </div>
+
+    <h2>Plan the Main Tag Families First</h2>
+
+    <p>
+        Start by thinking about the broad categories your game needs. For a typical Stats_X setup, the most useful
+        families are usually:
+    </p>
+
+    <ul>
+        <li><strong>Attributes</strong> - stats, resources, resistances, stacks, progression.</li>
+        <li><strong>Status</strong> - skills, environment effects, gameplay states, cooldown entries.</li>
+        <li><strong>Cooldown branches</strong> - separate when you know some systems should affect only a subset.</li>
+    </ul>
+
+    <h2>Example Attribute Hierarchy</h2>
+
+    <p>
+        This example shows a clean attribute structure with progression stats, primary stats, derived values, vitals,
+        resistances, and stacks.
+    </p>
+
+    <img class="full" src="images/SetupTags/AttributesHierarchy.png"
+        alt="Example hierarchy for gameplay attribute tags">
+    <div class="image-caption">Example of a readable attribute hierarchy: broad groups first, specific values below
+        them.</div>
+
+    <p>
+        A structure like this is useful because it lets you target both broad groups and precise leaf tags. For example,
+        you can affect all <code>Vital</code> attributes, only <code>Resistances</code>, or just one specific value such
+        as <code>MovementSpeed</code>.
+    </p>
+
+    <h2>Example Status Hierarchy</h2>
+
+    <p>
+        Status tags benefit from the same idea: start broad, then specialize based on delivery type, element, system,
+        or effect family.
+    </p>
+
+    <img class="full" src="images/SetupTags/StatusesHierarchy.png" alt="Example hierarchy for gameplay status tags">
+    <div class="image-caption">Example of a status hierarchy covering skills, environment effects, gameplay states, and
+        cooldowns.</div>
+
+    <h2>Why Hierarchy Matters</h2>
+
+    <p>
+        A strong hierarchy is not just nice to look at. It gives you design control later.
+    </p>
+
+    <ul>
+        <li>An item may reduce all skill cooldowns by 20% after a kill.</li>
+        <li>A passive may reduce all ranged or projectile damage by 10%.</li>
+        <li>A debuff may amplify all crowd control statuses on the target.</li>
+        <li>A silence effect may block only spell-related casts without touching everything else.</li>
+    </ul>
+
+    <p>
+        If your tags are flat, those kinds of effects become painful to express. If your hierarchy is clean, they are
+        easy to target.
+    </p>
+
+    <div class="info-box warning">
+        <div class="info-box-content">
+            <div class="info-box-title">Do not overbuild too early</div>
+            <p>
+                Keep the hierarchy strong, but do not try to predict your entire game in microscopic detail. Plan the
+                families and the naming style first, then expand naturally as the project grows.
+            </p>
+        </div>
+    </div>
+
+    <h2>Add the Tags in DefaultGameplayTags.ini</h2>
+
+    <p>
+        You can create tags manually in the editor, but once the list starts growing, editing the config file is much
+        faster.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Close the project after installing Stats_X</div>
+                <p>
+                    This is the safest moment to bulk-edit your tag list without Unreal keeping the file open while you
+                    work.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Open your config file</div>
+                <p>
+                    Navigate to <code>YourProject/Config/DefaultGameplayTags.ini</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Add your hierarchy entries</div>
+                <p>
+                    Write the tags directly in the file, save it, then reopen the project.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">DefaultGameplayTags.ini</span>
+        </div>
+        <pre><code>[/Script/GameplayTags.GameplayTagsList]
++GameplayTagList=(Tag="Attributes.Stat.Progression.Level",DevComment="")
++GameplayTagList=(Tag="Attributes.Stat.Primary.Strength",DevComment="")
++GameplayTagList=(Tag="Attributes.Resource.Vital.Health",DevComment="")
++GameplayTagList=(Tag="Attributes.Stat.Resistance.Arcane",DevComment="")
++GameplayTagList=(Tag="Status.Skill.Projectile.Arcane.FireballCast",DevComment="")
++GameplayTagList=(Tag="Status.Skill.Projectile.Arcane.FireballEffect",DevComment="")
++GameplayTagList=(Tag="Status.Skill.DirectTarget.Arcane.ManaShield",DevComment="")
++GameplayTagList=(Tag="Status.Cooldown.Skill.FireballCD",DevComment="")</code></pre>
+    </div>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Simple naming rule</div>
+            <p>
+                Go from generic to specific. If a tag reads naturally from left to right, the hierarchy is usually doing
+                its job correctly.
+            </p>
+        </div>
+    </div>
+
+    <p>
+        These are only examples. First follow the tutorial to understand how the plugin works, then apply this new
+        knowledge to your own project and build a strong tag structure that fits your game.
+    </p>
+</section>
