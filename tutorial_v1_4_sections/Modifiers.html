@@ -2,17 +2,19 @@
     <h1>Modifiers</h1>
 
     <p>
-        In this section you will understand what modifiers solve, how Stats_X recalculates them safely, and how to add
-        or remove a modifier manually when you are not using Status Forge.
+        Modifiers are runtime contributions applied to an attribute calculation. In v1.4 you can still use the legacy
+        <code>AddModifier</code> workflow, but the recommended workflow is now <code>Add Typed Modifier</code> plus a
+        Formula Profile. This lets you decide exactly how each bucket of modifiers affects the final <code>Max</code>
+        value.
     </p>
 
     <div class="info-box info">
         <div class="info-box-content">
-            <div class="info-box-title">What is a modifier?</div>
+            <div class="info-box-title">The important change in v1.4</div>
             <p>
-                A modifier is a runtime adjustment applied to an attribute. In Stats_X, modifiers are designed to
-                affect the derived <code>Max</code> value rather than permanently overwriting the original
-                <code>Base</code> value.
+                A typed modifier does not say "add this and multiply that" directly. It writes one
+                <code>Magnitude</code> into a named <code>Modifier Bucket</code>. The active Formula Profile reads those
+                buckets and calculates the attribute <code>Max</code> value.
             </p>
         </div>
     </div>
@@ -30,94 +32,719 @@
         </div>
         <pre><code>Movement Speed Base Value = 500
 
-Enemy debuff: Additive = -300, Multiplicative = 1
-New Max = (500 + (-300)) * 1 = 200
+Enemy debuff: Flat = -300
+New Max = 500 - 300 = 200
 
-Snow debuff: Additive = -400, Multiplicative = 1
-New Max = (500 + (-700)) * 1 = -200 -> clamped to 0
+Snow debuff: Flat = -400
+New Max = 500 - 700 = -200 -> clamped by your attribute rules
 
 Enemy debuff ends
-New Max = (500 + (-400)) * 1 = 100
+New Max = 500 - 400 = 100
 
 Snow debuff ends
-New Max = (500 + 0) * 1 = 500</code></pre>
+New Max = 500</code></pre>
     </div>
 
     <p>
-        That is the key benefit: removing one modifier never restores the wrong value, because Stats_X recalculates the
-        final result from the full active stack every time (dirty flags for performance).
+        The key benefit is that removing one modifier never restores the wrong value. Stats_X recalculates the final
+        result from the full active stack every time, using dirty flags so the work happens only when needed.
     </p>
 
-    <div class="info-box tip">
+    <h2>Legacy Formula vs Typed Formula</h2>
+
+    <p>
+        By default, Stats_X keeps the legacy formula for compatibility:
+    </p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Legacy</span>
+        </div>
+        <pre><code>Max = (Base + Sum(LegacyAdditive)) * Product(LegacyMultiplicative)</code></pre>
+    </div>
+
+    <p>
+        The new typed workflow uses named buckets. The built-in <code>PoELike</code> profile uses this formula:
+    </p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Built-In PoELike</span>
+        </div>
+        <pre><code>Max = (Base + Flat + LegacyAdditive) * (1 + Increased / 100) * More * LegacyMultiplicative</code></pre>
+    </div>
+
+    <div class="info-box warning">
         <div class="info-box-content">
-            <div class="info-box-title">Recalculation formula</div>
+            <div class="info-box-title">Typed modifiers need a matching formula</div>
             <p>
-                Stats_X recalculates modifiers with <code>Max = (Base + Sum(Additive)) * Product(Multiplicative)</code>.
-                This keeps overlapping effects stable and predictable.
+                If an attribute uses the default <code>Legacy</code> profile, typed buckets such as
+                <code>StatsX.ModifierBucket.Flat</code>, <code>StatsX.ModifierBucket.Increased</code>, and
+                <code>StatsX.ModifierBucket.More</code> are stored but do not affect the final value. Use
+                <code>PoELike</code> or a custom DataAsset formula that reads those buckets.
             </p>
         </div>
     </div>
 
-    <h2>Manual Modifiers vs Status Forge</h2>
+    <h2>Built-In Modifier Buckets</h2>
 
-    <div class="info-box warning">
+    <p>
+        A bucket decides how multiple modifiers are grouped before the formula runs. The built-in typed buckets are:
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Bucket Tag</th>
+                    <th>Aggregation</th>
+                    <th>Magnitude Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.Flat</code></td>
+                    <td>Sum</td>
+                    <td>Flat value added to Base. Example: <code>50</code> means +50 Max.</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.Increased</code></td>
+                    <td>Sum</td>
+                    <td>Percentage points. Example: <code>20</code> means +20% in the PoELike profile.</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.More</code></td>
+                    <td>Product</td>
+                    <td>Multiplier. Example: <code>1.3</code> means 30% more, <code>0.7</code> means 30% less.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">PoELike Example</span>
+        </div>
+        <pre><code>Movement Speed Base = 500
+Flat bucket = +50
+Increased bucket = +20
+More bucket = 1.3
+
+Max = (500 + 50) * (1 + 20 / 100) * 1.3
+Max = 858</code></pre>
+    </div>
+
+    <h2>Choose a Formula Profile</h2>
+
+    <p>
+        A Formula Profile tells Stats_X how to turn Base, buckets, and dependencies into the final attribute
+        <code>Max</code>. The profile is resolved in this order:
+    </p>
+
+    <ol>
+        <li>Per-attribute override on the stats component.</li>
+        <li>Default Formula Profile on the stats component.</li>
+        <li>Project Settings, <code>Plugins > Stats_X Runtime > Formula Profiles</code>.</li>
+        <li>Legacy fallback.</li>
+    </ol>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use Legacy for old projects</div>
+                <p>
+                    Legacy keeps existing <code>AddModifier</code> behavior. It is the safest option for projects that
+                    already shipped graphs using additive and multiplicative values.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use PoELike for the new built-in typed workflow</div>
+                <p>
+                    Choose <code>Source = Built-In Formula</code> and <code>Built-In Formula = PoELike</code> when you
+                    want Flat, Increased, and More buckets to affect the attribute.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Use Data Asset for custom math</div>
+                <p>
+                    Choose <code>Source = Data Asset</code> when you want a designer-authored formula with custom
+                    buckets, custom aggregation, or dependencies on other attributes.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-box tip">
         <div class="info-box-content">
-            <div class="info-box-title">Recommended workflow</div>
+            <div class="info-box-title">Set the formula before adding typed modifiers</div>
             <p>
-                You can create modifiers manually, but the recommended approach is to use Status Forge. It keeps your
-                effect logic inside a single framework and works naturally with interceptors and status-driven cleanup.
+                Formula profiles bind bucket definitions to the attribute runtime cache. In practice, configure the
+                project, component, or attribute Formula Profile before your gameplay starts adding typed modifiers.
             </p>
         </div>
+    </div>
+
+    <h2>Add a Typed Modifier in Status Forge</h2>
+
+    <p>
+        In Status Forge, use the <code>Add Typed Modifier</code> node when a status should add one contribution to a
+        formula bucket.
+    </p>
+
+    <div class="steps">
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Target the correct stats component</div>
+                <p>
+                    Set <code>Stats Component Target</code> to the component that owns the attribute. For most effects,
+                    this is the target actor stats component. For self-buffs, it can be the caster component.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the affected attribute</div>
+                <p>
+                    Set <code>Attribute Tag</code> to the attribute whose <code>Max</code> should be recalculated, such
+                    as <code>StatsX.Attribute.Stat.MovementSpeed</code> or
+                    <code>StatsX.Attribute.Resource.Health</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Choose the source and bucket</div>
+                <p>
+                    Set <code>Source Tag</code> to a gameplay category used for filtering, then set
+                    <code>Modifier Bucket Tag</code> to the formula bucket that should receive the magnitude.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Set Magnitude and Priority</div>
+                <p>
+                    <code>Magnitude</code> is interpreted by the selected bucket. <code>Priority</code> only matters for
+                    custom buckets using <code>Override By Priority</code>; the built-in Flat, Increased, and More
+                    buckets ignore it.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Add Typed Modifier Pin</th>
+                    <th>Example</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>Stats Component Target</code></td>
+                    <td>Target stats component</td>
+                    <td>The component that owns the modified attribute.</td>
+                </tr>
+                <tr>
+                    <td><code>Attribute Tag</code></td>
+                    <td><code>StatsX.Attribute.Stat.MovementSpeed</code></td>
+                    <td>The attribute whose Max value will be recalculated.</td>
+                </tr>
+                <tr>
+                    <td><code>Source Tag</code></td>
+                    <td><code>StatsX.ModSource.Boots</code></td>
+                    <td>A category used later for queries or filtered removal.</td>
+                </tr>
+                <tr>
+                    <td><code>Modifier Bucket Tag</code></td>
+                    <td><code>StatsX.ModifierBucket.Increased</code></td>
+                    <td>The bucket that receives the magnitude.</td>
+                </tr>
+                <tr>
+                    <td><code>Magnitude</code></td>
+                    <td><code>20</code></td>
+                    <td>For Increased, this means +20 percentage points.</td>
+                </tr>
+                <tr>
+                    <td><code>Priority</code></td>
+                    <td><code>0</code></td>
+                    <td>Used by Override By Priority buckets. Otherwise leave it at 0.</td>
+                </tr>
+                <tr>
+                    <td><code>Modifier Instance ID</code></td>
+                    <td>Output value</td>
+                    <td>Save it if you need to remove this exact modifier instance later.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
     <div class="info-box danger">
         <div class="info-box-content">
             <div class="info-box-title">Server-side only</div>
             <p>
-                Handle modifiers only on the server. Their state is replicated internally, so you should not manually
-                apply them on both sides.
+                Add and remove modifiers only on the server. Modifier state and recalculated attributes replicate to
+                clients through the Stats_X runtime.
             </p>
         </div>
     </div>
 
-    <h2>Add a Modifier Manually</h2>
+    <h2>Remove Typed Modifiers</h2>
 
     <p>
-        If you want to create a modifier without Status Forge, use the <code>AddModifier</code> node from a
-        Stats_X component.
+        Use the existing <code>Remove Modifier</code> node to remove both legacy and typed modifiers. The removal node
+        uses filters, and all active filters must match.
+    </p>
+
+    <ul>
+        <li><code>Remove by Modifier Instance ID</code> removes one exact modifier returned by <code>Add Typed Modifier</code>.</li>
+        <li><code>Remove by Source Owner ID</code> removes modifiers owned by one status, item, or external system.</li>
+        <li><code>Remove by Source Tag</code> removes one source category, such as boots, aura, poison, or slow.</li>
+        <li><code>Remove by Attribute Tag</code> removes modifiers affecting one attribute.</li>
+        <li><code>Count to Remove = 0</code> means remove every modifier matching the active filters.</li>
+    </ul>
+
+    <div class="info-box tip">
+        <div class="info-box-content">
+            <div class="info-box-title">Status Forge cleanup pattern</div>
+            <p>
+                <code>Add Typed Modifier</code> uses the current Status ID as the modifier owner. If the status should
+                clean up its modifiers when it ends, make sure its <code>OnEnd</code> path runs for that termination type,
+                then use <code>This ID</code> as <code>Remove by Source Owner ID</code> to remove the modifiers created by
+                that status instance.
+            </p>
+        </div>
+    </div>
+
+    <img class="full" src="images/v14/ModifiersNodes.png" alt="Blueprint nodes for removing and managing modifiers">
+    <div class="image-caption">Common Blueprint nodes for removing or querying modifiers, plus additional utility
+        helpers.</div>
+
+    <h2>Create a Custom Formula with a DataAsset</h2>
+
+    <p>
+        A Formula DataAsset is the best option when your attribute math is more specific than the built-in
+        <code>Legacy</code> or <code>PoELike</code> profiles. It is a stack-based formula: each step pushes values onto a
+        small stack or combines values already on the stack.
     </p>
 
     <div class="steps">
         <div class="step">
             <div class="step-content">
-                <div class="step-title">Call AddModifier on the stats component</div>
+                <div class="step-title">Create the formula asset</div>
                 <p>
-                    Do this from server-side gameplay logic, for example from your character, an ability, or a
-                    dedicated event that owns the effect.
+                    In the Content Browser, create a Data Asset and choose <code>PDA_StatsXFormulaProfile</code>. Name it
+                    clearly, for example <code>DA_Formula_AttackPower</code>.
                 </p>
             </div>
         </div>
 
         <div class="step">
             <div class="step-content">
-                <div class="step-title">Choose the target attribute</div>
+                <div class="step-title">Declare the buckets the formula can read</div>
                 <p>
-                    Modifiers are typically useful for values that influence the attribute <code>Max</code>. In this
-                    example we target <code>Health</code>.
+                    Add entries to <code>Bucket Definitions</code>. Each entry has a bucket tag, an aggregation mode, and
+                    a default value used when no active modifier exists for that bucket.
                 </p>
             </div>
         </div>
 
         <div class="step">
             <div class="step-content">
-                <div class="step-title">Fill the modifier parameters</div>
+                <div class="step-title">Declare dependency attributes</div>
                 <p>
-                    Set the source, owner, additive value, and multiplicative value according to the effect you want to
-                    create.
+                    Add every external attribute that the formula reads to <code>Dependency Attributes</code>. A formula
+                    can read a dependency's recalculated <code>Max</code> value with <code>Load Dependency Attribute</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Write the expression steps</div>
+                <p>
+                    Add operations to <code>Expression Steps</code> in stack order. The last step must be
+                    <code>Return</code>.
+                </p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-content">
+                <div class="step-title">Assign the formula to an attribute</div>
+                <p>
+                    On the stats component, add a per-attribute override, set <code>Source = Data Asset</code>, and assign
+                    the formula asset. You can also set it as the component default or project default if many attributes
+                    share the same math.
                 </p>
             </div>
         </div>
     </div>
+
+    <h3>Formula DataAsset Rules</h3>
+
+    <ul>
+        <li>Every <code>Load Bucket</code> step must reference a bucket declared in <code>Bucket Definitions</code>.</li>
+        <li>Every <code>Load Dependency Attribute</code> step must reference an attribute declared in <code>Dependency Attributes</code>.</li>
+        <li>Bucket tags and dependency tags must be valid and cannot be duplicated.</li>
+        <li>The formula must contain at least one expression step.</li>
+        <li>The final step must be <code>Return</code>, and <code>Return</code> must not appear before the end.</li>
+        <li>The formula stack cannot exceed 16 values.</li>
+        <li>If a dependency is missing on the component, or the formula depends on the same attribute it is calculating, Stats_X falls back to Legacy and logs a warning.</li>
+    </ul>
+
+    <h3>Expression Operations</h3>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Operation</th>
+                    <th>What It Does</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>Load Base</code></td>
+                    <td>Pushes the target attribute Base value.</td>
+                </tr>
+                <tr>
+                    <td><code>Load Bucket</code></td>
+                    <td>Pushes one declared bucket value, or its default value if empty.</td>
+                </tr>
+                <tr>
+                    <td><code>Has Bucket Value</code></td>
+                    <td>Pushes 1 if the bucket has at least one active modifier, otherwise 0.</td>
+                </tr>
+                <tr>
+                    <td><code>Load Dependency Attribute</code></td>
+                    <td>Pushes the recalculated Max value of one declared dependency attribute.</td>
+                </tr>
+                <tr>
+                    <td><code>Constant</code></td>
+                    <td>Pushes a fixed number.</td>
+                </tr>
+                <tr>
+                    <td><code>Add</code>, <code>Subtract</code>, <code>Multiply</code>, <code>Divide Safe</code></td>
+                    <td>Combines the top two stack values and pushes the result.</td>
+                </tr>
+                <tr>
+                    <td><code>Min</code>, <code>Max</code></td>
+                    <td>Combines the top two stack values and keeps the smaller or larger result.</td>
+                </tr>
+                <tr>
+                    <td><code>Clamp</code></td>
+                    <td>Consumes Value, Min, and Max from the stack and pushes the clamped value.</td>
+                </tr>
+                <tr>
+                    <td><code>Select</code></td>
+                    <td>Consumes Condition, True Value, and False Value, then pushes one selected value.</td>
+                </tr>
+                <tr>
+                    <td><code>Return</code></td>
+                    <td>Returns the top stack value as the new attribute Max.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Medium Custom Formula Example</h3>
+
+    <p>
+        This example calculates <code>AttackPower</code> from its own Base value, three modifier buckets, and two
+        dependency attributes: <code>Strength</code> and <code>Dexterity</code>.
+    </p>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Design Goal</span>
+        </div>
+        <pre><code>AttackPower Max = Clamp(
+    (Base + Flat + StrengthMax * 0.5 + DexterityMax * 0.25) * (1 + Increased / 100) * More,
+    0,
+    Cap
+)</code></pre>
+    </div>
+
+    <p>
+        First, create these Gameplay Tags if they do not already exist:
+    </p>
+
+    <ul>
+        <li><code>StatsX.Attribute.Stat.AttackPower</code></li>
+        <li><code>StatsX.Attribute.Stat.Strength</code></li>
+        <li><code>StatsX.Attribute.Stat.Dexterity</code></li>
+        <li><code>StatsX.ModifierBucket.Cap</code></li>
+    </ul>
+
+    <p>
+        Then set the formula asset like this:
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Bucket</th>
+                    <th>Aggregation</th>
+                    <th>Default</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.Flat</code></td>
+                    <td>Sum</td>
+                    <td><code>0</code></td>
+                    <td>Flat attack power bonuses.</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.Increased</code></td>
+                    <td>Sum</td>
+                    <td><code>0</code></td>
+                    <td>Percentage attack power increases.</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.More</code></td>
+                    <td>Product</td>
+                    <td><code>1</code></td>
+                    <td>Multiplicative more or less effects.</td>
+                </tr>
+                <tr>
+                    <td><code>StatsX.ModifierBucket.Cap</code></td>
+                    <td>Min</td>
+                    <td><code>999999</code></td>
+                    <td>Optional cap. Multiple cap modifiers keep the lowest cap.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p>
+        Add these dependency attributes to the asset:
+    </p>
+
+    <ul>
+        <li><code>StatsX.Attribute.Stat.Strength</code></li>
+        <li><code>StatsX.Attribute.Stat.Dexterity</code></li>
+    </ul>
+
+    <p>
+        Finally, enter this expression step list. This is Reverse Polish Notation: values are loaded first, then combined
+        by later operations.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Operation</th>
+                    <th>Argument</th>
+                    <th>Stack Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><code>Load Base</code></td>
+                    <td>-</td>
+                    <td>Start from AttackPower Base.</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td><code>Load Bucket</code></td>
+                    <td><code>Flat</code></td>
+                    <td>Push flat bonuses.</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td><code>Add</code></td>
+                    <td>-</td>
+                    <td><code>Base + Flat</code></td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td><code>Load Dependency Attribute</code></td>
+                    <td><code>Strength</code></td>
+                    <td>Push Strength Max.</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td><code>Constant</code></td>
+                    <td><code>0.5</code></td>
+                    <td>Strength scaling factor.</td>
+                </tr>
+                <tr>
+                    <td>6</td>
+                    <td><code>Multiply</code></td>
+                    <td>-</td>
+                    <td><code>StrengthMax * 0.5</code></td>
+                </tr>
+                <tr>
+                    <td>7</td>
+                    <td><code>Add</code></td>
+                    <td>-</td>
+                    <td>Add scaled Strength.</td>
+                </tr>
+                <tr>
+                    <td>8</td>
+                    <td><code>Load Dependency Attribute</code></td>
+                    <td><code>Dexterity</code></td>
+                    <td>Push Dexterity Max.</td>
+                </tr>
+                <tr>
+                    <td>9</td>
+                    <td><code>Constant</code></td>
+                    <td><code>0.25</code></td>
+                    <td>Dexterity scaling factor.</td>
+                </tr>
+                <tr>
+                    <td>10</td>
+                    <td><code>Multiply</code></td>
+                    <td>-</td>
+                    <td><code>DexterityMax * 0.25</code></td>
+                </tr>
+                <tr>
+                    <td>11</td>
+                    <td><code>Add</code></td>
+                    <td>-</td>
+                    <td>Add scaled Dexterity.</td>
+                </tr>
+                <tr>
+                    <td>12</td>
+                    <td><code>Load Bucket</code></td>
+                    <td><code>Increased</code></td>
+                    <td>Push increased percentage points.</td>
+                </tr>
+                <tr>
+                    <td>13</td>
+                    <td><code>Constant</code></td>
+                    <td><code>100</code></td>
+                    <td>Convert percentage points.</td>
+                </tr>
+                <tr>
+                    <td>14</td>
+                    <td><code>Divide Safe</code></td>
+                    <td>-</td>
+                    <td><code>Increased / 100</code></td>
+                </tr>
+                <tr>
+                    <td>15</td>
+                    <td><code>Constant</code></td>
+                    <td><code>1</code></td>
+                    <td>Base multiplier.</td>
+                </tr>
+                <tr>
+                    <td>16</td>
+                    <td><code>Add</code></td>
+                    <td>-</td>
+                    <td><code>1 + Increased / 100</code></td>
+                </tr>
+                <tr>
+                    <td>17</td>
+                    <td><code>Multiply</code></td>
+                    <td>-</td>
+                    <td>Apply increased multiplier.</td>
+                </tr>
+                <tr>
+                    <td>18</td>
+                    <td><code>Load Bucket</code></td>
+                    <td><code>More</code></td>
+                    <td>Push product of more multipliers.</td>
+                </tr>
+                <tr>
+                    <td>19</td>
+                    <td><code>Multiply</code></td>
+                    <td>-</td>
+                    <td>Apply more multiplier.</td>
+                </tr>
+                <tr>
+                    <td>20</td>
+                    <td><code>Constant</code></td>
+                    <td><code>0</code></td>
+                    <td>Clamp minimum.</td>
+                </tr>
+                <tr>
+                    <td>21</td>
+                    <td><code>Load Bucket</code></td>
+                    <td><code>Cap</code></td>
+                    <td>Clamp maximum.</td>
+                </tr>
+                <tr>
+                    <td>22</td>
+                    <td><code>Clamp</code></td>
+                    <td>-</td>
+                    <td>Clamp final AttackPower between 0 and Cap.</td>
+                </tr>
+                <tr>
+                    <td>23</td>
+                    <td><code>Return</code></td>
+                    <td>-</td>
+                    <td>Return the final Max value.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">
+            <span class="code-lang">Numerical Example</span>
+        </div>
+        <pre><code>AttackPower Base = 100
+Flat bucket = 25
+Strength Max = 40
+Dexterity Max = 20
+Increased bucket = 30
+More bucket = 1.2
+Cap bucket = 220
+
+Before clamp = (100 + 25 + 40 * 0.5 + 20 * 0.25) * (1 + 30 / 100) * 1.2
+Before clamp = 234
+
+Final Max = Clamp(234, 0, 220) = 220</code></pre>
+    </div>
+
+    <p>
+        To feed this formula from gameplay, every effect still uses <code>Add Typed Modifier</code>. Only the bucket and
+        magnitude change.
+    </p>
+
+    <ul>
+        <li>A sword bonus uses <code>Modifier Bucket Tag = StatsX.ModifierBucket.Flat</code> and <code>Magnitude = 25</code>.</li>
+        <li>A power buff uses <code>Modifier Bucket Tag = StatsX.ModifierBucket.Increased</code> and <code>Magnitude = 30</code>.</li>
+        <li>A temporary aura uses <code>Modifier Bucket Tag = StatsX.ModifierBucket.More</code> and <code>Magnitude = 1.2</code>.</li>
+        <li>A curse cap uses <code>Modifier Bucket Tag = StatsX.ModifierBucket.Cap</code> and <code>Magnitude = 220</code>.</li>
+    </ul>
+
+    <div class="info-box info">
+        <div class="info-box-content">
+            <div class="info-box-title">Dependency propagation</div>
+            <p>
+                If <code>Strength</code> or <code>Dexterity</code> changes, Stats_X marks dependent attributes dirty too.
+                That means <code>AttackPower</code> is recalculated from the updated dependency values without manually
+                rebuilding the formula.
+            </p>
+        </div>
+    </div>
+
+    <h2>Legacy AddModifier</h2>
+
+    <p>
+        Use <code>AddModifier</code> when you want the old direct additive and multiplicative behavior, or when you are
+        maintaining older graphs. This node writes to the legacy additive and legacy multiplicative buckets.
+    </p>
 
     <div class="table-wrapper">
         <table class="data-table">
@@ -130,72 +757,39 @@ New Max = (500 + 0) * 1 = 500</code></pre>
             </thead>
             <tbody>
                 <tr>
-                    <td>AttributeTag</td>
-                    <td>Health</td>
-                    <td>The attribute affected by the modifier. In practice, modifiers are used to affect its Max value.
-                    </td>
+                    <td><code>AttributeTag</code></td>
+                    <td><code>Health</code></td>
+                    <td>The attribute affected by the modifier.</td>
                 </tr>
                 <tr>
-                    <td>SourceTag</td>
-                    <td>Debuff.Arcane</td>
-                    <td>Identifies the source or category of the modifier. Useful for filtered cleanup such as removing
-                        all fire or arcane debuffs.</td>
+                    <td><code>SourceTag</code></td>
+                    <td><code>Debuff.Arcane</code></td>
+                    <td>Source category used for queries and filtered cleanup.</td>
                 </tr>
                 <tr>
-                    <td>OwnerID</td>
-                    <td>0</td>
-                    <td>The creator or grouping ID of the modifier. In Status Forge this is handled automatically for
-                        you.</td>
+                    <td><code>OwnerID</code></td>
+                    <td><code>0</code></td>
+                    <td>Grouping ID. Status Forge fills this automatically for its modifier nodes.</td>
                 </tr>
                 <tr>
-                    <td>AdditiveValue</td>
-                    <td>-400</td>
-                    <td>A flat change applied before multiplication.</td>
+                    <td><code>AdditiveValue</code></td>
+                    <td><code>-400</code></td>
+                    <td>A flat value added before multiplication.</td>
                 </tr>
                 <tr>
-                    <td>MultiplicativeValue</td>
-                    <td>1</td>
-                    <td>
-                        A multiplier applied after additive values. For example, <code>0.7</code> means -30% and
-                        <code>1.3</code> means +30%.
-                    </td>
+                    <td><code>MultiplicativeValue</code></td>
+                    <td><code>1</code></td>
+                    <td>A multiplier. <code>0.7</code> means 30% less, <code>1.3</code> means 30% more.</td>
                 </tr>
             </tbody>
         </table>
     </div>
 
     <img class="large" src="images/Modifiers/Modifiers.png" alt="Example AddModifier setup in Blueprints">
-    <div class="image-caption">Example of a manual modifier added directly from a Stats_X component.</div>
-
-    <h2>Remove and Manage Modifiers</h2>
+    <div class="image-caption">Example of a legacy manual modifier added directly from a Stats_X component.</div>
 
     <p>
-        Once a modifier exists, you can remove it in different ways depending on the type of logic you need.
-    </p>
-
-    <ul>
-        <li><code>RemoveModifierByID</code> for one exact modifier instance.</li>
-        <li><code>RemoveModifiersByOwner</code> to remove everything created by the same owner or status.</li>
-        <li><code>RemoveModifiersBySource</code> to remove a whole category such as a specific debuff source.</li>
-        <li><code>RemoveModifiersByAttribute</code> to clear all modifiers affecting one attribute.</li>
-    </ul>
-
-    <img class="full" src="images/v14/ModifiersNodes.png" alt="Blueprint nodes for removing and managing modifiers">
-    <div class="image-caption">Common Blueprint nodes for removing or querying modifiers, plus additional utility
-        helpers.</div>
-
-    <div class="info-box tip">
-        <div class="info-box-content">
-            <div class="info-box-title">Best practice</div>
-            <p>
-                If a modifier belongs to a temporary gameplay effect, give it a meaningful <code>OwnerID</code> or let
-                Status Forge manage it for you. That makes cleanup far easier when the effect ends.
-            </p>
-        </div>
-    </div>
-
-    <p>
-        You are done: you now know why modifiers are needed, how Stats_X keeps them stable, and how to add or remove
-        them manually when needed.
+        You are done: you now know how to use typed modifiers, how to remove them safely, how to choose or create a
+        Formula Profile, and when the legacy modifier node is still useful.
     </p>
 </section>
